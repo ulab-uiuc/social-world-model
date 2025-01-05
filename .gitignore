@@ -160,4 +160,6 @@ cython_debug/
 #.idea/
 **/data/*
 **/cache
+**/*.json
+**/*.jsonl
 !**/.gitkeep
