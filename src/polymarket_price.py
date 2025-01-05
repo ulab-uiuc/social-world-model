@@ -1,8 +1,9 @@
 import datetime
 import json
 import os
-from typing import Dict, List, Union
 import time
+from typing import Dict, List, Union
+
 import httpx
 import jsonlines
 import matplotlib.pyplot as plt
@@ -86,7 +87,7 @@ def get_events(active: bool = False, closed: bool = True, archived: bool = False
     raise Exception(f"Failed to fetch events: HTTP {response.status_code}")
 
 
-def get_event(event_id: str | int) -> dict:
+def get_event_from_id(event_id: str | int) -> dict:
     params = {
         "active": False,
         "closed": True,
@@ -119,7 +120,7 @@ if __name__ == '__main__':
     existing_tokens = load_existing_data(output_file)
     print(f"Found {len(existing_tokens)} existing token histories")
 
-    current_events = get_event(event_id="15802")
+    current_events = get_event_from_id(event_id="15802")
     import pdb; pdb.set_trace()
 
     for idx, event in tqdm(enumerate(current_events), total=len(current_events)):
