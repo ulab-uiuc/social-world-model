@@ -1,8 +1,9 @@
 import datetime
 import json
 import os
-from typing import Dict, List, Union
 import time
+from typing import Dict, List, Union
+
 import httpx
 import jsonlines
 import matplotlib.pyplot as plt
@@ -36,12 +37,12 @@ def get_history_from_token_id(token_id: str, fidelity: int = 60, max_retries: in
     host = "https://clob.polymarket.com"
     key = os.getenv("PK")
     chain_id = 137
-    
+
     if not key:
         raise ValueError("Private key not found. Please set PK in the environment variables.")
-    
+
     client = ClobClient(host, key=key, chain_id=chain_id)
-    
+
     for attempt in range(max_retries):
         try:
             price_data = client.get_price_history_for_interval(
@@ -50,12 +51,12 @@ def get_history_from_token_id(token_id: str, fidelity: int = 60, max_retries: in
                 fidelity=fidelity
             )
             return price_data['history']
-            
+
         except Exception as e:
             wait_time = (2 ** attempt)  # Exponential backoff: 1, 2, 4, 8, 16 seconds
             print(f"Attempt {attempt + 1}/{max_retries} failed: {e}")
             print(f"Waiting {wait_time} seconds before retry...")
-            
+
             if attempt < max_retries - 1:
                 time.sleep(wait_time)
             else:
@@ -84,6 +85,17 @@ def get_events(active: bool = False, closed: bool = True, archived: bool = False
     if response.status_code == 200:
         return response.json()
     raise Exception(f"Failed to fetch events: HTTP {response.status_code}")
+
+
+def get_event(event_id: str | int) -> dict:
+    url = f"https://gamma-api.polymarket.com/events/{event_id}"
+    response = httpx.get(url)
+
+    if response.status_code == 200:
+        return response.json()
+    raise Exception(f"Failed to fetch event data: HTTP {response.status_code}")
+
+
 
 def load_existing_data(filename: str) -> Dict[str, Dict]:
     """Load existing data and create a map of token_ids that have already been processed"""
