@@ -1,10 +1,12 @@
+import argparse
 import json
 import os
 import sys
-import argparse
 from typing import Dict, List
-from src.utils.model_prompting import model_prompting
+
 from tqdm import tqdm
+
+from src.utils.model_prompting import model_prompting
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
@@ -25,11 +27,11 @@ def parse_assumptions(response: str) -> List[str]:
 def collect_introductions(input_file: str) -> Dict[str, str]:
     with open(input_file, 'r') as f:
         dataset = json.load(f)
-    
+
     introductions = {}
     for arxiv_id, paper in dataset.items():
         introductions[arxiv_id] = paper['paper_data']['introduction']
-    
+
     return introductions
 
 

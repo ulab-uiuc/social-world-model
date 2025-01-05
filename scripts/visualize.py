@@ -1,12 +1,13 @@
-import json
-from litellm import embedding
-import numpy as np
-from sklearn.decomposition import PCA
-import matplotlib.pyplot as plt
 import argparse
-from tqdm import tqdm
+import json
 import os
+
+import matplotlib.pyplot as plt
+import numpy as np
+from litellm import embedding
+from sklearn.decomposition import PCA
 from sklearn.metrics.pairwise import cosine_similarity
+from tqdm import tqdm
 
 
 def find_top_similar_pairs(embeddings, assumptions, assumption_map, top_n=5):
@@ -46,7 +47,7 @@ def load_assumptions(input_file: str):
     """
     with open(input_file, 'r') as f:
         data = json.load(f)
-    
+
     # Collect all assumptions into a list
     assumptions = []
     assumption_map = {}  # To map assumptions back to their arxiv_id
@@ -69,7 +70,7 @@ def embed_assumptions(assumptions, cache_file="embeddings_cache.json"):
 
     embeddings = []
     updated_cache = False  # Track if we add new embeddings to the cache
-    
+
     for assumption in tqdm(assumptions):
         if assumption in cached_embeddings:
             embedding = cached_embeddings[assumption]
@@ -78,7 +79,7 @@ def embed_assumptions(assumptions, cache_file="embeddings_cache.json"):
             cached_embeddings[assumption] = embedding
             updated_cache = True
         embeddings.append(embedding)
-    
+
     # Save updated cache if new embeddings were added
     if updated_cache:
         with open(cache_file, 'w') as f:
@@ -93,16 +94,16 @@ def visualize_embeddings(embeddings, assumptions, output_file=None):
     # Reduce dimensions to 2D for visualization
     pca = PCA(n_components=2)
     reduced_embeddings = pca.fit_transform(embeddings)
-    
+
     # Create scatter plot
     plt.figure(figsize=(10, 8))
     plt.scatter(reduced_embeddings[:, 0], reduced_embeddings[:, 1], alpha=0.6)
-    
+
     # Annotate each point with a small sample of the assumption text for reference
     for i, assumption in enumerate(assumptions):
         plt.annotate(assumption[:15] + "...", (reduced_embeddings[i, 0], reduced_embeddings[i, 1]),
                      fontsize=8, alpha=0.7)
-    
+
     plt.title("Embedding Visualization of Assumptions")
     plt.xlabel("PCA Dimension 1")
     plt.ylabel("PCA Dimension 2")
@@ -122,13 +123,13 @@ if __name__ == "__main__":
     parser.add_argument("--cache_file", type=str, default="embeddings_cache.json", help="File to store cached embeddings.")
 
     args = parser.parse_args()
-    
+
     # Step 1: Load assumptions
     assumptions, assumption_map = load_assumptions(args.input_file)
-    
+
     # Step 2: Embed assumptions (with caching)
     embeddings = embed_assumptions(assumptions, cache_file=args.cache_file)
-    
+
     # Step 3: Visualize embeddings (either save or show based on `output_file`)
     visualize_embeddings(embeddings, assumptions, output_file=args.output_file)
 
@@ -141,13 +142,13 @@ if __name__ == "__main__":
     parser.add_argument("--cache_file", type=str, default="embeddings_cache.json", help="File to store cached embeddings.")
 
     args = parser.parse_args()
-    
+
     # Step 1: Load assumptions
     assumptions, assumption_map = load_assumptions(args.input_file)
-    
+
     # Step 2: Embed assumptions (with caching)
     embeddings = embed_assumptions(assumptions, cache_file=args.cache_file)
-    
+
     # Step 3: Visualize embeddings (either save or show based on `output_file`)
     visualize_embeddings(embeddings, assumptions, output_file=args.output_file)
 
