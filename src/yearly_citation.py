@@ -1,7 +1,8 @@
 import logging
+import time
+
 from scholarly import scholarly
 from serpapi import GoogleSearch
-import time
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -70,7 +71,7 @@ def get_paper_data(title):
                 'citation_id': citation_id,
                 'total_citations': total_citations,
                 'citations': citations,
-                'raw_data': pub 
+                'raw_data': pub
             }
         else:
             logger.warning("Failed to retrieve Citation ID.")

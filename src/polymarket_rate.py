@@ -1,22 +1,22 @@
-import httpx
-from typing import Dict, List, Union
-import os
-import jsonlines
-import json
-import time
 import datetime
+import json
+import os
+from typing import Dict, List, Union
+
+import httpx
+import jsonlines
 import matplotlib.pyplot as plt
 from py_clob_client.client import ClobClient
 from tqdm import tqdm
-import pathlib
 
-def visualize_price_history(history: List[Dict[str, Union[int, float]]], 
+
+def visualize_price_history(history: List[Dict[str, Union[int, float]]],
                           title: str = 'Price History',
                           save_path: str = None):
     timestamps = [item['t'] for item in history]
     prices = [item['p'] for item in history]
     datetimes = [datetime.datetime.fromtimestamp(ts) for ts in timestamps]
-    
+
     plt.figure(figsize=(10, 6))
     plt.plot(datetimes, prices, marker='o', linestyle='-', color='b')
     plt.xlabel('Date/Time')
@@ -24,24 +24,24 @@ def visualize_price_history(history: List[Dict[str, Union[int, float]]],
     plt.title(title)
     plt.xticks(rotation=45)
     plt.tight_layout()
-    
+
     if save_path:
         plt.savefig(save_path)
     else:
         plt.show()
-    
+
     plt.close()
 
 def get_history_from_token_id(token_id: str, days_back: int = 10, fidelity: int = 60) -> List[Dict[str, Union[int, float]]]:
     host = "https://clob.polymarket.com"
     key = os.getenv("PK")
     chain_id = 137
-    
+
     if not key:
         raise ValueError("Private key not found. Please set PK in the environment variables.")
-    
+
     client = ClobClient(host, key=key, chain_id=chain_id)
-    
+
     try:
         price_data = client.get_price_history_for_interval(
             token_id=token_id,
@@ -56,7 +56,7 @@ def get_history_from_token_id(token_id: str, days_back: int = 10, fidelity: int 
 def get_market(market_id: str | int) -> dict:
     url = f"https://gamma-api.polymarket.com/markets/{market_id}"
     response = httpx.get(url)
-    
+
     if response.status_code == 200:
         return response.json()
     raise Exception(f"Failed to fetch market data: HTTP {response.status_code}")
@@ -70,7 +70,7 @@ def get_events(active: bool = False, closed: bool = True, archived: bool = False
         "end_date_max": "2025-01-05T00:00:00Z",
         "start_date_min": "2024-12-05T00:00:00Z",
     }
-    
+
     response = httpx.get("https://gamma-api.polymarket.com/events", params=params)
     if response.status_code == 200:
         return response.json()
@@ -92,14 +92,14 @@ if __name__ == '__main__':
     output_file = "data.jsonl"
     existing_tokens = load_existing_data(output_file)
     print(f"Found {len(existing_tokens)} existing token histories")
-    
+
     current_events = get_events(active=False, closed=True, archived=False, limit=500)
-    
+
     for idx, event in tqdm(enumerate(current_events), total=len(current_events)):
         for idy, market in enumerate(event['markets']):
             token_ids = json.loads(market['clobTokenIds'])
             current_events[idx]['markets'][idy]['history'] = {}
-            
+
             for token_id in token_ids:
                 if token_id in existing_tokens:
                     print(f"Skipping existing token {token_id}")
@@ -108,7 +108,7 @@ if __name__ == '__main__':
                 history = get_history_from_token_id(token_id)
                 current_events[idx]['markets'][idy]['history'][token_id] = history
                 existing_tokens[token_id] = history
-                
+
         # Write after each event is processed
         with jsonlines.open(output_file, mode="w") as writer:
             writer.write_all(current_events)
