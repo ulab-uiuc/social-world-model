@@ -2,7 +2,7 @@ import datetime
 import json
 import os
 from typing import Dict, List, Union
-
+import time
 import httpx
 import jsonlines
 import matplotlib.pyplot as plt
@@ -32,26 +32,35 @@ def visualize_price_history(history: List[Dict[str, Union[int, float]]],
 
     plt.close()
 
-def get_history_from_token_id(token_id: str, days_back: int = 10, fidelity: int = 60) -> List[Dict[str, Union[int, float]]]:
+def get_history_from_token_id(token_id: str, fidelity: int = 60, max_retries: int = 5) -> List[Dict[str, Union[int, float]]]:
     host = "https://clob.polymarket.com"
     key = os.getenv("PK")
     chain_id = 137
-
+    
     if not key:
         raise ValueError("Private key not found. Please set PK in the environment variables.")
-
+    
     client = ClobClient(host, key=key, chain_id=chain_id)
-
-    try:
-        price_data = client.get_price_history_for_interval(
-            token_id=token_id,
-            interval="max",
-            fidelity=fidelity
-        )
-        return price_data['history']
-    except Exception as e:
-        print(f"Error retrieving price history: {e}")
-        return []
+    
+    for attempt in range(max_retries):
+        try:
+            price_data = client.get_price_history_for_interval(
+                token_id=token_id,
+                interval="max",
+                fidelity=fidelity
+            )
+            return price_data['history']
+            
+        except Exception as e:
+            wait_time = (2 ** attempt)  # Exponential backoff: 1, 2, 4, 8, 16 seconds
+            print(f"Attempt {attempt + 1}/{max_retries} failed: {e}")
+            print(f"Waiting {wait_time} seconds before retry...")
+            
+            if attempt < max_retries - 1:
+                time.sleep(wait_time)
+            else:
+                print(f"All {max_retries} attempts failed for token {token_id}")
+                return []
 
 def get_market(market_id: str | int) -> dict:
     url = f"https://gamma-api.polymarket.com/markets/{market_id}"
@@ -106,6 +115,8 @@ if __name__ == '__main__':
                     current_events[idx]['markets'][idy]['history'][token_id] = existing_tokens[token_id]
                     continue
                 history = get_history_from_token_id(token_id)
+                if history == []:
+                    continue
                 current_events[idx]['markets'][idy]['history'][token_id] = history
                 existing_tokens[token_id] = history
 
