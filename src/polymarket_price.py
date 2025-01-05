@@ -85,6 +85,17 @@ def get_events(active: bool = False, closed: bool = True, archived: bool = False
         return response.json()
     raise Exception(f"Failed to fetch events: HTTP {response.status_code}")
 
+
+def get_event(event_id: str | int) -> dict:
+    url = f"https://gamma-api.polymarket.com/events/{event_id}"
+    response = httpx.get(url)
+
+    if response.status_code == 200:
+        return response.json()
+    raise Exception(f"Failed to fetch event data: HTTP {response.status_code}")
+
+
+
 def load_existing_data(filename: str) -> Dict[str, Dict]:
     """Load existing data and create a map of token_ids that have already been processed"""
     existing_tokens = {}

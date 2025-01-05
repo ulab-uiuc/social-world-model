@@ -1,8 +1,10 @@
 import logging
 import time
+import json
 
 from scholarly import scholarly
 from serpapi import GoogleSearch
+from tqdm import tqdm
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -82,9 +84,20 @@ def get_paper_data(title):
 
 
 if __name__ == "__main__":
-    title = "Attention is all you need"
-    paper_data = get_paper_data(title)
-    if paper_data:
-        print(paper_data)
-    else:
-        print("Failed to retrieve paper data.")
+    with open('../data/high_impact_paper_bench.json', 'r') as f:
+        papers = json.load(f)
+    
+    titles = []
+    for data in papers.values():
+        titles.append(data['paper_data']['title'])
+
+    all_paper_data = {}
+    for title in tqdm(titles):
+        paper_data = get_paper_data(title)
+        if paper_data:
+            print(paper_data)
+            all_paper_data[paper_data['citation_id']] = paper_data
+            with open('../data/all_paper_data.json', 'w') as f:
+                json.dump(all_paper_data, f)
+        else:
+            print("Failed to retrieve paper data.")
