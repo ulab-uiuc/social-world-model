@@ -1,6 +1,6 @@
+import json
 import logging
 import time
-import json
 
 from scholarly import scholarly
 from serpapi import GoogleSearch
@@ -86,7 +86,7 @@ def get_paper_data(title):
 if __name__ == "__main__":
     with open('../data/high_impact_paper_bench.json', 'r') as f:
         papers = json.load(f)
-    
+
     titles = []
     for data in papers.values():
         titles.append(data['paper_data']['title'])
