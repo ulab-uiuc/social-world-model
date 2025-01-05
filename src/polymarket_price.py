@@ -87,14 +87,19 @@ def get_events(active: bool = False, closed: bool = True, archived: bool = False
     raise Exception(f"Failed to fetch events: HTTP {response.status_code}")
 
 
-def get_event(event_id: str | int) -> dict:
-    url = f"https://gamma-api.polymarket.com/events/{event_id}"
-    response = httpx.get(url)
+def get_event_from_id(event_id: str | int) -> dict:
+    params = {
+        "active": False,
+        "closed": True,
+        "end_date_max": "2025-01-05T00:00:00Z",
+        "start_date_min": "2024-12-05T00:00:00Z",
+        "id": event_id,
+    }
 
+    response = httpx.get("https://gamma-api.polymarket.com/events", params=params)
     if response.status_code == 200:
         return response.json()
-    raise Exception(f"Failed to fetch event data: HTTP {response.status_code}")
-
+    raise Exception(f"Failed to fetch events: HTTP {response.status_code}")
 
 
 def load_existing_data(filename: str) -> Dict[str, Dict]:
@@ -109,18 +114,20 @@ def load_existing_data(filename: str) -> Dict[str, Dict]:
                             existing_tokens[token_id] = market['history'][token_id]
     return existing_tokens
 
+
 if __name__ == '__main__':
     output_file = "data.jsonl"
     existing_tokens = load_existing_data(output_file)
     print(f"Found {len(existing_tokens)} existing token histories")
 
-    current_events = get_events(active=False, closed=True, archived=False, limit=500)
+    current_events = get_event_from_id(event_id="15802")
+    import pdb; pdb.set_trace()
 
     for idx, event in tqdm(enumerate(current_events), total=len(current_events)):
         for idy, market in enumerate(event['markets']):
             token_ids = json.loads(market['clobTokenIds'])
             current_events[idx]['markets'][idy]['history'] = {}
-
+            import pdb; pdb.set_trace()
             for token_id in token_ids:
                 if token_id in existing_tokens:
                     print(f"Skipping existing token {token_id}")
