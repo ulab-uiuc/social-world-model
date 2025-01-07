@@ -78,7 +78,7 @@ def get_events(active: bool = False, closed: bool = True, archived: bool = False
         "archived": archived,
         "limit": limit,
         "end_date_max": "2025-01-05T00:00:00Z",
-        "start_date_min": "2024-12-05T00:00:00Z",
+        "end_date_min": "2024-12-05T00:00:00Z",
     }
 
     response = httpx.get("https://gamma-api.polymarket.com/events", params=params)
@@ -120,25 +120,29 @@ if __name__ == '__main__':
     existing_tokens = load_existing_data(output_file)
     print(f"Found {len(existing_tokens)} existing token histories")
 
-    current_events = get_event_from_id(event_id="15802")
-    import pdb; pdb.set_trace()
+    for event_id in range(15412, 14000, -1):
+        print(event_id)
+        try:
+            current_events = get_event_from_id(event_id=str(event_id))
 
-    for idx, event in tqdm(enumerate(current_events), total=len(current_events)):
-        for idy, market in enumerate(event['markets']):
-            token_ids = json.loads(market['clobTokenIds'])
-            current_events[idx]['markets'][idy]['history'] = {}
-            import pdb; pdb.set_trace()
-            for token_id in token_ids:
-                if token_id in existing_tokens:
-                    print(f"Skipping existing token {token_id}")
-                    current_events[idx]['markets'][idy]['history'][token_id] = existing_tokens[token_id]
-                    continue
-                history = get_history_from_token_id(token_id)
-                if history == []:
-                    continue
-                current_events[idx]['markets'][idy]['history'][token_id] = history
-                existing_tokens[token_id] = history
+            for idx, event in tqdm(enumerate(current_events), total=len(current_events)):
+                for idy, market in enumerate(event['markets']):
+                    token_ids = json.loads(market['clobTokenIds'])
+                    current_events[idx]['markets'][idy]['history'] = {}
+                    for token_id in token_ids:
+                        if token_id in existing_tokens:
+                            print(f"Skipping existing token {token_id}")
+                            current_events[idx]['markets'][idy]['history'][token_id] = existing_tokens[token_id]
+                            continue
+                        history = get_history_from_token_id(token_id)
+                        if history == []:
+                            continue
+                        current_events[idx]['markets'][idy]['history'][token_id] = history
+                        existing_tokens[token_id] = history
 
-        # Write after each event is processed
-        with jsonlines.open(output_file, mode="w") as writer:
-            writer.write_all(current_events)
+                # Write after each event is processed
+                with jsonlines.open(output_file, mode="a") as writer:
+                    writer.write_all(current_events)
+        except Exception as e:
+            print(f"Error fetching event {event_id}: {e}")
+            continue
