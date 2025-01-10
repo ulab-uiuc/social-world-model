@@ -14,6 +14,9 @@ beartype = "*"
 pydantic = "^2.10.5"
 py-clob-client = "*"
 tqdm = "*"
+scholarly = "^1.7.11"
+serpapi = "^0.1.5"
+matplotlib = "^3.10.0"
 
 
 [tool.poetry.group.dev.dependencies]
