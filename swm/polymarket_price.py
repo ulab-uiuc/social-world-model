@@ -121,13 +121,11 @@ if __name__ == '__main__':
     print(f"Found {len(existing_tokens)} existing token histories")
 
     current_events = get_event_from_id(event_id="15802")
-    import pdb; pdb.set_trace()
 
     for idx, event in tqdm(enumerate(current_events), total=len(current_events)):
         for idy, market in enumerate(event['markets']):
             token_ids = json.loads(market['clobTokenIds'])
             current_events[idx]['markets'][idy]['history'] = {}
-            import pdb; pdb.set_trace()
             for token_id in token_ids:
                 if token_id in existing_tokens:
                     print(f"Skipping existing token {token_id}")
