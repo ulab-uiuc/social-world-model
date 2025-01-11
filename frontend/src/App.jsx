@@ -1,21 +1,11 @@
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route, useNavigate, useParams } from 'react-router-dom';
 import './App.css';
 
 function App() {
   const cards = [
     {
-      title: "Who will win the president election?",
-      options: [
-        { label: "A", percentage: "45%" },
-        { label: "B", percentage: "40%" },
-        { label: "C", percentage: "10%" },
-        { label: "D", percentage: "1%" },
-        { label: "E", percentage: "2%" },
-        { label: "F", percentage: "2%" },
-      ],
-    },
-
-
-    {
+      id: 1,
       title: "Who will win the president election?",
       options: [
         { label: "A", percentage: "45%" },
@@ -25,6 +15,7 @@ function App() {
       ],
     },
     {
+      id: 2,
       title: "Who will win the president election?",
       options: [
         { label: "A", percentage: "45%" },
@@ -34,56 +25,7 @@ function App() {
       ],
     },
     {
-      title: "Who will win the president election?",
-      options: [
-        { label: "A", percentage: "45%" },
-        { label: "B", percentage: "40%" },
-        { label: "C", percentage: "10%" },
-        { label: "D", percentage: "5%" },
-      ],
-    },
-
-    {
-      title: "Who will win the president election?",
-      options: [
-        { label: "A", percentage: "45%" },
-        { label: "B", percentage: "40%" },
-        { label: "C", percentage: "10%" },
-        { label: "D", percentage: "5%" },
-      ],
-    },
-
-    {
-      title: "Who will win the president election?",
-      options: [
-        { label: "A", percentage: "45%" },
-        { label: "B", percentage: "40%" },
-        { label: "C", percentage: "10%" },
-        { label: "D", percentage: "5%" },
-      ],
-    },
-
-    {
-      title: "Who will win the president election?",
-      options: [
-        { label: "A", percentage: "45%" },
-        { label: "B", percentage: "40%" },
-        { label: "C", percentage: "10%" },
-        { label: "D", percentage: "5%" },
-      ],
-    },
-
-    {
-      title: "Who will win the president election?",
-      options: [
-        { label: "A", percentage: "45%" },
-        { label: "B", percentage: "40%" },
-        { label: "C", percentage: "10%" },
-        { label: "D", percentage: "5%" },
-      ],
-    },
-
-    {
+      id: 3,
       title: "Who will win the president election?",
       options: [
         { label: "A", percentage: "45%" },
@@ -94,12 +36,27 @@ function App() {
     },
   ];
 
-  
+  return (
+    <Router>
+      <Routes>
+        <Route path="/" element={<CardList cards={cards} />} />
+        <Route path="/details/:id" element={<CardDetails cards={cards} />} />
+      </Routes>
+    </Router>
+  );
+}
+
+function CardList({ cards }) {
+  const navigate = useNavigate();
 
   return (
     <div className="card-container">
-      {cards.map((card, index) => (
-        <div className="card" key={index}>
+      {cards.map((card) => (
+        <div
+          className="card"
+          key={card.id}
+          onClick={() => navigate(`/details/${card.id}`)}
+        >
           <h3 className="card-title">{card.title}</h3>
           <div className="menu">
             {card.options.map((option, idx) => (
@@ -111,6 +68,31 @@ function App() {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+function CardDetails({ cards }) {
+  const { id } = useParams();
+  const card = cards.find((c) => c.id === parseInt(id));
+
+  if (!card) {
+    return <div>Card not found</div>;
+  }
+
+  return (
+    <div className="details-container">
+      <h2>{card.title}</h2>
+      <div className="options-table">
+        {card.options.map((option, idx) => (
+          <div className="option-row" key={idx}>
+            <span className="option-label">{option.label}</span>
+            <span className="option-percentage">{option.percentage}</span>
+            <button className="yes-button">Yes</button>
+            <button className="no-button">No</button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
