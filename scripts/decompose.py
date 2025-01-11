@@ -6,7 +6,7 @@ from typing import Dict, List
 
 from tqdm import tqdm
 
-from src.utils.model_prompting import model_prompting
+from swm.utils.model_prompting import model_prompting
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
