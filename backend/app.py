@@ -1,5 +1,6 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
+from flask import Response
 
 app = Flask(__name__)
 CORS(app)
@@ -50,8 +51,7 @@ CARDS = [
 ]
 
 @app.route('/api/cards', methods=['GET'])
-def get_cards():
-
+def get_cards() -> Response:
     return jsonify(CARDS)
 
 if __name__ == '__main__':
