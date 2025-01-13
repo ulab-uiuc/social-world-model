@@ -9,17 +9,23 @@ function App() {
   useEffect(() => {
     axios.get("http://127.0.0.1:5000/api/cards")
       .then((response) => {
-        setCards(response.data); 
+        setCards(response.data);
       })
       .catch((error) => console.error("Error fetching cards:", error));
   }, []);
 
 
+function CardList({ cards }) {
+  const navigate = useNavigate();
 
   return (
     <div className="card-container">
-      {cards.map((card, index) => (
-        <div className="card" key={index}>
+      {cards.map((card) => (
+        <div
+          className="card"
+          key={card.id}
+          onClick={() => navigate(`/details/${card.id}`)}
+        >
           <h3 className="card-title">{card.title}</h3>
           <div className="menu">
             {card.options.map((option, idx) => (
@@ -31,6 +37,31 @@ function App() {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+function CardDetails({ cards }) {
+  const { id } = useParams();
+  const card = cards.find((c) => c.id === parseInt(id));
+
+  if (!card) {
+    return <div>Card not found</div>;
+  }
+
+  return (
+    <div className="details-container">
+      <h2>{card.title}</h2>
+      <div className="options-table">
+        {card.options.map((option, idx) => (
+          <div className="option-row" key={idx}>
+            <span className="option-label">{option.label}</span>
+            <span className="option-percentage">{option.percentage}</span>
+            <button className="yes-button">Yes</button>
+            <button className="no-button">No</button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
