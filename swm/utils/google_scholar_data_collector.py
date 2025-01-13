@@ -9,16 +9,18 @@ from tqdm import tqdm
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 def retry_on_error(func, *args, retries=3, delay=2, **kwargs):
     for attempt in range(retries):
         try:
             return func(*args, **kwargs)
         except Exception as e:
-            logging.error(f"Attempt {attempt + 1} failed: {e}")
+            logging.error(f'Attempt {attempt + 1} failed: {e}')
             if attempt < retries - 1:
                 time.sleep(delay)
             else:
                 raise
+
 
 def get_scholar_id_from_citedby(data):
     citedby_url = data.get('citedby_url', '')
@@ -28,6 +30,7 @@ def get_scholar_id_from_citedby(data):
             id_and_rest = parts[1]
             return id_and_rest.split('&')[0]
     return None
+
 
 def get_citation_id(title):
     def search_title():
@@ -41,23 +44,25 @@ def get_citation_id(title):
 
     return retry_on_error(search_title)
 
+
 def fetch_citation_count(citation_id, year_from=None, year_to=None):
     def fetch_count():
         params = {
-            "engine": "google_scholar",
-            "cites": citation_id,
-            "api_key": "62761aa86b00accf57227b5b644bede3059bcb4593a66fb6387501d7a7aeea9b"
+            'engine': 'google_scholar',
+            'cites': citation_id,
+            'api_key': '62761aa86b00accf57227b5b644bede3059bcb4593a66fb6387501d7a7aeea9b',
         }
         if year_from:
-            params["as_ylo"] = year_from
+            params['as_ylo'] = year_from
         if year_to:
-            params["as_yhi"] = year_to
+            params['as_yhi'] = year_to
 
         search = GoogleSearch(params)
         results = search.get_dict()
-        return results.get("search_information", {}).get("total_results")
+        return results.get('search_information', {}).get('total_results')
 
     return retry_on_error(fetch_count)
+
 
 def get_paper_data(title):
     try:
@@ -73,17 +78,17 @@ def get_paper_data(title):
                 'citation_id': citation_id,
                 'total_citations': total_citations,
                 'citations': citations,
-                'raw_data': pub
+                'raw_data': pub,
             }
         else:
-            logger.warning("Failed to retrieve Citation ID.")
+            logger.warning('Failed to retrieve Citation ID.')
             return None
     except Exception as e:
-        logger.error(f"An error occurred: {e}")
+        logger.error(f'An error occurred: {e}')
         return None
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     with open('../data/high_impact_paper_bench.json', 'r') as f:
         papers = json.load(f)
 
@@ -100,4 +105,4 @@ if __name__ == "__main__":
             with open('../data/all_paper_data.json', 'w') as f:
                 json.dump(all_paper_data, f)
         else:
-            print("Failed to retrieve paper data.")
+            print('Failed to retrieve paper data.')
