@@ -1,40 +1,18 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useParams } from 'react-router-dom';
 import './App.css';
+import axios from "axios";
 
 function App() {
-  const cards = [
-    {
-      id: 1,
-      title: "Who will win the president election?",
-      options: [
-        { label: "A", percentage: "45%" },
-        { label: "B", percentage: "40%" },
-        { label: "C", percentage: "10%" },
-        { label: "D", percentage: "5%" },
-      ],
-    },
-    {
-      id: 2,
-      title: "Who will win the president election?",
-      options: [
-        { label: "A", percentage: "45%" },
-        { label: "B", percentage: "40%" },
-        { label: "C", percentage: "10%" },
-        { label: "D", percentage: "5%" },
-      ],
-    },
-    {
-      id: 3,
-      title: "Who will win the president election?",
-      options: [
-        { label: "A", percentage: "45%" },
-        { label: "B", percentage: "40%" },
-        { label: "C", percentage: "10%" },
-        { label: "D", percentage: "5%" },
-      ],
-    },
-  ];
+  const [cards, setCards] = useState([]);
+
+  useEffect(() => {
+    axios.get("http://127.0.0.1:5000/api/cards")
+      .then((response) => {
+        setCards(response.data);
+      })
+      .catch((error) => console.error("Error fetching cards:", error));
+  }, []);
 
   return (
     <Router>
