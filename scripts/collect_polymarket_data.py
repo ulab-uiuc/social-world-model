@@ -1,4 +1,4 @@
-from swm.polymarket_price import collect_histories
+from swm.utils.polymarket_data_collector import collect_histories
 
 
 def main():
