@@ -28,6 +28,8 @@ types-setuptools = "*"
 pytest = "*"
 pytest-asyncio = "*"
 
+[tool.poetry.extras]
+backend = ["uvicorn", "fastapi", "flask", "flask-cors"]
 
 [build-system]
 requires = ["poetry-core"]
