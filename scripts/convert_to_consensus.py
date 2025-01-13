@@ -1,6 +1,7 @@
 import jsonlines
 
-from swm.utils.converter import convert_polymarket_event_into_consensus
+from swm.data import Consensus
+from swm.utils.converter import find_action_in_states, find_state_action_pairs
 
 """
 with jsonlines.open('data_with_offset_0112_with_history.jsonl') as reader:
@@ -25,7 +26,9 @@ with jsonlines.open('data_with_offset_0112_merged_with_history.jsonl', 'w') as w
         writer.write(data)
 """
 
-with jsonlines.open('data_with_offset_0112_merged_with_history.jsonl') as reader:
+
+"""
+with jsonlines.open('../data/data_with_offset_0112_merged_with_history.jsonl') as reader:
     dataset = list(reader)
 
 
@@ -41,7 +44,6 @@ for data in dataset:
         tot_market_cnt += 1
         history = market['history']
         if len(history) > 0:
-            print(len(history))
             valid_market_cnt += 1
             if closed_or_not:
                 valid_and_closed_market_cnt += 1
@@ -49,5 +51,25 @@ for data in dataset:
 print(tot_market_cnt)
 print(valid_market_cnt)
 print(valid_and_closed_market_cnt)
+print(len(dataset))
 
-consensus = convert_polymarket_event_into_consensus(dataset[0])
+for data in tqdm(dataset):
+    consensuses = convert_polymarket_event_into_consensuses(data)
+    with jsonlines.open('../data/consensus_data.jsonl', 'a') as writer:
+        for consensus in consensuses:
+            consensus_json = consensus.model_dump()
+            writer.write(consensus_json)
+"""
+
+with jsonlines.open('../data/consensus_data.jsonl') as reader:
+    dataset = list(reader)
+
+consensuses = []
+for data in dataset:
+    consensus = Consensus.from_dict(data)
+    consensuses.append(consensus)
+
+actions = find_action_in_states(consensuses)
+
+state_action_pairs = find_state_action_pairs(actions=actions, consensuses=consensuses)
+print(len(state_action_pairs))
