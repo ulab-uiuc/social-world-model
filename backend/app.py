@@ -17,7 +17,7 @@ def get_cards() -> Response:
         cards = list(collection.find({}, {"_id": 0}))
         
         for card in cards:
-            options = card.get("options", [])
+            options = card.get("options", []) 
             total_bets = sum(option.get("bets", 0) for option in options)
 
             for option in options:
