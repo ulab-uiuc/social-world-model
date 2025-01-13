@@ -1,4 +1,5 @@
 import jsonlines
+
 from swm.utils.converter import convert_polymarket_event_into_consensus
 
 '''
@@ -50,4 +51,3 @@ print(valid_market_cnt)
 print(valid_and_closed_market_cnt)
 
 consensus = convert_polymarket_event_into_consensus(dataset[0])
-import pdb; pdb.set_trace()

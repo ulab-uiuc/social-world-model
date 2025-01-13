@@ -1,6 +1,8 @@
 
 import torch
 import torch.nn as nn
+
+
 class AttentionModel(nn.Module): # Self-attention model
     def __init__(self, input_dim, hidden_dim, output_dim, max_len):
         super(AttentionModel, self).__init__()
@@ -25,12 +27,12 @@ class SelfAttention_Layer(nn.Module):
     def __init__(self, input_dim, hidden_dim):
         super(SelfAttention_Layer, self).__init__()
         self.input_dim = input_dim
-        self.query_transform = nn.Linear(input_dim, hidden_dim) 
-        self.key_transform = nn.Linear(input_dim, hidden_dim) 
+        self.query_transform = nn.Linear(input_dim, hidden_dim)
+        self.key_transform = nn.Linear(input_dim, hidden_dim)
         self.value_transform = nn.Linear(input_dim, hidden_dim)
         self.softmax = nn.Softmax(dim=2)
-    
-    def forward(self, input): 
+
+    def forward(self, input):
         query_matrix = self.query_transform(input)
         key_matrix = self.key_transform(input)
         value_matrix = self.value_transform(input)
@@ -47,20 +49,20 @@ class LSTMModel(nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
         # Call the super class constructor
         super(LSTMModel, self).__init__()
-        
+
         # Store the hidden layer size
         self.hidden_size = hidden_size
-        
+
         # Define the LSTM layer
         # input_size: The number of expected features in the input (e.g., sequence length)
         # hidden_size: The number of features in the hidden state
         # batch_first=True ensures that input tensors are structured as (batch_size, seq_len, feature_size)
         self.lstm = nn.LSTM(input_size, hidden_size, batch_first=True)
-        
+
         # Define the first fully connected layer
         # It reduces the dimensionality from hidden_size to half (hidden_size // 2)
         self.fc1 = nn.Linear(hidden_size, hidden_size // 2)
-        
+
         # Define the second fully connected layer
         # It reduces the dimensionality further to the output size
         self.fc2 = nn.Linear(hidden_size // 2, output_size)
@@ -69,16 +71,16 @@ class LSTMModel(nn.Module):
         # Pass the input sequence through the LSTM layer
         # lstm_out contains the output from the LSTM for each time step
         lstm_out, _ = self.lstm(x)
-        
+
         # We are interested only in the output of the last time step
         lstm_out = lstm_out
-        
+
         # Pass the output through the first fully connected layer (fc1) and apply ReLU activation
         out = torch.relu(self.fc1(lstm_out))
-        
+
         # Pass the output through the second fully connected layer (fc2) and apply Sigmoid activation
         # Sigmoid squashes the output between 0 and 1, which is useful for binary classification
         out = (self.fc2(out))
-        
+
         # Return the final output
         return out

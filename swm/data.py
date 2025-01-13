@@ -1,8 +1,10 @@
-from typing import List, Dict, Union, Optional
-from pydantic import BaseModel, ConfigDict, Field
+from typing import Dict, Optional, Union
+
+from pydantic import BaseModel, Field
+
 
 class Consensus(BaseModel):
-    question: str 
+    question: str
     answer: str
     is_outcome: Optional[bool] = Field(default=None)
     discrption: Optional[str] = Field(default=None)

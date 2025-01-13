@@ -1,5 +1,7 @@
 import numpy as np
 import torch
+
+
 # Self-defined data loader
 class DataLoader(object):
     def __init__(self, x, y, batch_size):

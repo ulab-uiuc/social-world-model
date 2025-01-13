@@ -2,13 +2,15 @@ import datetime
 import json
 import os
 import time
-from typing import Dict, List, Union, Optional, Set
 from concurrent.futures import ThreadPoolExecutor
+from typing import Dict, List, Optional, Set, Union
+
 import httpx
 import jsonlines
 import matplotlib.pyplot as plt
 from py_clob_client.client import ClobClient
 from tqdm import tqdm
+
 
 def visualize_price_history(
         history: List[Dict[str, Union[int, float]]],
@@ -151,18 +153,18 @@ class HistoryCollector:
     def process_event(self, event: Dict) -> Dict:
         """Process a single event by collecting history for all its markets"""
         modified_event = event.copy()
-        
+
         for market in modified_event.get('markets', []):
             token_ids = json.loads(market.get('clobTokenIds', '[]'))
             start_ts = 1
             market['history'] = {}
-            
+
             with ThreadPoolExecutor(max_workers=3) as executor:
                 token_futures = {
                     token_id: executor.submit(get_history_from_token_id, token_id, 60, 5, start_ts)
                     for token_id in token_ids
                 }
-                
+
                 for token_id, future in token_futures.items():
                     if history := future.result():
                         market['history'][token_id] = history
@@ -173,7 +175,7 @@ class HistoryCollector:
         """Read events and collect histories for all markets, skipping already processed events"""
         processed_count = 0
         skipped_count = 0
-        
+
         with jsonlines.open(self.input_file, 'r') as reader:
             for event in tqdm(reader, desc="Collecting market histories"):
                 try:
@@ -189,17 +191,17 @@ class HistoryCollector:
                     self.event_buffer.append(processed_event)
                     self.processed_events.add(event_id)
                     processed_count += 1
-                    
+
                     if len(self.event_buffer) >= self.cache_size:
                         self._write_buffer()
                         print(f"Processed {processed_count} new events")
-                
+
                 except Exception as e:
                     print(f"Error processing event {event.get('id', 'unknown')}: {e}")
                     continue
-        
+
         self._write_buffer()
-        print(f"Processing complete:")
+        print("Processing complete:")
         print(f"- Total new events processed: {processed_count}")
         print(f"- Total events skipped: {skipped_count}")
 
@@ -207,19 +209,3 @@ def collect_histories(input_file: str, output_file: str):
     """Convenience function to collect histories"""
     collector = HistoryCollector(input_file, output_file)
     collector.collect_histories()
-
-def main():
-    # Example usage
-    events_file = "data_with_offset_0112.jsonl"
-    final_file = "data_with_offset_0112_merged_with_history.jsonl"
-    
-    # Step 1: Collect events
-    #print("Step 1: Collecting events...")
-    #collect_events(0, 15000, events_file)
-    
-    # Step 2: Collect histories
-    #print("\nStep 2: Collecting market histories...")
-    collect_histories(events_file, final_file)
-
-if __name__ == '__main__':
-    main()

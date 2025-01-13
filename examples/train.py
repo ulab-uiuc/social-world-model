@@ -1,15 +1,19 @@
-import numpy as np
 import sys
+
+import numpy as np
+
 sys.path.append("..")
-import torch
-from swm.timeseries.trainer import Trainer
-from swm.timeseries.util import DataLoader
-import matplotlib.pyplot as plt
 import argparse
 import json
-from swm.timeseries.datasets import SeriesDataset
-from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
+
+import matplotlib.pyplot as plt
+import torch
 import tqdm
+from torch.utils.data import RandomSampler, SequentialSampler
+
+from swm.timeseries.datasets import SeriesDataset
+from swm.timeseries.trainer import Trainer
+from swm.timeseries.util import DataLoader
 
 # Hyper-parameters
 parser = argparse.ArgumentParser()
@@ -36,9 +40,11 @@ if args.dataset == "polymarket":
         for line in fcc_file:
             obj = json.loads(line)
             for m in obj['markets']:
-                if len(m['history'].keys()) == 0: continue
+                if len(m['history'].keys()) == 0:
+                    continue
                 k = list(m['history'].keys())[-1]
-                if m['history'][k] is None or len(m['history'][k]) <= 5: continue
+                if m['history'][k] is None or len(m['history'][k]) <= 5:
+                    continue
                 newlist = sorted(m['history'][k], key=lambda d: d['t'])
                 data.append([e['p'] for e in newlist])
 else:
@@ -49,7 +55,7 @@ else:
     for k in fcc_data.keys():
         data.append(list(fcc_data[k]['citations'].values()))
 
-    
+
 
 train_dataset = SeriesDataset(args, data, data_type='train')
 eval_dataset = SeriesDataset(args, data, data_type='valid')
@@ -68,7 +74,7 @@ device = 'cuda:0'
 device = torch.device(device)
 
 # Intialize the model and training process
-trainer = Trainer(hidden_dim = args.hidden_dim, lr = args.lr, device = device, max_len = args.max_len, model_name = args.model_name)    
+trainer = Trainer(hidden_dim = args.hidden_dim, lr = args.lr, device = device, max_len = args.max_len, model_name = args.model_name)
 
 train_loss = []
 test_loss = []

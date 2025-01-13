@@ -1,7 +1,10 @@
 
-from swm.timeseries.models import AttentionModel, LSTMModel
 import torch.optim as optim
+
+from swm.timeseries.models import AttentionModel, LSTMModel
 from swm.timeseries.util import mse, rmse
+
+
 class Trainer():
     def __init__(self, hidden_dim, lr, device, max_len, model_name):
         if model_name == "LSTM":

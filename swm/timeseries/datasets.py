@@ -2,6 +2,7 @@
 import torch
 from torch.utils.data import Dataset
 
+
 class SeriesDataset(Dataset):
 
     def __init__(self, args, seq, data_type='train'):
@@ -47,7 +48,7 @@ class SeriesDataset(Dataset):
         assert len(target_pos) == self.max_len
 
         cur_tensors = (
-            torch.tensor(seq_id, dtype=torch.long),  
+            torch.tensor(seq_id, dtype=torch.long),
             torch.tensor(input_ids, dtype=torch.float32),
             torch.tensor(target_pos, dtype=torch.float32),
             torch.tensor(answer, dtype=torch.float32),
@@ -57,5 +58,3 @@ class SeriesDataset(Dataset):
 
     def __len__(self):
         return len(self.seq)
-
-
