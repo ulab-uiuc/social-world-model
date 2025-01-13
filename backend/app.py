@@ -3,6 +3,7 @@ from typing import Any, Dict, List
 from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
 from pymongo import MongoClient
+from pymongo import MongoClient
 
 app = Flask(__name__)
 CORS(app)
