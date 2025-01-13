@@ -2,7 +2,7 @@ import jsonlines
 
 from swm.utils.converter import convert_polymarket_event_into_consensus
 
-'''
+"""
 with jsonlines.open('data_with_offset_0112_with_history.jsonl') as reader:
     dataset_1 = list(reader)
 
@@ -23,7 +23,7 @@ merged_dataset.sort(key=lambda x: x['id'])
 with jsonlines.open('data_with_offset_0112_merged_with_history.jsonl', 'w') as writer:
     for data in merged_dataset:
         writer.write(data)
-'''
+"""
 
 with jsonlines.open('data_with_offset_0112_merged_with_history.jsonl') as reader:
     dataset = list(reader)

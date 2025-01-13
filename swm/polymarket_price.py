@@ -13,10 +13,10 @@ from tqdm import tqdm
 
 
 def visualize_price_history(
-        history: List[Dict[str, Union[int, float]]],
-        title: str = 'Price History',
-        save_path: str = None
-    ):
+    history: List[Dict[str, Union[int, float]]],
+    title: str = 'Price History',
+    save_path: str = None,
+):
     timestamps = [item['t'] for item in history]
     prices = [item['p'] for item in history]
     datetimes = [datetime.datetime.fromtimestamp(ts) for ts in timestamps]
@@ -36,13 +36,21 @@ def visualize_price_history(
 
     plt.close()
 
-def get_history_from_token_id(token_id: str, fidelity: int = 60, max_retries: int = 5, start_ts: Optional[int] = None) -> List[Dict[str, Union[int, float]]]:
-    host = "https://clob.polymarket.com"
-    key = os.getenv("PK")
+
+def get_history_from_token_id(
+    token_id: str,
+    fidelity: int = 60,
+    max_retries: int = 5,
+    start_ts: Optional[int] = None,
+) -> List[Dict[str, Union[int, float]]]:
+    host = 'https://clob.polymarket.com'
+    key = os.getenv('PK')
     chain_id = 137
 
     if not key:
-        raise ValueError("Private key not found. Please set PK in the environment variables.")
+        raise ValueError(
+            'Private key not found. Please set PK in the environment variables.'
+        )
 
     client = ClobClient(host, key=key, chain_id=chain_id)
 
@@ -52,7 +60,7 @@ def get_history_from_token_id(token_id: str, fidelity: int = 60, max_retries: in
                 price_data = client.get_price_history_for_interval(
                     token_id=token_id,
                     fidelity=fidelity,
-                    interval="max",
+                    interval='max',
                 )
             else:
                 price_data = client.get_price_history_with_start_ts_only(
@@ -63,23 +71,28 @@ def get_history_from_token_id(token_id: str, fidelity: int = 60, max_retries: in
             return price_data['history']
 
         except Exception as e:
-            wait_time = (2 ** attempt)
-            print(f"Attempt {attempt + 1}/{max_retries} failed for token {token_id}: {e}")
-            print(f"Waiting {wait_time} seconds before retry...")
+            wait_time = 2**attempt
+            print(
+                f'Attempt {attempt + 1}/{max_retries} failed for token {token_id}: {e}'
+            )
+            print(f'Waiting {wait_time} seconds before retry...')
 
             if attempt < max_retries - 1:
                 time.sleep(wait_time)
             else:
-                print(f"All {max_retries} attempts failed for token {token_id}")
+                print(f'All {max_retries} attempts failed for token {token_id}')
                 return []
 
 
 def get_event_from_offset(offset: str | int) -> dict:
     """Fetch events from the API with given offset"""
-    response = httpx.get(f"https://gamma-api.polymarket.com/events?offset={offset}&limit=100")
+    response = httpx.get(
+        f'https://gamma-api.polymarket.com/events?offset={offset}&limit=100'
+    )
     if response.status_code == 200:
         return response.json()
-    raise Exception(f"Failed to fetch events: HTTP {response.status_code}")
+    raise Exception(f'Failed to fetch events: HTTP {response.status_code}')
+
 
 class EventCollector:
     def __init__(self, output_file: str):
@@ -92,35 +105,38 @@ class EventCollector:
         if not self.event_buffer:
             return
 
-        mode = "a" if os.path.exists(self.output_file) else "w"
+        mode = 'a' if os.path.exists(self.output_file) else 'w'
         with jsonlines.open(self.output_file, mode=mode) as writer:
             writer.write_all(self.event_buffer)
         self.event_buffer = []
 
     def collect_events(self, start_offset: int, end_offset: int, step: int = 100):
         """Collect events from API within the specified offset range"""
-        for offset in tqdm(range(start_offset, end_offset, step), desc="Collecting events"):
+        for offset in tqdm(
+            range(start_offset, end_offset, step), desc='Collecting events'
+        ):
             try:
                 events = get_event_from_offset(offset)
                 self.event_buffer.extend(events)
 
                 if len(self.event_buffer) >= self.cache_size:
                     self._write_buffer()
-                    print(f"Collected and saved events up to offset {offset}")
+                    print(f'Collected and saved events up to offset {offset}')
 
             except Exception as e:
-                print(f"Error collecting events at offset {offset}: {e}")
+                print(f'Error collecting events at offset {offset}: {e}')
                 continue
 
         # Write any remaining events
         self._write_buffer()
-        print(f"Completed collecting events from offset {start_offset} to {end_offset}")
+        print(f'Completed collecting events from offset {start_offset} to {end_offset}')
 
 
 def collect_events(start_offset: int, end_offset: int, output_file: str):
     """Convenience function to collect events"""
     collector = EventCollector(output_file)
     collector.collect_events(start_offset, end_offset)
+
 
 class HistoryCollector:
     def __init__(self, input_file: str, output_file: str):
@@ -145,7 +161,7 @@ class HistoryCollector:
         if not self.event_buffer:
             return
 
-        mode = "a" if os.path.exists(self.output_file) else "w"
+        mode = 'a' if os.path.exists(self.output_file) else 'w'
         with jsonlines.open(self.output_file, mode=mode) as writer:
             writer.write_all(self.event_buffer)
         self.event_buffer = []
@@ -161,7 +177,9 @@ class HistoryCollector:
 
             with ThreadPoolExecutor(max_workers=3) as executor:
                 token_futures = {
-                    token_id: executor.submit(get_history_from_token_id, token_id, 60, 5, start_ts)
+                    token_id: executor.submit(
+                        get_history_from_token_id, token_id, 60, 5, start_ts
+                    )
                     for token_id in token_ids
                 }
 
@@ -177,14 +195,16 @@ class HistoryCollector:
         skipped_count = 0
 
         with jsonlines.open(self.input_file, 'r') as reader:
-            for event in tqdm(reader, desc="Collecting market histories"):
+            for event in tqdm(reader, desc='Collecting market histories'):
                 try:
                     # Skip if event was already processed
                     event_id = str(event.get('id'))
                     if event_id in self.processed_events:
                         skipped_count += 1
-                        if skipped_count % 100 == 0:  # Log progress every 100 skipped events
-                            print(f"Skipped {skipped_count} already processed events")
+                        if (
+                            skipped_count % 100 == 0
+                        ):  # Log progress every 100 skipped events
+                            print(f'Skipped {skipped_count} already processed events')
                         continue
 
                     processed_event = self.process_event(event)
@@ -194,16 +214,17 @@ class HistoryCollector:
 
                     if len(self.event_buffer) >= self.cache_size:
                         self._write_buffer()
-                        print(f"Processed {processed_count} new events")
+                        print(f'Processed {processed_count} new events')
 
                 except Exception as e:
                     print(f"Error processing event {event.get('id', 'unknown')}: {e}")
                     continue
 
         self._write_buffer()
-        print("Processing complete:")
-        print(f"- Total new events processed: {processed_count}")
-        print(f"- Total events skipped: {skipped_count}")
+        print('Processing complete:')
+        print(f'- Total new events processed: {processed_count}')
+        print(f'- Total events skipped: {skipped_count}')
+
 
 def collect_histories(input_file: str, output_file: str):
     """Convenience function to collect histories"""

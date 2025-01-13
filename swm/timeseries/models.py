@@ -1,25 +1,26 @@
-
 import torch
 import torch.nn as nn
 
 
-class AttentionModel(nn.Module): # Self-attention model
+class AttentionModel(nn.Module):  # Self-attention model
     def __init__(self, input_dim, hidden_dim, output_dim, max_len):
         super(AttentionModel, self).__init__()
         self.hidden_dim = hidden_dim
         self.mlp_begin = nn.Linear(input_dim, hidden_dim)
         self.max_len = max_len
-        self.position_embeddings = nn.Embedding(max_len, hidden_dim) # Positional encoding for each time step
+        self.position_embeddings = nn.Embedding(
+            max_len, hidden_dim
+        )  # Positional encoding for each time step
         self.self_attn = SelfAttention_Layer(hidden_dim, hidden_dim)
-        self.mlp1 = nn.Linear(hidden_dim, hidden_dim//2)
-        self.mlp2 = nn.Linear(hidden_dim//2, output_dim)
+        self.mlp1 = nn.Linear(hidden_dim, hidden_dim // 2)
+        self.mlp2 = nn.Linear(hidden_dim // 2, output_dim)
 
     def forward(self, input):
         position_ids = torch.arange(self.max_len, dtype=torch.long, device=input.device)
         input = self.mlp_begin(input) + self.position_embeddings(position_ids)
         attn_output = self.self_attn(input)
         hidden_out = torch.relu(self.mlp1((attn_output)))
-        hidden_out = (self.mlp2(hidden_out))
+        hidden_out = self.mlp2(hidden_out)
         return hidden_out
 
 
@@ -36,11 +37,14 @@ class SelfAttention_Layer(nn.Module):
         query_matrix = self.query_transform(input)
         key_matrix = self.key_transform(input)
         value_matrix = self.value_transform(input)
-        score = torch.bmm(query_matrix, key_matrix.transpose(1, 2))/(self.input_dim**0.5) # Caculate the attention score
-        softmax_score = self.softmax(score) # Smooth the score
-        weighted = torch.bmm(softmax_score, value_matrix) # Weighted average all time steps by score
+        score = torch.bmm(query_matrix, key_matrix.transpose(1, 2)) / (
+            self.input_dim**0.5
+        )  # Caculate the attention score
+        softmax_score = self.softmax(score)  # Smooth the score
+        weighted = torch.bmm(
+            softmax_score, value_matrix
+        )  # Weighted average all time steps by score
         return weighted
-
 
 
 # Define the LSTM model class, inheriting from nn.Module
@@ -80,7 +84,7 @@ class LSTMModel(nn.Module):
 
         # Pass the output through the second fully connected layer (fc2) and apply Sigmoid activation
         # Sigmoid squashes the output between 0 and 1, which is useful for binary classification
-        out = (self.fc2(out))
+        out = self.fc2(out)
 
         # Return the final output
         return out

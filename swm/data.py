@@ -11,6 +11,7 @@ class Consensus(BaseModel):
     category: Optional[str] = Field(default=None)
     time_series: Optional[Dict[str, Union[int, float]]] = Field(default=None)
 
+
 class Action(BaseModel):
     question: str
     answer: str
