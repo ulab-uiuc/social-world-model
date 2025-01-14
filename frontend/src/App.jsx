@@ -18,7 +18,7 @@ function App() {
     <Router>
       <Routes>
         <Route path="/" element={<CardList cards={cards} />} />
-        <Route path="/details/:id" element={<CardDetails cards={cards} />} />
+        <Route path="/details/:card_id" element={<CardDetails cards={cards} />} />
       </Routes>
     </Router>
   );
@@ -32,15 +32,15 @@ function CardList({ cards }) {
       {cards.map((card) => (
         <div
           className="card"
-          key={card.id}
-          onClick={() => navigate(`/details/${card.id}`)}
+          key={card.card_id}
+          onClick={() => navigate(`/details/${card.card_id}`)}
         >
-          <h3 className="card-title">{card.title}</h3>
+          <h3 className="card-title">{card.question}</h3>
           <div className="menu">
             {card.options.map((option, idx) => (
               <div className="menu-item" key={idx}>
-                <span className="option-label">{option.label}</span>
-                <span className="option-percentage">{option.percentage}</span>
+                <span className="option-label">{option.option}</span>
+                <span className="option-percentage">{option.percentage}%</span>
               </div>
             ))}
           </div>
@@ -51,8 +51,8 @@ function CardList({ cards }) {
 }
 
 function CardDetails({ cards }) {
-  const { id } = useParams();
-  const card = cards.find((c) => c.id === parseInt(id));
+  const { card_id } = useParams();
+  const card = cards.find((c) => c.card_id === card_id);
 
   if (!card) {
     return <div>Card not found</div>;
@@ -60,12 +60,12 @@ function CardDetails({ cards }) {
 
   return (
     <div className="details-container">
-      <h2>{card.title}</h2>
+      <h2>{card.question}</h2>
       <div className="options-table">
         {card.options.map((option, idx) => (
           <div className="option-row" key={idx}>
-            <span className="option-label">{option.label}</span>
-            <span className="option-percentage">{option.percentage}</span>
+            <span className="option-label">{option.option}</span>
+            <span className="option-percentage">{option.percentage}%</span>
             <button className="yes-button">Yes</button>
             <button className="no-button">No</button>
           </div>
