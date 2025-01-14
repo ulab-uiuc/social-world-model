@@ -17,6 +17,7 @@ tqdm = "*"
 scholarly = "^1.7.11"
 serpapi = "^0.1.5"
 matplotlib = "*"
+pymongo = "^4.10.1"
 
 
 [tool.poetry.group.dev.dependencies]
