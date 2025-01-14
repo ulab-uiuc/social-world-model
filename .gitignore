@@ -164,3 +164,4 @@ cython_debug/
 **/*.jsonl
 !**/.gitkeep
 !**/package.json
+!**/package-lock.json
