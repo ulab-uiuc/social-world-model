@@ -31,7 +31,6 @@ with jsonlines.open('data_with_offset_0112_merged_with_history.jsonl', 'w') as w
 with jsonlines.open('../data/data_with_offset_0112_merged_with_history.jsonl') as reader:
     dataset = list(reader)
 
-
 valid_market_cnt = 0
 valid_and_closed_market_cnt = 0
 tot_market_cnt = 0
