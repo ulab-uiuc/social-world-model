@@ -61,19 +61,19 @@ function CardDetails({ cards }) {
   const { card_id } = useParams();
   const card = cards.find((c) => c.card_id === card_id);
 
-  const [selectedOption, setSelectedOption] = useState(null); // 当前选中的选项
-  const [amount, setAmount] = useState(0); // 输入的金额
+  const [selectedOption, setSelectedOption] = useState(null);
+  const [amount, setAmount] = useState(0);
 
   if (!card) {
     return <div>Card not found</div>;
   }
 
   const handleOptionClick = (option) => {
-    setSelectedOption(option); // 更新选中的选项
+    setSelectedOption(option);
   };
 
   const handleAmountChange = (e) => {
-    setAmount(e.target.value); // 更新金额
+    setAmount(e.target.value);
   };
 
   return (
