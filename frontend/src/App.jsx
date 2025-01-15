@@ -99,26 +99,15 @@ function CardDetails({ cards }) {
 
 
       <div className="right-card">
-        <h2>Trade Option</h2>
+        <h2>Vote Option</h2>
         {selectedOption ? (
-          <div className="trade-module">
+          <div className="vote-module">
             <p>Selected: <strong>{selectedOption.option}</strong></p>
             <p>Chance: <strong>{selectedOption.percentage}%</strong></p>
-            <div className="amount-input">
-              <label htmlFor="amount">Amount: </label>
-              <input
-                type="number"
-                id="amount"
-                value={amount}
-                onChange={handleAmountChange}
-                min="0"
-              />
-            </div>
-            <button className="trade-button">Buy</button>
-            <button className="trade-button">Sell</button>
+            <button className="vote-button">Vote</button>
           </div>
         ) : (
-          <p>Please select an option to trade.</p>
+          <p>Please select an option to vote.</p>
         )}
       </div>
     </div>

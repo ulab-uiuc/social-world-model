@@ -272,10 +272,10 @@ body {
   width: 100px;
 }
 
-.trade-button {
-  margin-top: 10px;
+.vote-button {
+  margin-top: 40px;
   padding: 10px;
-  width: 100%;
+  width: 80%;
   border: none;
   border-radius: 4px;
   background-color: #28a745;
@@ -284,15 +284,15 @@ body {
   cursor: pointer;
 }
 
-.trade-button:hover {
+.vote-button:hover {
   background-color: #2ea046;
 }
 
-.trade-button + .trade-button {
+.vote-button + .vote-button {
   background-color: #ea4353;
   margin-top: 10px;
 }
 
-.trade-button + .trade-button:hover {
+.vote-button + .vote-button:hover {
   background-color: #c82333;
 }
