@@ -1,6 +1,6 @@
 from typing import Any
 
-from flask import Flask, Response, jsonify
+from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
 from pymongo import MongoClient
 
@@ -33,6 +33,28 @@ def get_cards() -> Response:
         response = jsonify(cards)
         response.status_code = 200
         return response
+    except Exception as e:
+        error_response = jsonify({'error': str(e)})
+        error_response.status_code = 500
+        return error_response
+
+
+@app.route('/api/vote', methods=['POST'])
+def vote():
+    try:
+        data = request.json
+        card_id = data['card_id']
+        option = data['option']
+
+        result = collection.update_one(
+            {'card_id': card_id, 'options.option': option},
+            {'$inc': {'options.$.bets': 1}},
+        )
+
+        if result.matched_count == 0:
+            return jsonify({'error': 'Card or option not found'}), 404
+
+        return jsonify({'message': 'Vote recorded successfully'}), 200
     except Exception as e:
         error_response = jsonify({'error': str(e)})
         error_response.status_code = 500
