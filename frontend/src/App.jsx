@@ -22,10 +22,10 @@ function App() {
           <h1 className="app-title">Openmarket</h1>
           <div className="horizontal-bar"></div>
         </header>
-      <Routes>
-        <Route path="/" element={<CardList cards={cards} />} />
-        <Route path="/details/:card_id" element={<CardDetails cards={cards} />} />
-      </Routes>
+        <Routes>
+          <Route path="/" element={<CardList cards={cards} />} />
+          <Route path="/details/:card_id" element={<CardDetails cards={cards} />} />
+        </Routes>
       </div>
     </Router>
   );
@@ -56,6 +56,7 @@ function CardList({ cards }) {
     </div>
   );
 }
+
 function CardDetails({ cards }) {
   const { card_id } = useParams();
   const card = cards.find((c) => c.card_id === card_id);
@@ -69,14 +70,14 @@ function CardDetails({ cards }) {
       card_id: card.card_id,
       option: selectedOption.option,
     })
-    .then((response) => {
-      alert("Vote recorded successfully!");
-      window.location.reload();
-    })
-    .catch((error) => {
-      console.error("Error recording vote:", error);
-      alert("Failed to record vote. Please try again.");
-    });
+      .then(() => {
+        alert("Vote recorded successfully!");
+        window.location.reload();
+      })
+      .catch((error) => {
+        console.error("Error recording vote:", error);
+        alert("Failed to record vote. Please try again.");
+      });
   };
 
   if (!card) {
