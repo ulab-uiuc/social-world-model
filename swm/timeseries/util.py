@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 
+
 # Self-defined data loader
 class DataLoader(object):
     def __init__(self, x, y, batch_size):
@@ -44,6 +45,7 @@ class DataLoader(object):
 def mse(output, label):
     mse_value = (output - label) ** 2
     return torch.mean(mse_value)
+
 
 # RMSE
 def rmse(output, label):
