@@ -13,7 +13,7 @@ def parse_args():
         '--input_file_path', type=str, default='../data/raw/polymarket_data_raw.jsonl'
     )
     parser.add_argument('--output_dir', type=str, default='../data/processed')
-    parser.add_argument('--prob_threshold', type=float, default=0.5)
+    parser.add_argument('--prob_threshold', type=float, default=0.25)
     parser.add_argument('--time_threshold', type=float, default=0.05)
     return parser.parse_args()
 
@@ -33,14 +33,27 @@ def main():
     for event_data in tqdm(dataset):
         processed_data = converter.convert(event_data)
         processed_dataset += processed_data
-        if len(processed_dataset) > 10:
-            break
 
     with jsonlines.open(
         Path(args.output_dir) / 'polymarket_data_processed.jsonl', 'w'
     ) as writer:
         for data in processed_dataset:
             writer.write(data.model_dump())
+
+    processed_dataset_with_categories = {}
+    for data in processed_dataset:
+        category = data['category'][0]
+        if category not in processed_dataset_with_categories:
+            processed_dataset_with_categories[category] = []
+        processed_dataset_with_categories[category].append(data)
+
+    for category, data in processed_dataset_with_categories.items():
+        print(f'Processing category: {category}, num events: {len(data)}')
+        with jsonlines.open(
+            Path(args.output_dir) / f'polymarket_data_processed_{category}.jsonl', 'w'
+        ) as writer:
+            for d in data:
+                writer.write(d.model_dump())
 
 
 if __name__ == '__main__':

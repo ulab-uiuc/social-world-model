@@ -35,7 +35,7 @@ class PolyMarketDataConverter:
         time_series_data: List[Dict[str, float]],
         start_ts: float,
         end_ts: float,
-    ) -> List[Tuple[float, float]]:
+    ) -> List[Tuple[float, float, float]]:
         if self.config.prob_threshold > 1.0:
             return []
 
@@ -54,7 +54,7 @@ class PolyMarketDataConverter:
                     break
 
                 if abs(p2 - p1) >= self.config.prob_threshold:
-                    valid_pairs.append((t1, t2))
+                    valid_pairs.append((t1, t2, abs(p2 - p1)))
 
         return valid_pairs
 
@@ -107,9 +107,16 @@ class PolyMarketDataConverter:
             outcome_prices = json.loads(market['outcomePrices'])
 
             outcome = self.parse_winning_outcome(outcome_options, outcome_prices)
-            start_ts = self.parse_timestamp(market['startDate'])
-            end_ts = self.parse_timestamp(market['endDate'])
+            start_date = (
+                market['startDate'] if 'startDate' in market else event['startDate']
+            )
+            end_date = market['endDate'] if 'endDate' in market else event['endDate']
+            start_ts = self.parse_timestamp(start_date)
+            end_ts = self.parse_timestamp(end_date)
             time_series = self.parse_time_series(market, outcome_options)
+            volumn = market.get('volume', None)
+            resolution_source = market.get('resolutionSource', None)
+            description = market.get('description', None)
 
             breakpoint_ts_pairs = {
                 outcome: self.find_breakpoints(data, start_ts, end_ts)
@@ -120,9 +127,9 @@ class PolyMarketDataConverter:
                 event_id=event['id'],
                 market_id=market['id'],
                 question=market['question'],
-                description=market['description'],
-                volume=market['volume'],
-                resolution_source=market['resolutionSource'],
+                description=description,
+                resolution_source=resolution_source,
+                volume=volumn,
                 outcome=outcome,
                 time_series=time_series,
                 tags=tags,
