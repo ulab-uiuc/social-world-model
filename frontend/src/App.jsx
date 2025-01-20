@@ -22,10 +22,10 @@ function App() {
           <h1 className="app-title">Openmarket</h1>
           <div className="horizontal-bar"></div>
         </header>
-      <Routes>
-        <Route path="/" element={<CardList cards={cards} />} />
-        <Route path="/details/:card_id" element={<CardDetails cards={cards} />} />
-      </Routes>
+        <Routes>
+          <Route path="/" element={<CardList cards={cards} />} />
+          <Route path="/details/:card_id" element={<CardDetails cards={cards} />} />
+        </Routes>
       </div>
     </Router>
   );
@@ -62,7 +62,23 @@ function CardDetails({ cards }) {
   const card = cards.find((c) => c.card_id === card_id);
 
   const [selectedOption, setSelectedOption] = useState(null);
-  const [amount, setAmount] = useState(0);
+
+  const handleVote = () => {
+    if (!selectedOption) return;
+
+    axios.post("http://127.0.0.1:5000/api/vote", {
+      card_id: card.card_id,
+      option: selectedOption.option,
+    })
+      .then(() => {
+        alert("Vote recorded successfully!");
+        window.location.reload();
+      })
+      .catch((error) => {
+        console.error("Error recording vote:", error);
+        alert("Failed to record vote. Please try again.");
+      });
+  };
 
   if (!card) {
     return <div>Card not found</div>;
@@ -72,31 +88,23 @@ function CardDetails({ cards }) {
     setSelectedOption(option);
   };
 
-  const handleAmountChange = (e) => {
-    setAmount(e.target.value);
-  };
-
   return (
     <div className="details-page">
-
       <div className="left-card">
         <h2>{card.question}</h2>
         <div className="options-table">
           {card.options.map((option, idx) => (
-            <div className="option-row" key={idx}>
+            <div
+              className="option-row clickable-option"
+              key={idx}
+              onClick={() => handleOptionClick(option)}
+            >
               <span className="option-label">{option.option}</span>
               <span className="option-percentage">{option.percentage}%</span>
-              <button className="yes-button" onClick={() => handleOptionClick(option)}>
-                Yes
-              </button>
-              <button className="no-button" onClick={() => handleOptionClick(option)}>
-                No
-              </button>
             </div>
           ))}
         </div>
       </div>
-
 
       <div className="right-card">
         <h2>Vote Option</h2>
@@ -104,7 +112,7 @@ function CardDetails({ cards }) {
           <div className="vote-module">
             <p>Selected: <strong>{selectedOption.option}</strong></p>
             <p>Chance: <strong>{selectedOption.percentage}%</strong></p>
-            <button className="vote-button">Vote</button>
+            <button className="vote-button" onClick={handleVote}>Vote</button>
           </div>
         ) : (
           <p>Please select an option to vote.</p>

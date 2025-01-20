@@ -232,6 +232,7 @@ body {
   padding: 20px;
   border-radius: 8px;
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+  overflow: visible;
 }
 
 .right-card {
@@ -295,4 +296,39 @@ body {
 
 .vote-button + .vote-button:hover {
   background-color: #c82333;
+}
+
+.option-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px;
+  margin: 5px 0;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+  box-sizing: border-box;
+}
+
+.option-row:hover {
+  background-color: #f0f0f0;
+}
+
+.clickable-option:active {
+  background-color: #e0e0e0;
+}
+
+.vote-button {
+  padding: 10px 20px;
+  font-size: 16px;
+  color: white;
+  background-color: #007bff;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.vote-button:hover {
+  background-color: #0056b3;
 }
