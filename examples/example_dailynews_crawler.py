@@ -5,15 +5,22 @@ from swm.utils.crawler import DailyNewsCrawler
 
 
 def main():
-    date = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
-    output_file = 'crypto_news_2024_01_20.json'
-    api_key = os.getenv('NEWS_API_KEY')
+    # Configuration
+    date = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')  # Yesterday's date
+    output_file = f'./news_{date}.json'
+    api_token = os.environ.get('NEWS_API_KEY')
 
-    crawler = DailyNewsCrawler(
-        input_date=date, output_file=output_file, api_key=api_key, keywords=['bitcoin']
-    )
+    try:
+        crawler = DailyNewsCrawler(
+            input_date=date,
+            output_file=output_file,
+            api_token=api_token,
+        )
 
-    crawler.crawl()
+        crawler.crawl()
+
+    except Exception as e:
+        print(f'Error in main: {e}', exc_info=True)
 
 
 if __name__ == '__main__':
