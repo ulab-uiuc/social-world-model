@@ -53,10 +53,3 @@ def get_split_stats(
         'unique_events_test': len(set(x.event_id for x in test)),
         'no_outcome_count_test': len([x for x in test if x.outcome is None]),
     }
-
-
-# Example usage:
-# data_list = [your_polymarket_data_instances]
-# train_data, dev_data, test_data = split_polymarket_data(data_list)
-# stats = get_split_stats(train_data, dev_data, test_data)
-# print(stats)
