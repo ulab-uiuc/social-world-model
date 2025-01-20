@@ -7,7 +7,7 @@ class PolyMarketData(BaseModel):
     event_id: str
     market_id: str
     question: str
-    resolution_source: str
+    resolution_source: Optional[str] = Field(default=None)
     volumn: Optional[float] = Field(default=None)
     outcome: Optional[str] = Field(default=None)
     discrption: Optional[str] = Field(default=None)
@@ -19,7 +19,7 @@ class PolyMarketData(BaseModel):
     time_series: Optional[Dict[str, List[Dict[str, Union[int, float]]]]] = Field(
         default=None
     )
-    breakpoint_ts_pairs: Optional[Dict[str, List[Tuple[int, int]]]] = Field(
+    breakpoint_ts_pairs: Optional[Dict[str, List[Tuple[float, float, float]]]] = Field(
         default=None
     )
 
