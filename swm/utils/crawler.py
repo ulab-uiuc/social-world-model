@@ -7,10 +7,12 @@ from typing import Dict, List, Optional, Set, Union
 import httpx
 import jsonlines
 from py_clob_client.client import ClobClient
+from scholarly import scholarly
+from serpapi import GoogleSearch
 from tqdm import tqdm
 
 
-class PolyMarketCollector:
+class PolyMarketCrawler:
     def __init__(self, output_file: str, cache_size: int = 100):
         self.output_file = output_file
         self.cache_size = cache_size
@@ -45,7 +47,7 @@ class PolyMarketCollector:
         return event
 
 
-class PolyMarketEventCollector(PolyMarketCollector):
+class PolyMarketEventCrawler(PolyMarketCrawler):
     def __init__(self, output_file: str):
         super().__init__(output_file, cache_size=100)
 
@@ -79,7 +81,7 @@ class PolyMarketEventCollector(PolyMarketCollector):
         raise Exception(f'Failed to fetch events: HTTP {response.status_code}')
 
 
-class PolyMarketHistoryCollector(PolyMarketCollector):
+class PolyMarketHistoryCrawler(PolyMarketCrawler):
     def __init__(self, input_file: str, output_file: str):
         super().__init__(output_file, cache_size=5)
         self.input_file = input_file
@@ -188,3 +190,110 @@ class PolyMarketHistoryCollector(PolyMarketCollector):
                 else:
                     print(f'All {max_retries} attempts failed for token {token_id}')
                     return []
+
+
+class GoogleScholarCrawler:
+    def __init__(self, input_file: str, output_file: str, api_key: str):
+        self.input_file = input_file
+        self.output_file = output_file
+        self.api_key = api_key
+
+    def retry_on_error(self, func, *args, retries=3, delay=2, **kwargs):
+        """Helper method to retry a function call on error"""
+        for attempt in range(retries):
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                print(f'Attempt {attempt + 1} failed: {e}')
+                if attempt < retries - 1:
+                    time.sleep(delay)
+                else:
+                    raise
+
+    def get_scholar_id_from_citedby(self, data):
+        """Extract Scholar ID from the 'citedby_url' field"""
+        citedby_url = data.get('citedby_url', '')
+        if 'cites=' in citedby_url:
+            parts = citedby_url.split('cites=')
+            if len(parts) > 1:
+                id_and_rest = parts[1]
+                return id_and_rest.split('&')[0]
+        return None
+
+    def get_citation_id(self, title):
+        """Search for a publication and extract its citation ID"""
+
+        def search_title():
+            pubs = scholarly.search_pubs(title)
+            for pub in pubs:
+                if title.lower() == pub['bib']['title'].lower():
+                    scholar_id = self.get_scholar_id_from_citedby(pub)
+                    pub_year = int(pub['bib']['pub_year'])
+                    return pub, scholar_id, pub_year
+            return None, None, None
+
+        return self.retry_on_error(search_title)
+
+    def fetch_citation_count(self, citation_id, year_from=None, year_to=None):
+        """Fetch citation count from Google Scholar"""
+
+        def fetch_count():
+            params = {
+                'engine': 'google_scholar',
+                'cites': citation_id,
+                'api_key': self.api_key,
+            }
+            if year_from:
+                params['as_ylo'] = year_from
+            if year_to:
+                params['as_yhi'] = year_to
+
+            search = GoogleSearch(params)
+            results = search.get_dict()
+            return results.get('search_information', {}).get('total_results')
+
+        return self.retry_on_error(fetch_count)
+
+    def get_paper_data(self, title):
+        """Fetch detailed paper data including citation count"""
+        try:
+            pub, citation_id, pub_year = self.get_citation_id(title)
+            if citation_id:
+                total_citations = self.fetch_citation_count(citation_id)
+                citations = {
+                    year: self.fetch_citation_count(
+                        citation_id, year_from=year, year_to=year
+                    )
+                    for year in range(pub_year, 2025)
+                }
+                return {
+                    'title': title,
+                    'citation_id': citation_id,
+                    'total_citations': total_citations,
+                    'citations': citations,
+                    'raw_data': pub,
+                }
+            else:
+                print('Failed to retrieve Citation ID.')
+                return None
+        except Exception as e:
+            print(f'An error occurred: {e}')
+            return None
+
+    def crawl(self):
+        """Main method to crawl and collect paper data"""
+        with open(self.input_file, 'r') as f:
+            papers = json.load(f)
+
+        titles = [data['paper_data']['title'] for data in papers.values()]
+
+        all_paper_data = {}
+        for title in titles:
+            paper_data = self.get_paper_data(title)
+            if paper_data:
+                print(paper_data)
+                all_paper_data[paper_data['citation_id']] = paper_data
+                with open(self.output_file, 'w') as f:
+                    json.dump(all_paper_data, f)
+            else:
+                print('Failed to retrieve paper data.')

@@ -1,16 +1,16 @@
-from swm.utils.crawler import PolyMarketEventCollector, PolyMarketHistoryCollector
+from swm.utils.crawler import PolyMarketEventCrawler, PolyMarketHistoryCrawler
 
 
 def main():
     event_file = '../data/polymarket_event_data.jsonl'
     event_with_history_file = '../data/polymarket_event_with_history_data.jsonl'
 
-    event_collector = PolyMarketEventCollector(output_file=event_file)
+    event_collector = PolyMarketEventCrawler(output_file=event_file)
     event_collector.collect_event(start_offset=0, end_offset=100)
 
     print(f'\nEvents saved to {event_file}.')
 
-    history_collector = PolyMarketHistoryCollector(
+    history_collector = PolyMarketHistoryCrawler(
         input_file=event_file, output_file=event_with_history_file
     )
     history_collector.collect_history()
