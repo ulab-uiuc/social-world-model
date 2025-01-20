@@ -2,13 +2,15 @@ import json
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Set, Union
 
 import httpx
 import jsonlines
+import requests
+import serpapi
 from py_clob_client.client import ClobClient
 from scholarly import scholarly
-from serpapi import GoogleSearch
 from tqdm import tqdm
 
 
@@ -248,7 +250,7 @@ class GoogleScholarCrawler:
             if year_to:
                 params['as_yhi'] = year_to
 
-            search = GoogleSearch(params)
+            search = serpapi.search(params)
             results = search.get_dict()
             return results.get('search_information', {}).get('total_results')
 
@@ -297,3 +299,147 @@ class GoogleScholarCrawler:
                     json.dump(all_paper_data, f)
             else:
                 print('Failed to retrieve paper data.')
+
+
+class DailyNewsCrawler:
+    def __init__(
+        self, input_date: str, output_file: str, api_key: str, keywords: List[str]
+    ):
+        self.input_date = datetime.strptime(input_date, '%Y-%m-%d')
+        self.output_file = output_file
+        self.api_key = api_key
+        self.base_url = 'https://newsapi.org/v2/everything'
+        self.keywords = keywords
+
+    def retry_on_error(self, func, *args, retries=3, delay=2, **kwargs):
+        """Helper method to retry API calls on error"""
+        for attempt in range(retries):
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                print(f'Attempt {attempt + 1} failed: {e}')
+                if attempt < retries - 1:
+                    time.sleep(delay)
+                else:
+                    raise
+
+    def fetch_news_for_date(self, date: datetime) -> Optional[Dict]:
+        """Fetch news for a specific date"""
+
+        def fetch_articles():
+            params = {
+                'q': ' OR '.join(self.keywords),
+                'from': date.strftime('%Y-%m-%d'),
+                'to': (date + timedelta(days=1)).strftime('%Y-%m-%d'),
+                'language': 'en',
+                'sortBy': 'relevancy',
+                'apiKey': self.api_key,
+                'pageSize': 100,  # maximum allowed by the API
+            }
+
+            response = requests.get(self.base_url, params=params)
+            response.raise_for_status()
+            return response.json()
+
+        return self.retry_on_error(fetch_articles)
+
+    def process_articles(self, articles: List[Dict]) -> List[Dict]:
+        """Process and clean article data"""
+        processed_articles = []
+        for article in articles:
+            try:
+                processed_article = {
+                    'title': article.get('title'),
+                    'url': article.get('url'),
+                    'source': article.get('source', {}).get('name'),
+                    'published_at': article.get('publishedAt'),
+                    'description': article.get('description'),
+                    'content': article.get('content'),
+                    'author': article.get('author'),
+                }
+                # Filter out articles with missing crucial information
+                if all(
+                    [
+                        processed_article['title'],
+                        processed_article['url'],
+                        processed_article['published_at'],
+                    ]
+                ):
+                    processed_articles.append(processed_article)
+            except Exception as e:
+                print(f'Error processing article: {e}')
+                continue
+
+        return processed_articles
+
+    def categorize_article(self, article: Dict) -> List[str]:
+        """Categorize article based on content"""
+        categories = []
+
+        # Safely handle None values by using empty string as default
+        title = article.get('title', '') or ''
+        description = article.get('description', '') or ''
+        content = article.get('content', '') or ''
+
+        # Combine all text content
+        full_content = f'{title} {description} {content}'.lower()
+
+        # Define category keywords
+        category_keywords = {
+            'price': ['price', 'market', 'trading', 'value'],
+            'technology': ['blockchain', 'protocol', 'technology', 'development'],
+            'regulation': ['regulation', 'sec', 'law', 'compliance'],
+            'adoption': ['adoption', 'partnership', 'integration', 'enterprise'],
+        }
+
+        for category, keywords in category_keywords.items():
+            if any(keyword in full_content for keyword in keywords):
+                categories.append(category)
+
+        return categories or ['general']
+
+    def save_data(self, data: Dict):
+        """Save crawled data to file"""
+        try:
+            with open(self.output_file, 'w') as f:
+                json.dump(data, f, indent=2)
+        except Exception as e:
+            print(f'Error saving data: {e}')
+
+    def crawl(self):
+        """Main method to crawl and collect news data"""
+        try:
+            # Fetch news
+            raw_data = self.fetch_news_for_date(self.input_date)
+            if not raw_data or 'articles' not in raw_data:
+                print('No articles found or invalid API response')
+                return
+
+            # Process articles
+            articles = self.process_articles(raw_data['articles'])
+
+            # Categorize and organize data
+            organized_data = {
+                'date': self.input_date.strftime('%Y-%m-%d'),
+                'total_articles': len(articles),
+                'articles': {},
+            }
+
+            for article in articles:
+                # Generate unique ID for article based on URL
+                article_id = hash(article['url'])
+
+                # Add categories
+                article['categories'] = self.categorize_article(article)
+
+                # Store in organized structure
+                organized_data['articles'][article_id] = article
+
+            # Save the data
+            self.save_data(organized_data)
+            print(
+                f'Successfully processed {len(articles)} articles for {self.input_date.date()}'
+            )
+
+        except Exception as e:
+            print(f'An error occurred during crawling: {e}')
