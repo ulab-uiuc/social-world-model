@@ -69,7 +69,6 @@ epochs = args.epochs
 device = 'cuda:0'
 device = torch.device(device)
 
-# Intialize the model and training process
 trainer = Trainer(
     hidden_dim=args.hidden_dim,
     lr=args.lr,
@@ -115,7 +114,6 @@ for epoch in range(1, epochs + 1):
     test_mean_rmse = np.mean(test_rmse)
     test_loss.append(test_mean_rmse)
 
-# Plot the RMSE loss
 plt.plot(train_loss, label='train')
 plt.plot(test_loss, color='red', label='test')
 print(train_loss)
