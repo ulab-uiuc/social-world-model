@@ -3,7 +3,7 @@ from typing import Dict, List, Optional, Tuple, Union
 from pydantic import BaseModel, Field
 
 
-class Consensus(BaseModel):
+class Opinion(BaseModel):
     event_id: str
     market_id: str
     question: str
@@ -23,8 +23,8 @@ class Consensus(BaseModel):
     )
 
     @classmethod
-    def from_dict(cls, data: Dict) -> 'Consensus':
-        """Create a Consensus instance from a dictionary (e.g., from model_dump())"""
+    def from_dict(cls, data: Dict) -> 'Opinion':
+        """Create a Opinion instance from a dictionary (e.g., from model_dump())"""
         # Handle the special case of breakpoint_ts_pairs to convert lists to tuples
         if 'breakpoint_ts_pairs' in data and data['breakpoint_ts_pairs']:
             data['breakpoint_ts_pairs'] = {
@@ -35,7 +35,7 @@ class Consensus(BaseModel):
         return cls(**{k: v for k, v in data.items() if k in cls.__annotations__})
 
 
-class Action(BaseModel):
+class Event(BaseModel):
     event_id: str
     market_id: str
     question: str
@@ -48,6 +48,6 @@ class Action(BaseModel):
     tag_ids: Optional[List[str]] = Field(default=None)
 
     @classmethod
-    def from_dict(cls, data: Dict) -> 'Action':
-        """Create an Action instance from a dictionary (e.g., from model_dump())"""
+    def from_dict(cls, data: Dict) -> 'Event':
+        """Create an Event instance from a dictionary (e.g., from model_dump())"""
         return cls(**{k: v for k, v in data.items() if k in cls.__annotations__})
