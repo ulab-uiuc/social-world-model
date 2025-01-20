@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from tqdm import tqdm
 
-from ..data import Action, Consensus
+from ..data import Event, Opinion
 
 
 def find_breakpoint_ts_pairs(
@@ -103,9 +103,9 @@ def validate_market_data(market: Dict[str, Any]) -> bool:
     return all(field in market for field in required_fields)
 
 
-def convert_polymarket_event_into_consensuses(event: Dict[str, Any]) -> List[Consensus]:
+def convert_polymarket_event_into_opinions(event: Dict[str, Any]) -> List[Opinion]:
     """
-    Convert Polymarket event data into a list of Consensus objects.
+    Convert Polymarket event data into a list of Opinion objects.
     Returns empty list if required data is missing or processing fails.
     """
     try:
@@ -114,7 +114,7 @@ def convert_polymarket_event_into_consensuses(event: Dict[str, Any]) -> List[Con
 
         tags = [tag['label'] for tag in event['tags']]
         tag_ids = [tag['id'] for tag in event['tags']]
-        consensuses = []
+        opinions = []
 
         for market in event['markets']:
             if not validate_market_data(market):
@@ -135,7 +135,7 @@ def convert_polymarket_event_into_consensuses(event: Dict[str, Any]) -> List[Con
                     )
                     breakpoint_ts_pairs[outcome] = breakpoint_ts_pairs_data
 
-            consensus = Consensus(
+            opinion = Opinion(
                 event_id=event['id'],
                 market_id=market['id'],
                 question=market['question'],
@@ -148,25 +148,25 @@ def convert_polymarket_event_into_consensuses(event: Dict[str, Any]) -> List[Con
                 tag_ids=tag_ids,
                 start_ts=start_ts,
                 end_ts=end_ts,
-                breakpoint_ts_pairs=breakpoint_ts_pairs,  # Add this to your Consensus model
+                breakpoint_ts_pairs=breakpoint_ts_pairs,  # Add this to your Opinion model
             )
-            consensuses.append(consensus)
+            opinions.append(opinion)
 
-        return consensuses
+        return opinions
 
     except Exception as e:
         print(f"Error processing event {event.get('id', 'unknown')}: {str(e)}")
         return []
 
 
-def find_action_in_states(consensuses: List[Consensus]) -> Optional[List[Action]]:
+def find_action_in_states(opinions: List[Opinion]) -> Optional[List[Event]]:
     """
-    Find an Action object in a list of Consensus objects.
+    Find an Event object in a list of Opinion objects.
     Returns None if no matching action is found.
     """
     actions = []
-    for consensus in tqdm(consensuses):
-        time_series_data = consensus.time_series
+    for opinion in tqdm(opinions):
+        time_series_data = opinion.time_series
         if time_series_data is None:
             continue
         for time_series in time_series_data.values():
@@ -178,19 +178,19 @@ def find_action_in_states(consensuses: List[Consensus]) -> Optional[List[Action]
                 max_p - min_p > 0.3
                 and (min_p < 0.05 or max_p > 0.95)
                 and len(time_series) > 100
-                and 'Sports' not in consensus.tags
+                and 'Sports' not in opinion.tags
             ):
-                action = Action(
-                    event_id=consensus.event_id,
-                    market_id=consensus.market_id,
-                    question=consensus.question,
-                    discrption=consensus.discrption,
-                    volumn=consensus.volumn,
-                    resolution_source=consensus.resolution_source,
-                    outcome=consensus.outcome,
-                    tags=consensus.tags,
-                    tag_ids=consensus.tag_ids,
-                    end_ts=consensus.end_ts,
+                action = Event(
+                    event_id=opinion.event_id,
+                    market_id=opinion.market_id,
+                    question=opinion.question,
+                    discrption=opinion.discrption,
+                    volumn=opinion.volumn,
+                    resolution_source=opinion.resolution_source,
+                    outcome=opinion.outcome,
+                    tags=opinion.tags,
+                    tag_ids=opinion.tag_ids,
+                    end_ts=opinion.end_ts,
                 )
                 actions.append(action)
                 print(action.question)
@@ -199,30 +199,30 @@ def find_action_in_states(consensuses: List[Consensus]) -> Optional[List[Action]
 
 
 def find_state_action_pairs(
-    actions: List[Action],
-    consensuses: List[Consensus],
-) -> List[Tuple[List[Consensus], Action]]:
+    actions: List[Event],
+    opinions: List[Opinion],
+) -> List[Tuple[List[Opinion], Event]]:
     """
-    Find a pair of Consensus objects representing a state-action pair.
-    Returns a tuple of (state, action) Consensus objects.
+    Find a pair of Opinion objects representing a state-action pair.
+    Returns a tuple of (state, action) Opinion objects.
     """
     state_action_pairs = []
     for action in actions:
         end_ts = action.end_ts
         if 'Sports' in action.tags:
             continue
-        for consensus in consensuses:
-            if 'Sports' in consensus.tags:
+        for opinion in opinions:
+            if 'Sports' in opinion.tags:
                 continue
-            breakpoint_ts_pairs = consensus.breakpoint_ts_pairs
+            breakpoint_ts_pairs = opinion.breakpoint_ts_pairs
             for outcome, breakpoint_ts_pair in breakpoint_ts_pairs.items():
                 for ts_pair in breakpoint_ts_pair:
                     a, b = ts_pair[0], ts_pair[1]
                     if a < end_ts and b > end_ts and abs(a - b) <= 10800:
-                        state_action_pairs.append((consensus, action))
+                        state_action_pairs.append((opinion, action))
                         print(
-                            'Action: {}, State: {}, Outcome: {}'.format(
-                                action.question, consensus.question, outcome
+                            'Event: {}, State: {}, Outcome: {}'.format(
+                                action.question, opinion.question, outcome
                             )
                         )
                         break
@@ -231,13 +231,13 @@ def find_state_action_pairs(
 
 def find_state_change_at_timestamp(
     ts: float,
-    consensuses: List[Consensus],
+    opinions: List[Opinion],
 ):
-    for consensus in consensuses:
-        breakpoint_ts_pairs = consensus.breakpoint_ts_pairs
+    for opinion in opinions:
+        breakpoint_ts_pairs = opinion.breakpoint_ts_pairs
         for outcome, breakpoint_ts_pair in breakpoint_ts_pairs.items():
             for ts_pair in breakpoint_ts_pair:
                 a, b = ts_pair[0], ts_pair[1]
                 if a <= ts and b >= ts:
-                    print('State: {}, Outcome: {}'.format(consensus.question, outcome))
+                    print('State: {}, Outcome: {}'.format(opinion.question, outcome))
                 break
