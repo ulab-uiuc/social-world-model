@@ -101,7 +101,7 @@ class PolyMarketDataConverter:
         try:
             tags = [tag['label'] for tag in event['tags']]
             tag_ids = [tag['id'] for tag in event['tags']]
-            category = self.find_categories(tags)
+            categories = self.find_categories(tags)
 
             outcome_options = json.loads(market['outcomes'])
             outcome_prices = json.loads(market['outcomePrices'])
@@ -134,7 +134,7 @@ class PolyMarketDataConverter:
                 time_series=time_series,
                 tags=tags,
                 tag_ids=tag_ids,
-                category=category,
+                categories=categories,
                 start_ts=start_ts,
                 end_ts=end_ts,
                 breakpoint_ts_pairs=breakpoint_ts_pairs,
