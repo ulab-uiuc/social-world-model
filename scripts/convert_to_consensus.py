@@ -1,7 +1,11 @@
 import jsonlines
 
 from swm.data import Consensus
-from swm.utils.converter import find_action_in_states, find_state_action_pairs
+from swm.utils.converter import (
+    find_action_in_states,
+    find_state_action_pairs,
+    find_state_change_at_timestamp,
+)
 
 """
 with jsonlines.open('data_with_offset_0112_with_history.jsonl') as reader:
@@ -67,6 +71,11 @@ consensuses = []
 for data in dataset:
     consensus = Consensus.from_dict(data)
     consensuses.append(consensus)
+
+related_consenses = find_state_change_at_timestamp(
+    ts=1730851202, consensuses=consensuses
+)
+
 
 actions = find_action_in_states(consensuses)
 

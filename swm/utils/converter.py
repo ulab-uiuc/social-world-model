@@ -227,3 +227,17 @@ def find_state_action_pairs(
                         )
                         break
     return state_action_pairs
+
+
+def find_state_change_at_timestamp(
+    ts: float,
+    consensuses: List[Consensus],
+):
+    for consensus in consensuses:
+        breakpoint_ts_pairs = consensus.breakpoint_ts_pairs
+        for outcome, breakpoint_ts_pair in breakpoint_ts_pairs.items():
+            for ts_pair in breakpoint_ts_pair:
+                a, b = ts_pair[0], ts_pair[1]
+                if a <= ts and b >= ts:
+                    print('State: {}, Outcome: {}'.format(consensus.question, outcome))
+                break
