@@ -24,8 +24,6 @@ class Opinion(BaseModel):
 
     @classmethod
     def from_dict(cls, data: Dict) -> 'Opinion':
-        """Create a Opinion instance from a dictionary (e.g., from model_dump())"""
-        # Handle the special case of breakpoint_ts_pairs to convert lists to tuples
         if 'breakpoint_ts_pairs' in data and data['breakpoint_ts_pairs']:
             data['breakpoint_ts_pairs'] = {
                 key: [tuple(pair) for pair in pairs]
@@ -49,5 +47,4 @@ class Event(BaseModel):
 
     @classmethod
     def from_dict(cls, data: Dict) -> 'Event':
-        """Create an Event instance from a dictionary (e.g., from model_dump())"""
         return cls(**{k: v for k, v in data.items() if k in cls.__annotations__})
