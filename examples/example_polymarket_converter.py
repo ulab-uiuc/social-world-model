@@ -25,7 +25,8 @@ def main():
         dataset = list(f)
 
     config = TimeSeriesConfig(
-        prob_threshold=args.prob_threshold, time_threshold=args.time_threshold
+        prob_threshold=args.prob_threshold,
+        time_threshold=args.time_threshold,
     )
     converter = PolyMarketDataConverter(config)
 
@@ -42,10 +43,11 @@ def main():
 
     processed_dataset_with_categories = {}
     for data in processed_dataset:
-        category = data['category'][0]
-        if category not in processed_dataset_with_categories:
-            processed_dataset_with_categories[category] = []
-        processed_dataset_with_categories[category].append(data)
+        categories = data.categories
+        for category in categories:
+            if category not in processed_dataset_with_categories:
+                processed_dataset_with_categories[category] = []
+            processed_dataset_with_categories[category].append(data)
 
     for category, data in processed_dataset_with_categories.items():
         print(f'Processing category: {category}, num events: {len(data)}')

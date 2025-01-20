@@ -15,7 +15,7 @@ class PolyMarketData(BaseModel):
     end_ts: Optional[float] = Field(default=None)
     tags: Optional[List[str]] = Field(default=None)
     tag_ids: Optional[List[str]] = Field(default=None)
-    category: Optional[List[str]] = Field(default=None)
+    categories: Optional[List[str]] = Field(default=None)
     time_series: Optional[Dict[str, List[Dict[str, Union[int, float]]]]] = Field(
         default=None
     )
