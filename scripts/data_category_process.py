@@ -1,33 +1,53 @@
-import json
-import jsonlines
 import argparse
+import json
 
-parser = argparse.ArgumentParser()
-parser.add_argument('--file_name', type=str,
-                    default="data/consensus_data.jsonl")
-args = parser.parse_args()
+import jsonlines
 
-tags = ['Politics', 'Sports', 'Crypto', 'Election']
-dict = {}
 
-for tmp in tags:
-    dict[tmp.lower()] = []
-dict['other'] = []
+def main():
+    parser = argparse.ArgumentParser(description='Categorize data based on tags')
+    parser.add_argument(
+        '--input_file_name',
+        type=str,
+        default='../data/consensus_data.jsonl',
+        help='Path to the input JSONL file containing the data',
+    )
+    parser.add_argument(
+        '--output_file_folder',
+        type=str,
+        default='../data',
+        help='Directory to save the categorized output files',
+    )
+    args = parser.parse_args()
 
-with open(args.file_name, 'r') as fcc_file:
-    for line in fcc_file:
-        obj = json.loads(line)
-        tag_ls = obj['tags']
-        flag = False
-        for t in tag_ls:
-            for tmp in tags:
-                if tmp.lower() in t.lower():
-                    dict[tmp.lower()].append(obj)
-                    flag = True
+    categories = ['Politics', 'Sports', 'Crypto', 'Election']
+    categorized_data = {category.lower(): [] for category in categories}
+    categorized_data['other'] = []
+
+    with open(args.input_file_name, 'r') as input_file:
+        for line in input_file:
+            entry = json.loads(line)
+            tags = entry.get('tags', [])
+            categorized = False
+
+            for tag in tags:
+                for category in categories:
+                    if category.lower() in tag.lower():
+                        categorized_data[category.lower()].append(entry)
+                        categorized = True
+                        break
+                if categorized:
                     break
-        if flag == False: dict['other'].append(obj)
+
+            if not categorized:
+                categorized_data['other'].append(entry)
+
+    for category, entries in categorized_data.items():
+        output_file = f'{args.output_file_folder}/consensus_data_{category}.jsonl'
+        with jsonlines.open(output_file, 'w') as writer:
+            writer.write_all(entries)
+        print(f'Saved {len(entries)} entries to {output_file}')
 
 
-for k in dict.keys():
-    with jsonlines.open(f'data/consensus_data_{k}.jsonl', 'w') as writer:
-        writer.write_all(dict[k])
+if __name__ == '__main__':
+    main()
