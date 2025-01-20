@@ -162,4 +162,7 @@ cython_debug/
 **/cache
 **/*.json
 **/*.jsonl
+**/.DS_Store
 !**/.gitkeep
+!**/package.json
+!**/package-lock.json

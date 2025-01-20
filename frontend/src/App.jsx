@@ -1,116 +1,123 @@
+import React, { useState, useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, useNavigate, useParams } from 'react-router-dom';
 import './App.css';
+import axios from "axios";
 
 function App() {
-  const cards = [
-    {
-      title: "Who will win the president election?",
-      options: [
-        { label: "A", percentage: "45%" },
-        { label: "B", percentage: "40%" },
-        { label: "C", percentage: "10%" },
-        { label: "D", percentage: "1%" },
-        { label: "E", percentage: "2%" },
-        { label: "F", percentage: "2%" },
-      ],
-    },
+  const [cards, setCards] = useState([]);
+  const [searchQuery, setSearchQuery] = useState("");
 
+  useEffect(() => {
+    axios.get("http://127.0.0.1:5000/api/cards")
+      .then((response) => {
+        setCards(response.data);
+      })
+      .catch((error) => console.error("Error fetching cards:", error));
+  }, []);
 
-    {
-      title: "Who will win the president election?",
-      options: [
-        { label: "A", percentage: "45%" },
-        { label: "B", percentage: "40%" },
-        { label: "C", percentage: "10%" },
-        { label: "D", percentage: "5%" },
-      ],
-    },
-    {
-      title: "Who will win the president election?",
-      options: [
-        { label: "A", percentage: "45%" },
-        { label: "B", percentage: "40%" },
-        { label: "C", percentage: "10%" },
-        { label: "D", percentage: "5%" },
-      ],
-    },
-    {
-      title: "Who will win the president election?",
-      options: [
-        { label: "A", percentage: "45%" },
-        { label: "B", percentage: "40%" },
-        { label: "C", percentage: "10%" },
-        { label: "D", percentage: "5%" },
-      ],
-    },
+  return (
+    <Router>
+      <div className="app-container">
+        <header className="app-header">
+          <h1 className="app-title">Openmarket</h1>
+          <div className="horizontal-bar"></div>
+        </header>
+        <Routes>
+          <Route path="/" element={<CardList cards={cards} />} />
+          <Route path="/details/:card_id" element={<CardDetails cards={cards} />} />
+        </Routes>
+      </div>
+    </Router>
+  );
+}
 
-    {
-      title: "Who will win the president election?",
-      options: [
-        { label: "A", percentage: "45%" },
-        { label: "B", percentage: "40%" },
-        { label: "C", percentage: "10%" },
-        { label: "D", percentage: "5%" },
-      ],
-    },
-
-    {
-      title: "Who will win the president election?",
-      options: [
-        { label: "A", percentage: "45%" },
-        { label: "B", percentage: "40%" },
-        { label: "C", percentage: "10%" },
-        { label: "D", percentage: "5%" },
-      ],
-    },
-
-    {
-      title: "Who will win the president election?",
-      options: [
-        { label: "A", percentage: "45%" },
-        { label: "B", percentage: "40%" },
-        { label: "C", percentage: "10%" },
-        { label: "D", percentage: "5%" },
-      ],
-    },
-
-    {
-      title: "Who will win the president election?",
-      options: [
-        { label: "A", percentage: "45%" },
-        { label: "B", percentage: "40%" },
-        { label: "C", percentage: "10%" },
-        { label: "D", percentage: "5%" },
-      ],
-    },
-
-    {
-      title: "Who will win the president election?",
-      options: [
-        { label: "A", percentage: "45%" },
-        { label: "B", percentage: "40%" },
-        { label: "C", percentage: "10%" },
-        { label: "D", percentage: "5%" },
-      ],
-    },
-  ];
-
-
+function CardList({ cards }) {
+  const navigate = useNavigate();
 
   return (
     <div className="card-container">
-      {cards.map((card, index) => (
-        <div className="card" key={index}>
-          <h3 className="card-title">{card.title}</h3>
+      {cards.map((card) => (
+        <div
+          className="card"
+          key={card.card_id}
+          onClick={() => navigate(`/details/${card.card_id}`)}
+        >
+          <h3 className="card-title">{card.question}</h3>
           <div className="menu">
             {card.options.map((option, idx) => (
               <div className="menu-item" key={idx}>
-                <span className="option-label">{option.label}</span>
-                <span className="option-percentage">{option.percentage}</span>
+                <span className="option-label">{option.option}</span>
+                <span className="option-percentage">{option.percentage}%</span>
               </div>
             ))}
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+function CardDetails({ cards }) {
+  const { card_id } = useParams();
+  const card = cards.find((c) => c.card_id === card_id);
+
+  const [selectedOption, setSelectedOption] = useState(null);
+
+  const handleVote = () => {
+    if (!selectedOption) return;
+
+    axios.post("http://127.0.0.1:5000/api/vote", {
+      card_id: card.card_id,
+      option: selectedOption.option,
+    })
+      .then(() => {
+        alert("Vote recorded successfully!");
+        window.location.reload();
+      })
+      .catch((error) => {
+        console.error("Error recording vote:", error);
+        alert("Failed to record vote. Please try again.");
+      });
+  };
+
+  if (!card) {
+    return <div>Card not found</div>;
+  }
+
+  const handleOptionClick = (option) => {
+    setSelectedOption(option);
+  };
+
+  return (
+    <div className="details-page">
+      <div className="left-card">
+        <h2>{card.question}</h2>
+        <div className="options-table">
+          {card.options.map((option, idx) => (
+            <div
+              className="option-row clickable-option"
+              key={idx}
+              onClick={() => handleOptionClick(option)}
+            >
+              <span className="option-label">{option.option}</span>
+              <span className="option-percentage">{option.percentage}%</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="right-card">
+        <h2>Vote Option</h2>
+        {selectedOption ? (
+          <div className="vote-module">
+            <p>Selected: <strong>{selectedOption.option}</strong></p>
+            <p>Chance: <strong>{selectedOption.percentage}%</strong></p>
+            <button className="vote-button" onClick={handleVote}>Vote</button>
+          </div>
+        ) : (
+          <p>Please select an option to vote.</p>
+        )}
+      </div>
     </div>
   );
 }

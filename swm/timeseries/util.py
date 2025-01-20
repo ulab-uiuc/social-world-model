@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+
 # Self-defined data loader
 class DataLoader(object):
     def __init__(self, x, y, batch_size):
@@ -30,14 +31,18 @@ class DataLoader(object):
             while self.cur_index < self.n_batch:
                 start_index = self.batch_size * self.cur_index
                 end_index = min(self.total_size, self.batch_size * (self.cur_index + 1))
-                yield (self.x[start_index: end_index, ...], self.y[start_index: end_index, ...])
+                yield (
+                    self.x[start_index:end_index, ...],
+                    self.y[start_index:end_index, ...],
+                )
                 self.cur_index += 1
 
         return _wrapper()
 
+
 # MSE
 def mse(output, label):
-    mse_value = (output-label)**2
+    mse_value = (output - label) ** 2
     return torch.mean(mse_value)
 
 # RMSE
