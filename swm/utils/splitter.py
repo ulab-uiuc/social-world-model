@@ -1,6 +1,6 @@
 import random
 from collections import defaultdict
-from typing import Dict, List, Tuple
+from typing import DefaultDict, Dict, List, Tuple
 
 from ..data import PolyMarketData
 
@@ -8,30 +8,31 @@ from ..data import PolyMarketData
 def split_polymarket_data(
     data_list: List[PolyMarketData],
 ) -> Tuple[List[PolyMarketData], List[PolyMarketData], List[PolyMarketData]]:
-    # Group by event_id
-    event_groups = defaultdict(list)
+    event_groups: DefaultDict[str, list] = defaultdict(list)
     for record in data_list:
         event_groups[record.event_id].append(record)
 
-    train_data = []
-    dev_data = []
-    test_data = []
-
-    for event_id, records in event_groups.items():
-        no_outcome = [r for r in records if r.outcome is None]
+    all_with_outcomes = []
+    for records in event_groups.values():
         with_outcome = [r for r in records if r.outcome is not None]
-
-        test_data.extend(no_outcome)
-
         if with_outcome:
-            random.shuffle(with_outcome)
-            total = len(with_outcome)
-            train_size = int(0.8 * total)
-            dev_size = int(0.1 * total)
+            all_with_outcomes.extend(with_outcome)
 
-            train_data.extend(with_outcome[:train_size])
-            dev_data.extend(with_outcome[train_size : train_size + dev_size])
-            test_data.extend(with_outcome[train_size + dev_size :])
+    total_size = len(data_list)
+    test_size = int(0.1 * total_size)
+
+    if len(all_with_outcomes) < test_size:
+        test_size = len(all_with_outcomes)
+
+    random.shuffle(all_with_outcomes)
+
+    test_data = all_with_outcomes[:test_size]
+
+    remaining = all_with_outcomes[test_size:]
+    train_size = int(0.89 * len(remaining))
+
+    train_data = remaining[:train_size]
+    dev_data = remaining[train_size:]
 
     return train_data, dev_data, test_data
 

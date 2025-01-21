@@ -6,7 +6,9 @@ from swm.utils.crawler import DailyNewsCrawler
 
 def main():
     # Configuration
-    date = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')  # Yesterday's date
+    date = (datetime.now() - timedelta(days=150)).strftime(
+        '%Y-%m-%d'
+    )  # Yesterday's date
     output_file = f'./{date}.json'
     api_token = os.environ.get('NEWS_API_KEY')
 
