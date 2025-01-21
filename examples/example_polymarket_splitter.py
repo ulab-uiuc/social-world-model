@@ -6,7 +6,7 @@ from pathlib import Path
 import jsonlines
 
 from swm.data import PolyMarketData
-from swm.utils.splitter import split_polymarket_data
+from swm.utils.splitter import get_split_stats, split_polymarket_data
 
 
 def parse_args():
@@ -17,12 +17,12 @@ def parse_args():
         '--input_files',
         nargs='+',
         default=[
-            '../data/processed/polymarket_data_processed_Sports.jsonl',
-            '../data/processed/polymarket_data_processed_Crypto.jsonl',
-            '../data/processed/polymarket_data_processed_Election.jsonl',
-            '../data/processed/polymarket_data_processed_Other.jsonl',
-            '../data/processed/polymarket_data_processed_Politics.jsonl',
-            '../data/processed/polymarket_data_processed.jsonl',
+            '../data/processed_polymarket/polymarket_data_processed_Crypto.jsonl',
+            '../data/processed_polymarket/polymarket_data_processed_Sports.jsonl',
+            '../data/processed_polymarket/polymarket_data_processed_Election.jsonl',
+            '../data/processed_polymarket/polymarket_data_processed_Other.jsonl',
+            '../data/processed_polymarket/polymarket_data_processed_Politics.jsonl',
+            '../data/processed_polymarket/polymarket_data_processed.jsonl',
         ],
     )
     parser.add_argument(
@@ -66,6 +66,8 @@ def process_file(input_file: str, output_dir: str) -> None:
 
     print(f'Processed {input_file}')
     print(f'Created: {train_file}, {dev_file}, {test_file}')
+
+    print(get_split_stats(train_data, dev_data, test_data))
 
 
 def main():

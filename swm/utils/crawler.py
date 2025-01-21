@@ -303,16 +303,20 @@ class GoogleScholarCrawler:
 
 class DailyNewsCrawler:
     def __init__(
-        self, input_date: str, output_file: str, api_key: str, keywords: List[str]
+        self,
+        start_date: str,
+        end_date: str,
+        output_file: str,
+        api_token: str,
     ):
-        self.input_date = datetime.strptime(input_date, '%Y-%m-%d')
+        self.start_date = datetime.strptime(start_date, '%Y-%m-%d')
+        self.end_date = datetime.strptime(end_date, '%Y-%m-%d')
         self.output_file = output_file
-        self.api_key = api_key
-        self.base_url = 'https://newsapi.org/v2/everything'
-        self.keywords = keywords
+        self.api_token = api_token
+        self.base_url = 'https://api.thenewsapi.com/v1/news/headlines'
 
     def retry_on_error(self, func, *args, retries=3, delay=2, **kwargs):
-        """Helper method to retry API calls on error"""
+        """Helper method to retry a function call on error"""
         for attempt in range(retries):
             try:
                 return func(*args, **kwargs)
@@ -324,122 +328,132 @@ class DailyNewsCrawler:
                     raise
 
     def fetch_news_for_date(self, date: datetime) -> Optional[Dict]:
-        """Fetch news for a specific date"""
-
         def fetch_articles():
             params = {
-                'q': ' OR '.join(self.keywords),
-                'from': date.strftime('%Y-%m-%d'),
-                'to': (date + timedelta(days=1)).strftime('%Y-%m-%d'),
+                'api_token': self.api_token,
                 'language': 'en',
-                'sortBy': 'relevancy',
-                'apiKey': self.api_key,
-                'pageSize': 100,  # maximum allowed by the API
+                'published_on': date.strftime('%Y-%m-%d'),
+                'locale': 'us',
             }
-
             response = requests.get(self.base_url, params=params)
             response.raise_for_status()
             return response.json()
 
         return self.retry_on_error(fetch_articles)
 
-    def process_articles(self, articles: List[Dict]) -> List[Dict]:
+    def process_articles(self, data: Dict) -> List[Dict]:
         """Process and clean article data"""
         processed_articles = []
-        for article in articles:
-            try:
-                processed_article = {
-                    'title': article.get('title'),
-                    'url': article.get('url'),
-                    'source': article.get('source', {}).get('name'),
-                    'published_at': article.get('publishedAt'),
-                    'description': article.get('description'),
-                    'content': article.get('content'),
-                    'author': article.get('author'),
-                }
-                # Filter out articles with missing crucial information
-                if all(
-                    [
-                        processed_article['title'],
-                        processed_article['url'],
-                        processed_article['published_at'],
-                    ]
-                ):
-                    processed_articles.append(processed_article)
-            except Exception as e:
-                print(f'Error processing article: {e}')
+
+        # Handle nested category structure
+        categories_data = data.get('data', {})
+        if not isinstance(categories_data, dict):
+            print(f'Unexpected data format: {type(categories_data)}')
+            return []
+
+        # Iterate through each category
+        for category, articles in categories_data.items():
+            if not isinstance(articles, list):
+                print(
+                    f'Unexpected articles format for category {category}: {type(articles)}'
+                )
                 continue
+
+            for article in articles:
+                if not isinstance(article, dict):
+                    continue
+
+                try:
+                    processed_article = {
+                        'uuid': article.get('uuid'),
+                        'title': article.get('title'),
+                        'url': article.get('url'),
+                        'source': article.get('source'),
+                        'published_at': article.get('published_at'),
+                        'description': article.get('description'),
+                        'snippet': article.get('snippet'),
+                        'image_url': article.get('image_url'),
+                        'language': article.get('language'),
+                        'categories': article.get('categories', []),
+                        'similar_articles': [],
+                    }
+
+                    # Process similar articles
+                    similar = article.get('similar', [])
+                    if isinstance(similar, list):
+                        for similar_item in similar:
+                            if isinstance(similar_item, dict):
+                                similar_article = {
+                                    'uuid': similar_item.get('uuid'),
+                                    'title': similar_item.get('title'),
+                                    'url': similar_item.get('url'),
+                                    'source': similar_item.get('source'),
+                                    'published_at': similar_item.get('published_at'),
+                                    'categories': similar_item.get('categories', []),
+                                }
+                                processed_article['similar_articles'].append(
+                                    similar_article
+                                )
+
+                    if all(
+                        [
+                            processed_article['title'],
+                            processed_article['url'],
+                            processed_article['published_at'],
+                        ]
+                    ):
+                        processed_articles.append(processed_article)
+
+                except Exception as e:
+                    print(f'Error processing article: {e}')
+                    continue
 
         return processed_articles
 
-    def categorize_article(self, article: Dict) -> List[str]:
-        """Categorize article based on content"""
-        categories = []
-
-        # Safely handle None values by using empty string as default
-        title = article.get('title', '') or ''
-        description = article.get('description', '') or ''
-        content = article.get('content', '') or ''
-
-        # Combine all text content
-        full_content = f'{title} {description} {content}'.lower()
-
-        # Define category keywords
-        category_keywords = {
-            'price': ['price', 'market', 'trading', 'value'],
-            'technology': ['blockchain', 'protocol', 'technology', 'development'],
-            'regulation': ['regulation', 'sec', 'law', 'compliance'],
-            'adoption': ['adoption', 'partnership', 'integration', 'enterprise'],
-        }
-
-        for category, keywords in category_keywords.items():
-            if any(keyword in full_content for keyword in keywords):
-                categories.append(category)
-
-        return categories or ['general']
-
-    def save_data(self, data: Dict):
-        """Save crawled data to file"""
+    def save_articles(self, articles: List[Dict], mode='a'):
+        """Save articles in jsonlines format"""
         try:
-            with open(self.output_file, 'w') as f:
-                json.dump(data, f, indent=2)
+            with open(self.output_file, mode, encoding='utf-8') as f:
+                for article in articles:
+                    json.dump(article, f, ensure_ascii=False)
+                    f.write('\n')
         except Exception as e:
-            print(f'Error saving data: {e}')
+            print(f'Error saving articles: {e}')
+            raise
 
     def crawl(self):
-        """Main method to crawl and collect news data"""
+        """Main method to crawl and collect news data for date range"""
         try:
-            # Fetch news
-            raw_data = self.fetch_news_for_date(self.input_date)
-            if not raw_data or 'articles' not in raw_data:
-                print('No articles found or invalid API response')
-                return
+            current_date = self.start_date
+            while current_date <= self.end_date:
+                try:
+                    print(f"Fetching news for {current_date.strftime('%Y-%m-%d')}...")
+                    raw_data = self.fetch_news_for_date(current_date)
 
-            # Process articles
-            articles = self.process_articles(raw_data['articles'])
+                    if not raw_data or 'data' not in raw_data:
+                        print('No articles found or invalid API response')
+                        current_date += timedelta(days=1)
+                        continue
 
-            # Categorize and organize data
-            organized_data = {
-                'date': self.input_date.strftime('%Y-%m-%d'),
-                'total_articles': len(articles),
-                'articles': {},
-            }
+                    articles = self.process_articles(raw_data)
+                    if articles:
+                        self.save_articles(articles)
+                        print(
+                            f'Successfully processed {len(articles)} articles for {current_date.date()}'
+                        )
+                    else:
+                        print(f'No valid articles found for {current_date.date()}')
 
-            for article in articles:
-                # Generate unique ID for article based on URL
-                article_id = hash(article['url'])
+                    current_date += timedelta(days=1)
+                    time.sleep(1)  # Rate limiting
 
-                # Add categories
-                article['categories'] = self.categorize_article(article)
-
-                # Store in organized structure
-                organized_data['articles'][article_id] = article
-
-            # Save the data
-            self.save_data(organized_data)
-            print(
-                f'Successfully processed {len(articles)} articles for {self.input_date.date()}'
-            )
+                except Exception as e:
+                    print(f'Error processing date {current_date.date()}: {e}')
+                    current_date += timedelta(days=1)
+                    continue
 
         except Exception as e:
             print(f'An error occurred during crawling: {e}')
+            import traceback
+
+            print(traceback.format_exc())

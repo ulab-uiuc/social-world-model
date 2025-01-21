@@ -1,5 +1,4 @@
 import random
-from collections import defaultdict
 from typing import Dict, List, Tuple
 
 from ..data import PolyMarketData
@@ -8,30 +7,32 @@ from ..data import PolyMarketData
 def split_polymarket_data(
     data_list: List[PolyMarketData],
 ) -> Tuple[List[PolyMarketData], List[PolyMarketData], List[PolyMarketData]]:
-    # Group by event_id
-    event_groups = defaultdict(list)
+    event_groups: Dict[str, List[PolyMarketData]] = {}
     for record in data_list:
+        if record.event_id not in event_groups:
+            event_groups[record.event_id] = []
         event_groups[record.event_id].append(record)
 
-    train_data = []
-    dev_data = []
-    test_data = []
+    event_list = list(event_groups.items())
+    random.shuffle(event_list)
 
-    for event_id, records in event_groups.items():
-        no_outcome = [r for r in records if r.outcome is None]
-        with_outcome = [r for r in records if r.outcome is not None]
+    events_with_outcomes = []
+    events_without_outcomes = []
+    for event_id, records in event_list:
+        if all(r.outcome is not None for r in records):
+            events_with_outcomes.append((event_id, records))
+        else:
+            events_without_outcomes.append((event_id, records))
 
-        test_data.extend(no_outcome)
+    test_split = min(len(events_with_outcomes), int(0.1 * len(event_list)))
+    test_data = [r for _, records in events_with_outcomes[:test_split] for r in records]
 
-        if with_outcome:
-            random.shuffle(with_outcome)
-            total = len(with_outcome)
-            train_size = int(0.8 * total)
-            dev_size = int(0.1 * total)
+    remaining_events = events_with_outcomes[test_split:] + events_without_outcomes
+    random.shuffle(remaining_events)
 
-            train_data.extend(with_outcome[:train_size])
-            dev_data.extend(with_outcome[train_size : train_size + dev_size])
-            test_data.extend(with_outcome[train_size + dev_size :])
+    train_split = int(0.89 * len(remaining_events))
+    train_data = [r for _, records in remaining_events[:train_split] for r in records]
+    dev_data = [r for _, records in remaining_events[train_split:] for r in records]
 
     return train_data, dev_data, test_data
 
