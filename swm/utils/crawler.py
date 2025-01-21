@@ -2,7 +2,7 @@ import json
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Set, Union
 
 import httpx
@@ -304,11 +304,13 @@ class GoogleScholarCrawler:
 class DailyNewsCrawler:
     def __init__(
         self,
-        input_date: str,
+        start_date: str,
+        end_date: str,
         output_file: str,
         api_token: str,
     ):
-        self.input_date = datetime.strptime(input_date, '%Y-%m-%d')
+        self.start_date = datetime.strptime(start_date, '%Y-%m-%d')
+        self.end_date = datetime.strptime(end_date, '%Y-%m-%d')
         self.output_file = output_file
         self.api_token = api_token
         self.base_url = 'https://api.thenewsapi.com/v1/news/headlines'
@@ -326,16 +328,13 @@ class DailyNewsCrawler:
                     raise
 
     def fetch_news_for_date(self, date: datetime) -> Optional[Dict]:
-        """Fetch news for a specific date"""
-
         def fetch_articles():
             params = {
                 'api_token': self.api_token,
                 'language': 'en',
                 'published_on': date.strftime('%Y-%m-%d'),
-                'locale': 'us',  # Added locale parameter
+                'locale': 'us',
             }
-
             response = requests.get(self.base_url, params=params)
             response.raise_for_status()
             return response.json()
@@ -346,9 +345,24 @@ class DailyNewsCrawler:
         """Process and clean article data"""
         processed_articles = []
 
+        # Handle nested category structure
+        categories_data = data.get('data', {})
+        if not isinstance(categories_data, dict):
+            print(f'Unexpected data format: {type(categories_data)}')
+            return []
+
         # Iterate through each category
-        for category, articles in data.items():
+        for category, articles in categories_data.items():
+            if not isinstance(articles, list):
+                print(
+                    f'Unexpected articles format for category {category}: {type(articles)}'
+                )
+                continue
+
             for article in articles:
+                if not isinstance(article, dict):
+                    continue
+
                 try:
                     processed_article = {
                         'uuid': article.get('uuid'),
@@ -364,22 +378,23 @@ class DailyNewsCrawler:
                         'similar_articles': [],
                     }
 
-                    # Process similar articles if they exist
-                    if article.get('similar'):
-                        for similar in article['similar']:
-                            similar_article = {
-                                'uuid': similar.get('uuid'),
-                                'title': similar.get('title'),
-                                'url': similar.get('url'),
-                                'source': similar.get('source'),
-                                'published_at': similar.get('published_at'),
-                                'categories': similar.get('categories', []),
-                            }
-                            processed_article['similar_articles'].append(
-                                similar_article
-                            )
+                    # Process similar articles
+                    similar = article.get('similar', [])
+                    if isinstance(similar, list):
+                        for similar_item in similar:
+                            if isinstance(similar_item, dict):
+                                similar_article = {
+                                    'uuid': similar_item.get('uuid'),
+                                    'title': similar_item.get('title'),
+                                    'url': similar_item.get('url'),
+                                    'source': similar_item.get('source'),
+                                    'published_at': similar_item.get('published_at'),
+                                    'categories': similar_item.get('categories', []),
+                                }
+                                processed_article['similar_articles'].append(
+                                    similar_article
+                                )
 
-                    # Filter out articles with missing crucial information
                     if all(
                         [
                             processed_article['title'],
@@ -391,55 +406,51 @@ class DailyNewsCrawler:
 
                 except Exception as e:
                     print(f'Error processing article: {e}')
-                    print(f'Article data: {json.dumps(article, indent=2)}')
                     continue
 
         return processed_articles
 
-    def save_data(self, data: Dict):
-        """Save crawled data to file"""
+    def save_articles(self, articles: List[Dict], mode='a'):
+        """Save articles in jsonlines format"""
         try:
-            # Save the data
-            with open(self.output_file, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
-            print(f'Data saved to {self.output_file}')
+            with open(self.output_file, mode, encoding='utf-8') as f:
+                for article in articles:
+                    json.dump(article, f, ensure_ascii=False)
+                    f.write('\n')
         except Exception as e:
-            print(f'Error saving data: {e}')
+            print(f'Error saving articles: {e}')
             raise
 
     def crawl(self):
-        """Main method to crawl and collect news data"""
+        """Main method to crawl and collect news data for date range"""
         try:
-            # Fetch news
-            print(f"Fetching news for {self.input_date.strftime('%Y-%m-%d')}...")
-            raw_data = self.fetch_news_for_date(self.input_date)
+            current_date = self.start_date
+            while current_date <= self.end_date:
+                try:
+                    print(f"Fetching news for {current_date.strftime('%Y-%m-%d')}...")
+                    raw_data = self.fetch_news_for_date(current_date)
 
-            if not raw_data or 'data' not in raw_data:
-                print('No articles found or invalid API response')
-                print(f'Raw data: {raw_data}')
-                return
+                    if not raw_data or 'data' not in raw_data:
+                        print('No articles found or invalid API response')
+                        current_date += timedelta(days=1)
+                        continue
 
-            # Process articles
-            print(f"Processing articles from {len(raw_data['data'])} categories...")
-            articles = self.process_articles(raw_data['data'])
+                    articles = self.process_articles(raw_data)
+                    if articles:
+                        self.save_articles(articles)
+                        print(
+                            f'Successfully processed {len(articles)} articles for {current_date.date()}'
+                        )
+                    else:
+                        print(f'No valid articles found for {current_date.date()}')
 
-            # Organize data
-            organized_data = {
-                'date': self.input_date.strftime('%Y-%m-%d'),
-                'total_articles': len(articles),
-                'articles': {},
-            }
+                    current_date += timedelta(days=1)
+                    time.sleep(1)  # Rate limiting
 
-            # Store processed articles
-            for article in articles:
-                article_id = article['uuid']
-                organized_data['articles'][article_id] = article
-
-            # Save the data
-            self.save_data(organized_data)
-            print(
-                f'Successfully processed {len(articles)} articles for {self.input_date.date()}'
-            )
+                except Exception as e:
+                    print(f'Error processing date {current_date.date()}: {e}')
+                    current_date += timedelta(days=1)
+                    continue
 
         except Exception as e:
             print(f'An error occurred during crawling: {e}')

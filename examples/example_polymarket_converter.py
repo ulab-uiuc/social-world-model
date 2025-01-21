@@ -10,9 +10,13 @@ from swm.utils.converter import PolyMarketDataConverter, TimeSeriesConfig
 def parse_args():
     parser = argparse.ArgumentParser(description='Convert PolyMarket event data')
     parser.add_argument(
-        '--input_file_path', type=str, default='../data/raw/polymarket_data_raw.jsonl'
+        '--input_file_path',
+        type=str,
+        default='../data/raw_polymarket/polymarket_data_raw.jsonl',
     )
-    parser.add_argument('--output_dir', type=str, default='../data/processed')
+    parser.add_argument(
+        '--output_dir', type=str, default='../data/processed_polymarket'
+    )
     parser.add_argument('--prob_threshold', type=float, default=0.25)
     parser.add_argument('--time_threshold', type=float, default=0.05)
     return parser.parse_args()
