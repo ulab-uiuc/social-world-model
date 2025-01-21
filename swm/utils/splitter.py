@@ -1,5 +1,4 @@
 import random
-from collections import defaultdict
 from typing import Dict, List, Tuple
 
 from ..data import PolyMarketData
@@ -8,30 +7,41 @@ from ..data import PolyMarketData
 def split_polymarket_data(
     data_list: List[PolyMarketData],
 ) -> Tuple[List[PolyMarketData], List[PolyMarketData], List[PolyMarketData]]:
-    # Group by event_id
-    event_groups = defaultdict(list)
+    event_groups: Dict[str, List[PolyMarketData]] = {}
     for record in data_list:
-        event_groups[record.event_id].append(record)
+        if record.outcome is not None:  # Only keep records with outcomes
+            if record.event_id not in event_groups:
+                event_groups[record.event_id] = []
+            event_groups[record.event_id].append(record)
 
+    event_list = [(event_id, records) for event_id, records in event_groups.items()]
+    random.shuffle(event_list)
+
+    total_size = len(data_list)
+    target_test_size = int(0.1 * total_size)
+
+    test_data = []
     train_data = []
     dev_data = []
-    test_data = []
 
-    for event_id, records in event_groups.items():
-        no_outcome = [r for r in records if r.outcome is None]
-        with_outcome = [r for r in records if r.outcome is not None]
+    current_test_size = 0
 
-        test_data.extend(no_outcome)
+    for event_id, records in event_list:
+        if current_test_size < target_test_size:
+            test_data.extend(records)
+            current_test_size += len(records)
+        else:
+            break
 
-        if with_outcome:
-            random.shuffle(with_outcome)
-            total = len(with_outcome)
-            train_size = int(0.8 * total)
-            dev_size = int(0.1 * total)
+    remaining_events = event_list[len(test_data) :]
 
-            train_data.extend(with_outcome[:train_size])
-            dev_data.extend(with_outcome[train_size : train_size + dev_size])
-            test_data.extend(with_outcome[train_size + dev_size :])
+    train_split = int(0.89 * len(remaining_events))
+
+    for event_id, records in remaining_events[:train_split]:
+        train_data.extend(records)
+
+    for event_id, records in remaining_events[train_split:]:
+        dev_data.extend(records)
 
     return train_data, dev_data, test_data
 
