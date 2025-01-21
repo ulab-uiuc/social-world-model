@@ -17,8 +17,8 @@ def parse_args():
         '--input_files',
         nargs='+',
         default=[
-            '../data/processed/polymarket_data_processed_Sports.jsonl',
             '../data/processed/polymarket_data_processed_Crypto.jsonl',
+            '../data/processed/polymarket_data_processed_Sports.jsonl',
             '../data/processed/polymarket_data_processed_Election.jsonl',
             '../data/processed/polymarket_data_processed_Other.jsonl',
             '../data/processed/polymarket_data_processed_Politics.jsonl',
