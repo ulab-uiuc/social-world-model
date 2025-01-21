@@ -1,25 +1,53 @@
+import argparse
 import os
-from datetime import datetime, timedelta
 
 from swm.utils.crawler import DailyNewsCrawler
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description='Crawl daily news articles for a date range'
+    )
+    parser.add_argument(
+        '--start-date',
+        type=str,
+        default='2024-01-01',
+    )
+    parser.add_argument(
+        '--end-date',
+        type=str,
+        default='2024-01-02',
+    )
+    parser.add_argument(
+        '--output-dir',
+        type=str,
+        default='../data/raw_news',
+    )
+    parser.add_argument(
+        '--api-key',
+        type=str,
+    )
+
+    return parser.parse_args()
+
+
 def main():
-    date = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')  # Yesterday's date
-    output_file = f'./{date}.json'
-    api_token = os.environ.get('NEWS_API_KEY')
+    args = parse_args()
+    os.makedirs(args.output_dir, exist_ok=True)
 
-    try:
-        crawler = DailyNewsCrawler(
-            input_date=date,
-            output_file=output_file,
-            api_token=api_token,
-        )
+    output_file = os.path.join(
+        args.output_dir, f'daily_news_{args.start_date}_{args.end_date}.jsonl'
+    )
 
-        crawler.crawl()
+    api_token = args.api_key or os.environ.get('NEWS_API_KEY')
 
-    except Exception as e:
-        print(f'Error in main: {e}', exc_info=True)
+    crawler = DailyNewsCrawler(
+        start_date=args.start_date,
+        end_date=args.end_date,
+        output_file=output_file,
+        api_token=api_token,
+    )
+    crawler.crawl()
 
 
 if __name__ == '__main__':
