@@ -6,7 +6,7 @@ from pathlib import Path
 import jsonlines
 
 from swm.data import PolyMarketData
-from swm.utils.splitter import split_polymarket_data
+from swm.utils.splitter import get_split_stats, split_polymarket_data
 
 
 def parse_args():
@@ -66,6 +66,8 @@ def process_file(input_file: str, output_dir: str) -> None:
 
     print(f'Processed {input_file}')
     print(f'Created: {train_file}, {dev_file}, {test_file}')
+
+    print(get_split_stats(train_data, dev_data, test_data))
 
 
 def main():
