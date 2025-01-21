@@ -19,7 +19,7 @@ def split_polymarket_data(
     events_with_outcomes = []
     events_without_outcomes = []
     for event_id, records in event_list:
-        if any(r.outcome is not None for r in records):
+        if all(r.outcome is not None for r in records):
             events_with_outcomes.append((event_id, records))
         else:
             events_without_outcomes.append((event_id, records))
