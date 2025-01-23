@@ -8,6 +8,7 @@ import pandas as pd
 
 from swm.data import PolyMarketData
 from swm.swm import RAGSocialWM
+from swm.utils.metric import calculate_mae, calculate_rmse
 
 
 def load_polymarket_data(data_path: str) -> List[PolyMarketData]:
@@ -27,12 +28,12 @@ def parse_args():
     parser.add_argument(
         '--train-data-path',
         type=str,
-        default='../data/splitted_polymarket/polymarket_data_processed_Crypto_train.jsonl',
+        default='../data/splitted_polymarket/polymarket_data_processed_Crypto_test.jsonl',
     )
     parser.add_argument(
         '--valid-data-path',
         type=str,
-        default='../data/splitted_polymarket/polymarket_data_processed_Crypto_dev.jsonl',
+        default='../data/splitted_polymarket/polymarket_data_processed_Crypto_test.jsonl',
     )
     parser.add_argument(
         '--test-data-path',
@@ -78,7 +79,7 @@ def parse_args():
     parser.add_argument('--max-seq-length', type=int, default=512)
 
     # Output paths
-    parser.add_argument('--output-dir', type=str, default='./outputs')
+    parser.add_argument('--output-dir', type=str, default='../saves')
     parser.add_argument('--predictions-path', type=str, default='predictions.csv')
     parser.add_argument('--model-save-path', type=str, default='model')
 
@@ -123,20 +124,30 @@ def train_and_evaluate(args):
 
     model.train(train_data=train_data, valid_data=valid_data)
 
+    predictions = []
+    labels = []
     results = []
     for market in test_data:
-        predictions = model.predict(market)
-        for outcome, value in predictions.items():
-            results.append(
-                {
-                    'market_id': market.market_id,
-                    'outcome': outcome,
-                    'predicted_value': value,
-                }
-            )
+        prediction, label = model.predict(market)
+        predictions.append(prediction)
+        labels.append(label)
+        results.append(
+            {
+                'event_id': market.event_id,
+                'market_id': market.market_id,
+                'question': market.question,
+                'prediction': prediction,
+                'label': label,
+            }
+        )
 
-    pd.DataFrame(results).to_csv(output_dir / args.predictions_path, index=False)
-    model.save(output_dir / args.model_save_path)
+    rmse = calculate_rmse(predictions, labels)
+    mae = calculate_mae(predictions, labels)
+    print(f'Test RMSE: {rmse:.4f}')
+    print(f'Test MAE: {mae:.4f}')
+
+    results_df = pd.DataFrame(results)
+    results_df.to_csv(output_dir / args.predictions_path, index=False)
 
 
 if __name__ == '__main__':

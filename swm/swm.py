@@ -12,7 +12,7 @@ from transformers import Trainer, TrainingArguments
 
 from .data import PolyMarketData
 from .dataset import PolyMarketDataset
-from .regressor import PolyMarketLLMRegressor
+from .utils.regressor import LLMRegressor
 
 
 class RAGSocialWM:
@@ -136,7 +136,7 @@ class RAGSocialWM:
         )
 
     def setup_model(self) -> None:
-        self.model = PolyMarketLLMRegressor(
+        self.model = LLMRegressor(
             model_name=self.model_name, max_length=self.max_seq_length
         )
         self.model.llm = get_peft_model(self.model.llm, self._get_lora_config())
@@ -219,19 +219,17 @@ class RAGSocialWM:
         self,
         train_data: List[PolyMarketData],
         valid_data: List[PolyMarketData],
-    ) -> 'RAGSocialWM':
+    ) -> str:
         if self.model is None:
             self.setup_model()
 
         train_similar = {m.market_id: self.find_similar(m) for m in train_data}
         valid_similar = {m.market_id: self.find_similar(m) for m in valid_data}
 
-        train_dataset = PolyMarketDataset(
-            train_data, train_similar, self.model.tokenizer
-        )
-        valid_dataset = PolyMarketDataset(
-            valid_data, valid_similar, self.model.tokenizer
-        )
+        train_dataset = PolyMarketDataset(train_data, train_similar, self.model.tokenizer)
+        valid_dataset = PolyMarketDataset(valid_data, valid_similar, self.model.tokenizer)
+
+        best_model_dir = Path(self.output_dir) / 'checkpoint-best'
 
         trainer = Trainer(
             model=self.model,
@@ -241,12 +239,15 @@ class RAGSocialWM:
             eval_dataset=valid_dataset,
             compute_metrics=lambda eval_pred: {
                 'mse': mean_squared_error(
-                    eval_pred.label_ids, eval_pred.predictions.squeeze()
+                    eval_pred.label_ids,
+                    eval_pred.predictions.squeeze()
                 )
             },
         )
+
         trainer.train()
-        return self
+
+        trainer.save_model(best_model_dir)
 
     def predict(self, market: PolyMarketData) -> Dict[str, float]:
         similar_markets = self.find_similar(market)
@@ -257,15 +258,17 @@ class RAGSocialWM:
         if not dataset:
             return {}
 
-        predictions = {}
+        predictions = []
+        labels = []
         with torch.no_grad():
             for i in range(len(dataset)):
                 datapoint = dataset[i]
                 inputs = {k: v.unsqueeze(0) for k, v in datapoint.items()}
                 pred = self.model(**inputs)
-                predictions[dataset.datapoints[i]['outcome']] = pred.item()
+                predictions.append(pred['predictions'][0].item())
+                labels.append(datapoint['labels'].item())
 
-        return predictions
+        return predictions, labels
 
     def predict_batch(
         self, markets: List[PolyMarketData], batch_size: int = 8
@@ -316,7 +319,7 @@ class RAGSocialWM:
         path = Path(path)
 
         if (path / 'model').exists():
-            self.model = PolyMarketLLMRegressor.from_pretrained(
+            self.model = LLMRegressor.from_pretrained(
                 path / 'model', max_length=self.max_seq_length
             )
 
