@@ -13,7 +13,7 @@ from swm.utils.metric import calculate_rmse, calculate_mae
 
 def load_polymarket_data(data_path: str) -> List[PolyMarketData]:
     with jsonlines.open(data_path, 'r') as reader:
-        data = list(reader)[:1]
+        data = list(reader)
     return [PolyMarketData.from_dict(d) for d in data]
 
 
@@ -50,7 +50,7 @@ def parse_args():
     # Model parameters
     parser.add_argument('--model-name', type=str, default='Qwen/Qwen2.5-0.5B-Instruct')
     parser.add_argument('--retriever-name', type=str, default='all-MiniLM-L6-v2')
-    parser.add_argument('--epochs', type=int, default=2)
+    parser.add_argument('--epochs', type=int, default=3)
     parser.add_argument('--fp16', action='store_true')
 
     # LoRA parameters
