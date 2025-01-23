@@ -12,9 +12,7 @@ from transformers import Trainer, TrainingArguments
 
 from .data import PolyMarketData
 from .dataset import PolyMarketDataset
-
 from .utils.regressor import LLMRegressor
-
 
 
 class RAGSocialWM:
@@ -138,11 +136,7 @@ class RAGSocialWM:
         )
 
     def setup_model(self) -> None:
-<<<<<<< HEAD
         self.model = LLMRegressor(
-=======
-        self.model = PolyMarketLLMRegressor(
->>>>>>> ccf71670eedf7d66167a687b64dbe8a8a9989594
             model_name=self.model_name, max_length=self.max_seq_length
         )
         self.model.llm = get_peft_model(self.model.llm, self._get_lora_config())
