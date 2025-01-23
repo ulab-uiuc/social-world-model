@@ -11,7 +11,7 @@ import torch
 import tqdm
 from torch.utils.data import RandomSampler, SequentialSampler
 
-from swm.datasets import SeriesDataset
+from swm.dataset import SeriesDataset
 from swm.timeseries.trainer import Trainer
 from swm.timeseries.util import DataLoader
 

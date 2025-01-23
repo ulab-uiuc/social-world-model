@@ -333,6 +333,7 @@ class DailyNewsCrawler:
                 'api_token': self.api_token,
                 'language': 'en',
                 'published_on': date.strftime('%Y-%m-%d'),
+                'headlines_per_category': 10,
                 'locale': 'us',
             }
             response = requests.get(self.base_url, params=params)
