@@ -16,7 +16,7 @@ def parse_args():
     parser.add_argument(
         '--end-date',
         type=str,
-        default='2024-01-02',
+        default='2025-01-02',
     )
     parser.add_argument(
         '--output-dir',

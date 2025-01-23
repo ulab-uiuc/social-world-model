@@ -32,3 +32,9 @@ class PolyMarketData(BaseModel):
             }
 
         return cls(**{k: v for k, v in data.items() if k in cls.__annotations__})
+
+
+class DailyNewsData(BaseModel):
+    uuid: str
+    title: str
+    description: str
