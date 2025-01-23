@@ -27,7 +27,7 @@ class PolyMarketLLMRegressor(nn.Module):
     def save_pretrained(self, path: str, safe_serialization: bool = True):
         path = Path(path)
         path.mkdir(exist_ok=True)
-        
+
         self.llm.save_pretrained(
             path / 'llm',
             safe_serialization=False,
