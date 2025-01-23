@@ -1,8 +1,9 @@
 from pathlib import Path
-from typing import Dict, List
+
 import torch
 from torch import nn
 from transformers import AutoModelForCausalLM, AutoTokenizer
+
 
 class LLMRegressor(nn.Module):
     def __init__(self, model_name: str, max_length: int = 1024):
@@ -10,7 +11,7 @@ class LLMRegressor(nn.Module):
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.llm = AutoModelForCausalLM.from_pretrained(model_name).to(self.device)
-        
+
         self.regression_head = nn.Sequential(
             nn.Linear(self.llm.config.hidden_size, 256),
             nn.ReLU(),
@@ -19,7 +20,7 @@ class LLMRegressor(nn.Module):
             nn.ReLU(),
             nn.Linear(64, 1),
         ).to(self.device)
-        
+
         self.max_length = max_length
 
     def to(self, device):
@@ -55,14 +56,14 @@ class LLMRegressor(nn.Module):
             attention_mask=attention_mask,
             output_hidden_states=True,
         )
-        
+
         last_hidden = outputs.hidden_states[-1][:, -1, :]
         predictions = self.regression_head(last_hidden)
-        
+
         loss = None
         if labels is not None:
             loss = nn.MSELoss()(predictions, labels.unsqueeze(-1))
-            
+
         return (
             {'loss': loss, 'predictions': predictions}
             if loss is not None

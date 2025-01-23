@@ -8,7 +8,7 @@ import pandas as pd
 
 from swm.data import PolyMarketData
 from swm.swm import RAGSocialWM
-from swm.utils.metric import calculate_rmse, calculate_mae
+from swm.utils.metric import calculate_mae, calculate_rmse
 
 
 def load_polymarket_data(data_path: str) -> List[PolyMarketData]:
@@ -131,13 +131,15 @@ def train_and_evaluate(args):
         prediction, label = model.predict(market)
         predictions.append(prediction)
         labels.append(label)
-        results.append({
-            'event_id': market.event_id,
-            'market_id': market.market_id,
-            'question': market.question,
-            'prediction': prediction,
-            'label': label,
-        })
+        results.append(
+            {
+                'event_id': market.event_id,
+                'market_id': market.market_id,
+                'question': market.question,
+                'prediction': prediction,
+                'label': label,
+            }
+        )
 
     rmse = calculate_rmse(predictions, labels)
     mae = calculate_mae(predictions, labels)
@@ -146,6 +148,7 @@ def train_and_evaluate(args):
 
     results_df = pd.DataFrame(results)
     results_df.to_csv(output_dir / args.predictions_path, index=False)
+
 
 if __name__ == '__main__':
     args = parse_args()
