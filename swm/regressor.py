@@ -1,13 +1,14 @@
+from pathlib import Path
 from typing import Dict, List
 
 import torch
 from torch import nn
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from ..data import PolyMarketData
+from .data import PolyMarketData
 
 
-class LLMRegression(nn.Module):
+class PolyMarketLLMRegressor(nn.Module):
     def __init__(
         self, model_name: str = 'mistralai/Mistral-7B-v0.1', max_length: int = 512
     ):
@@ -23,6 +24,24 @@ class LLMRegression(nn.Module):
             nn.Linear(64, 1),
         )
         self.max_length = max_length
+
+    def save_pretrained(self, path: str, safe_serialization: bool = True):
+        path = Path(path)
+        path.mkdir(exist_ok=True)
+
+        self.llm.save_pretrained(
+            path / 'llm',
+            safe_serialization=False,
+        )
+        torch.save(self.regression_head.state_dict(), path / 'regression_head.pt')
+
+    def from_pretrained(cls, path: str):
+        path = Path(path)
+        model = cls()
+        model.llm = AutoModelForCausalLM.from_pretrained(path / 'llm')
+        regression_head_state = torch.load(path / 'regression_head.pt')
+        model.regression_head.load_state_dict(regression_head_state)
+        return model
 
     def forward(self, input_ids, attention_mask=None, labels=None):
         outputs = self.llm(
