@@ -1,50 +1,65 @@
 from typing import Dict, List
 
 import torch
-from datasets import Dataset
+from torch.utils.data import Dataset
+from tqdm import tqdm
 
 from .data import PolyMarketData
+from .utils.utils import unix_to_date
 
 
-class MarketDataset(Dataset):
+class PolyMarketDataset(Dataset):
     def __init__(
         self,
         markets: List[PolyMarketData],
         similar_markets_dict: Dict[str, List[PolyMarketData]],
         tokenizer,
         window_size: int = 5,
+        max_series_length: int = 50,
     ):
-        self.datapoints = []
         self.tokenizer = tokenizer
-        self.window_size = window_size
-        self._create_datapoints(markets, similar_markets_dict)
+        self.datapoints = []
+        self._create_datapoints(
+            markets, similar_markets_dict, window_size, max_series_length
+        )
 
-    def _create_datapoints(self, markets, similar_markets_dict):
-        for market in markets:
+    def _create_datapoints(
+        self, markets, similar_markets_dict, window_size, max_series_length
+    ):
+        for market in tqdm(markets):
             if not market.time_series:
                 continue
 
             similar_markets = similar_markets_dict[market.market_id]
-            similar_contexts = [
-                f"Similar market question: {m.question}\nDescription: {m.discrption or ''}"
-                for m in similar_markets
-                if m.market_id != market.market_id
-            ]
 
             for outcome, series in market.time_series.items():
-                if len(series) <= self.window_size:
+                if len(series) > max_series_length:
+                    gap = len(series) // max_series_length
+                    series = series[::gap]
+                if len(series) <= window_size:
                     continue
 
-                for i in range(len(series) - self.window_size):
-                    window = series[i : i + self.window_size]
-                    target = series[i + self.window_size]['value']
+                for i in range(len(series) - window_size):
+                    window = series[i : i + window_size]
+                    target = series[i + window_size]
 
-                    context = f'Question: {market.question}\n'
-                    if market.discrption:
-                        context += f'Description: {market.discrption}\n'
-                    context += '\n'.join(similar_contexts) + '\n'
-                    series_text = ' '.join([f"{p['value']:.3f}" for p in window])
-                    prompt = f'{context}Recent values: {series_text}\nPredict next value for {outcome}:'
+                    prompt = f'You are given an event: {market.question}\n'
+                    if market.description:
+                        prompt += f'{market.description}\n'
+
+                    for p in window:
+                        prompt += f"At date {unix_to_date(p['t'])}, its winning possibility is {p['p']:.3f}\n"
+
+                    prompt += '\nThere are a few similar events:\n'
+                    for m in similar_markets:
+                        if m.market_id != market.market_id:
+                            prompt += f'Event: {m.question}\n'
+                            if len(m.time_series.get(outcome, [])) > 0:
+                                latest = m.time_series[outcome][-1]
+                                prompt += f"At date {unix_to_date(latest['t'])}, its winning possibility is {latest['p']:.3f}\n"
+
+                    target_date = unix_to_date(target['t'])
+                    prompt += f'\nPlease predict the winning possibility at date {target_date}.'
 
                     encodings = self.tokenizer(
                         prompt, padding=True, truncation=True, return_tensors='pt'
@@ -53,19 +68,14 @@ class MarketDataset(Dataset):
                         {
                             'input_ids': encodings['input_ids'][0],
                             'attention_mask': encodings['attention_mask'][0],
-                            'labels': target,
-                            'market_id': market.market_id,
-                            'outcome': outcome,
+                            'labels': torch.tensor(target['p'], dtype=torch.float),
                         }
                     )
+
+        print(f'Created {len(self.datapoints)} datapoints')
 
     def __len__(self):
         return len(self.datapoints)
 
     def __getitem__(self, idx):
-        point = self.datapoints[idx]
-        return {
-            'input_ids': point['input_ids'],
-            'attention_mask': point['attention_mask'],
-            'labels': torch.tensor(point['labels'], dtype=torch.float),
-        }
+        return self.datapoints[idx]

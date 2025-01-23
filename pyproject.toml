@@ -18,6 +18,14 @@ scholarly = "^1.7.11"
 serpapi = "^0.1.5"
 matplotlib = "*"
 pymongo = "^4.10.1"
+pandas = "*"
+transformers = "*"
+peft = "*"
+faiss-cpu = "*"
+sentence_transformers = "*"
+datasets = "*"
+jsonlines = "*"
+
 
 
 [tool.poetry.group.dev.dependencies]
