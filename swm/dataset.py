@@ -34,8 +34,7 @@ class PolyMarketDataset(Dataset):
 
             for outcome, series in market.time_series.items():
                 if len(series) > max_series_length:
-                    gap = len(series) // max_series_length
-                    series = series[::gap]
+                    series = series[::24] # make hourly data into daily
                 if len(series) <= window_size:
                     continue
 
