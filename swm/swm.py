@@ -13,13 +13,8 @@ from transformers import Trainer, TrainingArguments
 from .data import PolyMarketData
 from .dataset import PolyMarketDataset
 
-<<<<<<< HEAD
 from .utils.regressor import LLMRegressor
 
-=======
-from .regressor import PolyMarketLLMRegressor
-
->>>>>>> ccf71670eedf7d66167a687b64dbe8a8a9989594
 
 
 class RAGSocialWM:
