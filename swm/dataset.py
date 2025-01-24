@@ -73,8 +73,6 @@ class PolyMarketDataset(Dataset):
                     prompt = self._create_prompt(
                         market, window, target, relevant_similar_markets, max_sim_markets
                     )
-                    pprint(prompt)
-                    import pdb; pdb.set_trace()
                     encodings = self.tokenizer(
                         prompt, padding=True, truncation=True, return_tensors='pt'
                     )
