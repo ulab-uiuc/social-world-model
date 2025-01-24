@@ -5,14 +5,30 @@ import axios from "axios";
 
 function App() {
   const [cards, setCards] = useState([]);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [tags, setTags] = useState([]);
+  const [selectedTag, setSelectedTag] = useState("");
+
 
   useEffect(() => {
-    axios.get("http://127.0.0.1:5000/api/cards")
+    let url = "http://127.0.0.1:5000/api/cards";
+    if (selectedTag) {
+      url += `?tag=${selectedTag}`;
+    }
+
+    axios.get(url)
       .then((response) => {
         setCards(response.data);
       })
       .catch((error) => console.error("Error fetching cards:", error));
+  }, [selectedTag]);
+
+
+  useEffect(() => {
+    axios.get("http://127.0.0.1:5000/api/tags")
+      .then((response) => {
+        setTags(response.data);
+      })
+      .catch((error) => console.error("Error fetching tags:", error));
   }, []);
 
   return (
@@ -21,6 +37,21 @@ function App() {
         <header className="app-header">
           <h1 className="app-title">Openmarket</h1>
           <div className="horizontal-bar"></div>
+          <div className="tag-filter">
+            <label htmlFor="tag-select">Filter by Tag: </label>
+            <select
+              id="tag-select"
+              value={selectedTag}
+              onChange={(e) => setSelectedTag(e.target.value)}
+            >
+              <option value="">All</option>
+              {tags.map((tag) => (
+                <option key={tag} value={tag}>
+                  {tag}
+                </option>
+              ))}
+            </select>
+          </div>
         </header>
         <Routes>
           <Route path="/" element={<CardList cards={cards} />} />

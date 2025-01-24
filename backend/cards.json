@@ -1,21 +1,23 @@
 [
-    {
-      "card_id": "1",
-      "question": "Who will win the president election?",
-      "options": [
-        {"option": "A", "bets": 450},
-        {"option": "B", "bets": 400},
-        {"option": "C", "bets": 100},
-        {"option": "D", "bets": 50}
-      ]
-    },
-    {
-      "card_id": "2",
-      "question": "Which is the best programming language?",
-      "options": [
-        {"option": "Python", "bets": 300},
-        {"option": "JavaScript", "bets": 200},
-        {"option": "Java", "bets": 100}
-      ]
-    }
-  ]
+  {
+    "card_id": "1",
+    "question": "Who will win the president election?",
+    "tags": ["political", "election"],
+    "options": [
+      {"option": "A", "bets": 450},
+      {"option": "B", "bets": 400},
+      {"option": "C", "bets": 100},
+      {"option": "D", "bets": 50}
+    ]
+  },
+  {
+    "card_id": "2",
+    "question": "Which is the best programming language?",
+    "tags": ["technology", "programming"],
+    "options": [
+      {"option": "Python", "bets": 300},
+      {"option": "JavaScript", "bets": 200},
+      {"option": "Java", "bets": 100}
+    ]
+  }
+]
