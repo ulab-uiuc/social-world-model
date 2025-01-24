@@ -1,7 +1,7 @@
 # retriever.py
 
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Optional
 
 import faiss
 import numpy as np
