@@ -35,7 +35,10 @@ def parse_args():
     )
 
     parser.add_argument('--test-data-path', type=str, required=True)
+    parser.add_argument('--corpus-data-path', type=str, required=True)
     parser.add_argument('--model-checkpoint', type=str, required=True)
+    parser.add_argument('--model-name', type=str, default='Qwen/Qwen2.5-0.5B-Instruct')
+    parser.add_argument('--retriever-name', type=str, default='all-MiniLM-L6-v2')
     parser.add_argument('--batch-size', type=int, default=8)
     parser.add_argument('--cache-dir', type=str, default='./cache')
     parser.add_argument('--output-dir', type=str, default='./output')
@@ -52,9 +55,9 @@ def predict(args):
     test_data = load_polymarket_data(args.test_data_path)
     corpus_data = load_polymarket_data(args.corpus_data_path)
 
-    rag_sw = RAGSocialWM(
-        model_name=None,
-        retriever_name=None,
+    swm = RAGSocialWM(
+        model_name=args.model_name,
+        retriever_name=args.retriever_name,
         cache_dir=args.cache_dir,
         lora_config=None,
         corpus_markets=corpus_data,
@@ -63,14 +66,11 @@ def predict(args):
         retriever_batch_size=args.retriever_batch_size,
     )
 
-    rag_sw.load(
+    swm.load(
         args.model_checkpoint,
-        device=torch.device('cuda')
-        if torch.cuda.is_available()
-        else torch.device('cpu'),
     )
 
-    predictions = rag_sw.predict(markets=test_data, batch_size=args.batch_size)
+    predictions = swm.predict(markets=test_data, batch_size=args.batch_size)
 
     results = []
     for market in test_data:

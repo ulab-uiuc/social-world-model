@@ -50,7 +50,7 @@ class RAGSocialWM:
         config = LLMRegressorConfig(
             base_model_name_or_path=self.model_name, max_length=self.max_seq_length
         )
-        self.model = LLMRegressor(config, lora_config=self.lora_config, device=device)
+        self.model = LLMRegressor(config, lora_config=self.lora_config)
 
     def setup_retriever(self, corpus_markets: List[PolyMarketData]) -> None:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -165,5 +165,5 @@ class RAGSocialWM:
         if self.model:
             self.model.save_pretrained(path)
 
-    def load(self, path: str, device: torch.device = torch.device('cuda')) -> None:
-        self.model = LLMRegressor.from_pretrained(path, device=device)
+    def load(self, path: str) -> None:
+        self.model = LLMRegressor.from_pretrained(path)
