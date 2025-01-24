@@ -1,19 +1,18 @@
-import json
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 import faiss
 import numpy as np
 import torch
-from peft import LoraConfig, get_peft_model
+from peft import LoraConfig
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics import mean_squared_error
-from transformers import Trainer, TrainingArguments
+from tqdm import tqdm
+from transformers import AutoTokenizer, Trainer, TrainingArguments
 
 from .data import PolyMarketData
 from .dataset import PolyMarketDataset
 from .utils.regressor import LLMRegressor, LLMRegressorConfig
-from tqdm import tqdm
 
 
 class RAGSocialWM:
@@ -29,19 +28,19 @@ class RAGSocialWM:
         retriever_batch_size: int = 32,
     ):
         self.model_name = model_name
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.max_seq_length = max_seq_length
         self.top_k = top_k
         self.model = None
         self.lora_config = lora_config
-        
+
         # Initialize the SentenceTransformer-based retriever
         self.sentence_transformer = SentenceTransformer(
-            retriever_name, 
-            device='cuda' if torch.cuda.is_available() else 'cpu'
+            retriever_name, device='cuda' if torch.cuda.is_available() else 'cpu'
         )
         self.cache_dir = Path(cache_dir)
         self.retriever_batch_size = retriever_batch_size
-        
+
         self.index = None
         self.corpus = None
         self.corpus_ids = []
@@ -56,8 +55,7 @@ class RAGSocialWM:
         Initializes the LLMRegressor model with the given device.
         """
         config = LLMRegressorConfig(
-            base_model_name_or_path=self.model_name,
-            max_length=self.max_seq_length
+            base_model_name_or_path=self.model_name, max_length=self.max_seq_length
         )
         self.model = LLMRegressor(config, lora_config=self.lora_config, device=device)
 
@@ -96,7 +94,9 @@ class RAGSocialWM:
         self.index.add(self.embeddings)
         self.corpus = {m.market_id: m for m in corpus_markets}
 
-    def find_similar(self, market: PolyMarketData, k: Optional[int] = None) -> List[PolyMarketData]:
+    def find_similar(
+        self, market: PolyMarketData, k: Optional[int] = None
+    ) -> List[PolyMarketData]:
         k = k or self.top_k
         if market.market_id not in self.market_embeddings:
             embedding = self._compute_embedding(market)
@@ -120,12 +120,12 @@ class RAGSocialWM:
                     torch.nn.functional.pad(
                         x['input_ids'][:max_len],
                         (0, max_len - min(x['input_ids'].size(0), max_len)),
-                        value=self.model.tokenizer.pad_token_id,
+                        value=self.tokenizer.pad_token_id,
                     )
                     for x in batch
                 ]
             )
-            attention_mask = (input_ids != self.model.tokenizer.pad_token_id).long()
+            attention_mask = (input_ids != self.tokenizer.pad_token_id).long()
             labels = torch.stack([x['labels'] for x in batch])
             market_ids = [x['market_id'] for x in batch]
             outcomes = [x['outcome'] for x in batch]
@@ -136,14 +136,15 @@ class RAGSocialWM:
                 'market_ids': market_ids,
                 'outcomes': outcomes,
             }
+
         return collate_fn
 
     def train(
-        self, 
-        train_data: List[PolyMarketData], 
-        valid_data: List[PolyMarketData], 
+        self,
+        train_data: List[PolyMarketData],
+        valid_data: List[PolyMarketData],
         training_args: TrainingArguments,
-        device: torch.device = torch.device('cpu')
+        device: torch.device = torch.device('cpu'),
     ) -> str:
         if self.model is None:
             self.setup_model(device=device)
@@ -152,10 +153,10 @@ class RAGSocialWM:
         valid_similar = {m.market_id: self.find_similar(m) for m in valid_data}
 
         train_dataset = PolyMarketDataset(
-            train_data, train_similar, self.model.tokenizer, self.cache_dir
+            train_data, train_similar, self.tokenizer, self.cache_dir
         )
         valid_dataset = PolyMarketDataset(
-            valid_data, valid_similar, self.model.tokenizer, self.cache_dir
+            valid_data, valid_similar, self.tokenizer, self.cache_dir
         )
 
         best_model_dir = Path(self.output_dir) / 'checkpoint-best'
@@ -166,7 +167,9 @@ class RAGSocialWM:
             train_dataset=train_dataset,
             eval_dataset=valid_dataset,
             data_collator=self._create_collate_fn(),
-            compute_metrics=lambda p: {'mse': mean_squared_error(p.label_ids, p.predictions)}
+            compute_metrics=lambda p: {
+                'mse': mean_squared_error(p.label_ids, p.predictions)
+            },
         )
 
         trainer.train()
@@ -174,16 +177,25 @@ class RAGSocialWM:
         trainer.save_model(best_model_dir)
         return str(best_model_dir)
 
-    def predict(self, markets: List[PolyMarketData], batch_size: int = 8) -> Dict[str, Dict[str, float]]:
+    def predict(
+        self, markets: List[PolyMarketData], batch_size: int = 8
+    ) -> Dict[str, Dict[str, float]]:
         similar_markets = {m.market_id: self.find_similar(m) for m in markets}
-        dataset = PolyMarketDataset(markets, similar_markets, self.model.llm.config.pad_token_id, self.cache_dir)
-        
+        dataset = PolyMarketDataset(
+            markets, similar_markets, self.model.llm.config.pad_token_id, self.cache_dir
+        )
+
         predictions = {}
-        dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=False, collate_fn=self._create_collate_fn())
-        
+        dataloader = torch.utils.data.DataLoader(
+            dataset,
+            batch_size=batch_size,
+            shuffle=False,
+            collate_fn=self._create_collate_fn(),
+        )
+
         self.model.eval()
         with torch.no_grad():
-            for batch in tqdm(dataloader, desc="Predicting Batches"):
+            for batch in tqdm(dataloader, desc='Predicting Batches'):
                 input_ids = batch['input_ids'].to(self.model.device)
                 attention_mask = batch['attention_mask'].to(self.model.device)
                 labels = batch['labels'].to(self.model.device)
@@ -193,7 +205,7 @@ class RAGSocialWM:
                     labels=labels,
                 )
                 pred_values = preds['predictions'].squeeze(-1).cpu().numpy()
-                
+
                 for i, market_id in enumerate(batch['market_ids']):
                     outcome = batch['outcomes'][i]
                     prediction_value = pred_values[i].item()

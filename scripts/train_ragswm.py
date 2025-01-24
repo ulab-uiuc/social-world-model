@@ -3,15 +3,12 @@ from pathlib import Path
 from typing import List
 
 import jsonlines
-import pandas as pd
+import torch
 from peft import LoraConfig
+from transformers import TrainingArguments
 
 from swm.data import PolyMarketData
 from swm.swm import RAGSocialWM
-from swm.utils.metric import calculate_mae, calculate_rmse
-from transformers import TrainingArguments
-from tqdm import tqdm
-import torch
 
 
 def load_polymarket_data(data_path: str) -> List[PolyMarketData]:
@@ -94,7 +91,6 @@ def train(args):
     # Load data
     train_data = load_polymarket_data(args.train_data_path)
     valid_data = load_polymarket_data(args.valid_data_path)
-    test_data = load_polymarket_data(args.test_data_path)
     corpus_data = load_polymarket_data(args.corpus_data_path)
 
     # Create LoraConfig based on parsed arguments
@@ -109,7 +105,7 @@ def train(args):
 
     # Detect device
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-    print(f"Using device: {device}")
+    print(f'Using device: {device}')
 
     # Initialize RAGSocialWM with lora_config and device
     model = RAGSocialWM(
@@ -147,12 +143,12 @@ def train(args):
 
     # Train the model, passing the device
     best_model_checkpoint = model.train(
-        train_data=train_data, 
-        valid_data=valid_data, 
+        train_data=train_data,
+        valid_data=valid_data,
         training_args=training_args,
-        device=device
+        device=device,
     )
-    print(f"Best model checkpoint saved at: {best_model_checkpoint}")
+    print(f'Best model checkpoint saved at: {best_model_checkpoint}')
 
 
 if __name__ == '__main__':
