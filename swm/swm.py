@@ -39,7 +39,7 @@ class RAGSocialWM:
         eval_steps: int = 50,
         fp16: bool = False,
         output_dir: str = './market_predictor',
-        top_k: int = 5,
+        top_k: int = 50,
         retriever_batch_size: int = 32,
         max_seq_length: int = 512,
     ):
@@ -333,3 +333,4 @@ class RAGSocialWM:
         self.index = faiss.read_index(str(path / 'index.faiss'))
         self.embeddings = np.load(str(path / 'embeddings.npy'))
         return self
+
