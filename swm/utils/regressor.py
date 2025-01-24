@@ -88,7 +88,7 @@ class LLMRegressor(PreTrainedModel):
     def from_pretrained(
         cls,
         pretrained_model_name_or_path: str,
-        device: torch.device = torch.device('cpu'),
+        device: torch.device = torch.device('cuda'),
         *model_args,
         **kwargs,
     ):
