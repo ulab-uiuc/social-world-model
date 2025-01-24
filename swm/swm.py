@@ -133,7 +133,7 @@ class RAGSocialWM:
         dataset = PolyMarketDataset(
             markets, similar_markets, self.tokenizer, self.cache_dir
         )
-        predictions = {}
+        results = {}
         dataloader = DataLoader(
             dataset,
             batch_size=batch_size,
@@ -152,13 +152,15 @@ class RAGSocialWM:
                     labels=labels,
                 )
                 pred_values = preds['predictions'].squeeze(-1).cpu().numpy()
+                label_values = labels.squeeze(-1).cpu().numpy()
                 for i, market_id in enumerate(batch['market_ids']):
                     outcome = batch['outcomes'][i]
-                    prediction_value = pred_values[i].item()
-                    if market_id not in predictions:
-                        predictions[market_id] = {}
-                    predictions[market_id][outcome] = prediction_value
-        return predictions
+                    pred_value = pred_values[i].item()
+                    label_value = label_values[i].item()
+                    if market_id not in results:
+                        results[market_id] = {}
+                    results[market_id][outcome] = {'pred': pred_value, 'label': label_value}
+        return results
 
     def save(self, path: str) -> None:
         if self.model:

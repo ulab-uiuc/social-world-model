@@ -26,7 +26,9 @@ def load_polymarket_data(data_path):
     import jsonlines
 
     with jsonlines.open(data_path, 'r') as reader:
-        return [PolyMarketData.from_dict(d) for d in reader]
+        dataset = list(reader)
+        dataset = dataset[:1]
+        return [PolyMarketData.from_dict(d) for d in dataset]
 
 
 def parse_args():
@@ -69,6 +71,7 @@ def train(args):
     valid_data = load_polymarket_data(args.valid_data_path)
     corpus_data = load_polymarket_data(args.corpus_data_path)
 
+
     lora_config = LoraConfig(
         r=args.r,
         lora_alpha=args.lora_alpha,
@@ -105,7 +108,6 @@ def train(args):
         eval_strategy='steps',
         save_strategy='steps',
         fp16=args.fp16,
-        load_best_model_at_end=True,
         metric_for_best_model='loss',
         save_safetensors=False,
     )

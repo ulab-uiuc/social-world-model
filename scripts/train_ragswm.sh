@@ -68,6 +68,7 @@ CUDA_VISIBLE_DEVICES=9 python train_ragswm.py \
 --cache-dir ../cache/cache_crypto \
 --predictions-path ../saves/predictions_crypto.csv \
 --top-k 50 \
---epochs 5 \
+--epochs 300 \
 --save-steps 10 \
---eval-steps 10
+--eval-steps 10 \
+--warmup-steps 0
