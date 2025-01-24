@@ -28,15 +28,7 @@ class PolyMarketDataset(Dataset):
             max_sim_markets,
         )
 
-    def _filter_midnight_points(self, series):
-        from datetime import datetime
 
-        midnight_points = []
-        for point in series:
-            dt = datetime.fromtimestamp(point['t'])
-            if dt.hour == 0 and dt.minute == 0:
-                midnight_points.append(point)
-        return midnight_points
 
     def _create_datapoints(
         self,

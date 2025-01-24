@@ -62,12 +62,12 @@ def parse_args():
     )
 
     # Training parameters
-    parser.add_argument('--train-batch-size', type=int, default=4)
-    parser.add_argument('--eval-batch-size', type=int, default=4)
+    parser.add_argument('--train-batch-size', type=int, default=12)
+    parser.add_argument('--eval-batch-size', type=int, default=12)
     parser.add_argument('--learning-rate', type=float, default=1e-4)
     parser.add_argument('--weight-decay', type=float, default=0.01)
     parser.add_argument('--warmup-steps', type=int, default=100)
-    parser.add_argument('--grad-accum-steps', type=int, default=4)
+    parser.add_argument('--grad-accum-steps', type=int, default=1)
     parser.add_argument('--max-grad-norm', type=float, default=1.0)
     parser.add_argument('--logging-steps', type=int, default=10)
     parser.add_argument('--save-steps', type=int, default=1000)
