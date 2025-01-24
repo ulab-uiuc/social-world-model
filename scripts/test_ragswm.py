@@ -10,27 +10,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error
 
 from swm.data import PolyMarketData
 from swm.swm import RAGSocialWM
-
-
-def set_seed(seed: int = 42):
-    import random
-
-    import numpy as np
-
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
-
-
-def load_polymarket_data(data_path):
-    import jsonlines
-
-    with jsonlines.open(data_path, 'r') as reader:
-        dataset = list(reader)
-        dataset = dataset[:1]
-        return [PolyMarketData.from_dict(d) for d in dataset]
+from swm.swm.utils import set_seed, load_polymarket_data
 
 
 def parse_args():

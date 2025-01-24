@@ -5,6 +5,8 @@ CUDA_VISIBLE_DEVICES=9 python train_ragswm.py \
 --output-dir ../saves/saves_crypto \
 --cache-dir ../cache/cache_crypto \
 --predictions-path ../saves/predictions_crypto.csv \
+--train-batch-size 16 \
+--eval-batch-size 16 \
 --top-k 50 \
 --epochs 5
 
@@ -15,6 +17,8 @@ CUDA_VISIBLE_DEVICES=8 python train_ragswm.py \
 --output-dir ../saves/saves_sports \
 --cache-dir ../cache/cache_sports \
 --predictions-path ../saves/predictions_crypto.csv \
+--train-batch-size 16 \
+--eval-batch-size 16 \
 --top-k 50 \
 --epochs 5
 
@@ -25,6 +29,8 @@ CUDA_VISIBLE_DEVICES=7 python train_ragswm.py \
 --output-dir ../saves/saves_other \
 --cache-dir ../cache/cache_other \
 --predictions-path ../saves/predictions_other.csv \
+--train-batch-size 16 \
+--eval-batch-size 16 \
 --top-k 50 \
 --epochs 5
 
@@ -35,6 +41,8 @@ CUDA_VISIBLE_DEVICES=6 python train_ragswm.py \
 --output-dir ../saves/saves_election \
 --cache-dir ../cache/cache_election \
 --predictions-path ../saves/predictions_election.csv \
+--train-batch-size 16 \
+--eval-batch-size 16 \
 --top-k 50 \
 --epochs 5
 
@@ -45,6 +53,8 @@ CUDA_VISIBLE_DEVICES=5 python train_ragswm.py \
 --output-dir ../saves/saves_politics \
 --cache-dir ../cache/cache_politics \
 --predictions-path ../saves/predictions_politics.csv \
+--train-batch-size 16 \
+--eval-batch-size 16 \
 --top-k 50 \
 --epochs 5
 
@@ -55,6 +65,8 @@ CUDA_VISIBLE_DEVICES=4 python train_ragswm.py \
 --output-dir ../saves/saves_all \
 --cache-dir ../cache/cache_all \
 --predictions-path ../saves/predictions_all.csv \
+--train-batch-size 16 \
+--eval-batch-size 16 \
 --top-k 50 \
 --epochs 5
 

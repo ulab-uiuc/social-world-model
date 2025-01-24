@@ -8,27 +8,7 @@ from transformers import TrainingArguments
 
 from swm.data import PolyMarketData
 from swm.swm import RAGSocialWM
-
-
-def set_seed(seed: int = 42):
-    import random
-
-    import numpy as np
-
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
-
-
-def load_polymarket_data(data_path):
-    import jsonlines
-
-    with jsonlines.open(data_path, 'r') as reader:
-        dataset = list(reader)
-        dataset = dataset[:1]
-        return [PolyMarketData.from_dict(d) for d in dataset]
+from swm.utils.utils import set_seed, load_polymarket_data
 
 
 def parse_args():
@@ -39,7 +19,6 @@ def parse_args():
     parser.add_argument('--corpus-data-path', type=str, required=True)
     parser.add_argument('--model-name', type=str, default='Qwen/Qwen2.5-0.5B-Instruct')
     parser.add_argument('--retriever-name', type=str, default='all-MiniLM-L6-v2')
-    parser.add_argument('--batch-size', type=int, default=8)
     parser.add_argument('--eval-batch-size', type=int, default=8)
     parser.add_argument('--cache-dir', type=str, default='./cache')
     parser.add_argument('--output-dir', type=str, default='./output')
@@ -56,8 +35,8 @@ def parse_args():
     parser.add_argument('--warmup-steps', type=int, default=0)
     parser.add_argument('--max-grad-norm', type=float, default=1.0)
     parser.add_argument('--logging-steps', type=int, default=100)
-    parser.add_argument('--save-steps', type=int, default=100)
-    parser.add_argument('--eval-steps', type=int, default=100)
+    parser.add_argument('--save-steps', type=int, default=500)
+    parser.add_argument('--eval-steps', type=int, default=500)
     parser.add_argument('--fp16', action='store_true')
     parser.add_argument('--lora-alpha', type=float, default=0.5)
     parser.add_argument('--lora-dropout', type=float, default=0.1)
