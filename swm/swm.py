@@ -120,13 +120,12 @@ class RAGSocialWM:
                     torch.nn.functional.pad(
                         x['input_ids'][:max_len],
                         (0, max_len - min(x['input_ids'].size(0), max_len)),
-                        value=self.model.llm.config.pad_token_id,  # Adjusted
+                        value=self.model.tokenizer.pad_token_id,
                     )
                     for x in batch
                 ]
             )
-            import pdb; pdb.set_trace()
-            attention_mask = (input_ids != self.model.llm.config.pad_token_id).long()
+            attention_mask = (input_ids != self.model.tokenizer.pad_token_id).long()
             labels = torch.stack([x['labels'] for x in batch])
             market_ids = [x['market_id'] for x in batch]
             outcomes = [x['outcome'] for x in batch]
@@ -152,8 +151,14 @@ class RAGSocialWM:
         train_similar = {m.market_id: self.find_similar(m) for m in train_data}
         valid_similar = {m.market_id: self.find_similar(m) for m in valid_data}
 
-        train_dataset = PolyMarketDataset(train_data, train_similar, self.model.llm.config.pad_token_id)
-        valid_dataset = PolyMarketDataset(valid_data, valid_similar, self.model.llm.config.pad_token_id)
+        train_dataset = PolyMarketDataset(
+            train_data, train_similar, self.model.tokenizer, self.cache_dir
+        )
+        valid_dataset = PolyMarketDataset(
+            valid_data, valid_similar, self.model.tokenizer, self.cache_dir
+        )
+
+        best_model_dir = Path(self.output_dir) / 'checkpoint-best'
 
         trainer = Trainer(
             model=self.model,
