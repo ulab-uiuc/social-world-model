@@ -1,5 +1,4 @@
 import argparse
-import os
 from pathlib import Path
 from typing import List
 
@@ -18,8 +17,6 @@ def load_polymarket_data(data_path: str) -> List[PolyMarketData]:
 
 
 def parse_args():
-    os.environ['CUDA_VISIBLE_DEVICES'] = '9'
-
     parser = argparse.ArgumentParser(
         description='Train and evaluate the RAG Social Wisdom Model'
     )
@@ -62,8 +59,8 @@ def parse_args():
     )
 
     # Training parameters
-    parser.add_argument('--train-batch-size', type=int, default=12)
-    parser.add_argument('--eval-batch-size', type=int, default=12)
+    parser.add_argument('--train-batch-size', type=int, default=16)
+    parser.add_argument('--eval-batch-size', type=int, default=16)
     parser.add_argument('--learning-rate', type=float, default=1e-4)
     parser.add_argument('--weight-decay', type=float, default=0.01)
     parser.add_argument('--warmup-steps', type=int, default=100)
@@ -76,7 +73,7 @@ def parse_args():
     # Retriever parameters
     parser.add_argument('--top-k', type=int, default=10)
     parser.add_argument('--retriever-batch-size', type=int, default=32)
-    parser.add_argument('--max-seq-length', type=int, default=512)
+    parser.add_argument('--max-seq-length', type=int, default=1024)
 
     # Output paths
     parser.add_argument('--output-dir', type=str, default='../saves_crypto')

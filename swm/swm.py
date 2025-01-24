@@ -196,16 +196,8 @@ class RAGSocialWM:
                     for x in batch
                 ]
             )
-            attention_mask = torch.stack(
-                [
-                    torch.nn.functional.pad(
-                        x['attention_mask'][:max_len],
-                        (0, max_len - min(x['attention_mask'].size(0), max_len)),
-                        value=0,
-                    )
-                    for x in batch
-                ]
-            )
+
+            attention_mask = (input_ids != self.model.tokenizer.pad_token_id).long()
             labels = torch.stack([x['labels'] for x in batch])
             return {
                 'input_ids': input_ids,
@@ -227,10 +219,10 @@ class RAGSocialWM:
         valid_similar = {m.market_id: self.find_similar(m) for m in valid_data}
 
         train_dataset = PolyMarketDataset(
-            train_data, train_similar, self.model.tokenizer
+            train_data, train_similar, self.model.tokenizer, self.cache_dir
         )
         valid_dataset = PolyMarketDataset(
-            valid_data, valid_similar, self.model.tokenizer
+            valid_data, valid_similar, self.model.tokenizer, self.cache_dir
         )
 
         best_model_dir = Path(self.output_dir) / 'checkpoint-best'
