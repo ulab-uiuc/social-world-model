@@ -1,16 +1,15 @@
 # predict_ragswm.py
 
 import argparse
+from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import torch
+from sklearn.metrics import mean_absolute_error, mean_squared_error
 
 from swm.data import PolyMarketData
 from swm.swm import RAGSocialWM
-from sklearn.metrics import mean_squared_error, mean_absolute_error
-import numpy as np
-from pathlib import Path
-
 
 
 def set_seed(seed: int = 42):
@@ -106,15 +105,15 @@ def predict(args):
         mae = mean_absolute_error(y_true, y_pred)
         mse = mean_squared_error(y_true, y_pred)
 
-        print(f"RMSE: {rmse:.4f}")
-        print(f"MAE: {mae:.4f}")
-        print(f"MSE: {mse:.4f}")
+        print(f'RMSE: {rmse:.4f}')
+        print(f'MAE: {mae:.4f}')
+        print(f'MSE: {mse:.4f}')
     else:
-        print("No valid labels available to calculate RMSE and MAE.")
+        print('No valid labels available to calculate RMSE and MAE.')
 
     metrics = {
         'RMSE': rmse if not valid_results.empty else None,
-        'MAE': mae if not valid_results.empty else None
+        'MAE': mae if not valid_results.empty else None,
     }
     metrics_df = pd.DataFrame([metrics])
     metrics_df.to_csv(Path(args.output_dir) / 'evaluation_metrics.csv', index=False)

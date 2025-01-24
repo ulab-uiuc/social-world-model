@@ -159,7 +159,10 @@ class RAGSocialWM:
                     label_value = label_values[i].item()
                     if market_id not in results:
                         results[market_id] = {}
-                    results[market_id][outcome] = {'pred': pred_value, 'label': label_value}
+                    results[market_id][outcome] = {
+                        'pred': pred_value,
+                        'label': label_value,
+                    }
         return results
 
     def save(self, path: str) -> None:

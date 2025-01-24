@@ -71,7 +71,6 @@ def train(args):
     valid_data = load_polymarket_data(args.valid_data_path)
     corpus_data = load_polymarket_data(args.corpus_data_path)
 
-
     lora_config = LoraConfig(
         r=args.r,
         lora_alpha=args.lora_alpha,
