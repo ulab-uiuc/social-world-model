@@ -31,7 +31,6 @@ class PolyMarketDataConverter:
             '%Y-%m-%dT%H:%M:%SZ',
         ]
 
-
     def find_breakpoints(
         self,
         time_series_data: List[Dict[str, float]],

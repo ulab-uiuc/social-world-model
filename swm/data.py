@@ -39,7 +39,7 @@ class PolyMarketData(BaseModel):
 
     class Config:
         arbitrary_types_allowed = True
-        extra = "allow"
+        extra = 'allow'
 
 
 class DailyNewsData(BaseModel):
@@ -49,4 +49,4 @@ class DailyNewsData(BaseModel):
 
     class Config:
         arbitrary_types_allowed = True
-        extra = "allow"
+        extra = 'allow'

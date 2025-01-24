@@ -1,5 +1,4 @@
 import argparse
-import os
 from pathlib import Path
 from typing import List
 
@@ -18,7 +17,6 @@ def load_polymarket_data(data_path: str) -> List[PolyMarketData]:
 
 
 def parse_args():
-
     parser = argparse.ArgumentParser(
         description='Train and evaluate the RAG Social Wisdom Model'
     )
