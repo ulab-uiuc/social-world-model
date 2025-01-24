@@ -5,6 +5,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
 from ..data import PolyMarketData
+from .utils import filter_midnight_points
 
 
 class Category(str, Enum):
@@ -76,7 +77,7 @@ class PolyMarketDataConverter:
             return outcomes[max_price_index]
         return None
 
-    def parse_time_series(
+    def parse_hourly_time_series(
         self, market: Dict[str, Any], outcomes: List[str]
     ) -> Dict[str, Dict[int, float]]:
         clob_token_ids = json.loads(market['clobTokenIds'])
@@ -84,6 +85,17 @@ class PolyMarketDataConverter:
             outcomes[idx]: market['history'][str(token_id)]
             for idx, token_id in enumerate(clob_token_ids)
         }
+
+    def parse_daily_time_series(
+        self, market: Dict[str, Any], outcomes: List[str]
+    ) -> Dict[str, List[Dict[str, float]]]:
+        clob_token_ids = json.loads(market['clobTokenIds'])
+        daily_data = {}
+        for idx, token_id in enumerate(clob_token_ids):
+            daily_data[outcomes[idx]] = filter_midnight_points(
+                market['history'][str(token_id)]
+            )
+        return daily_data
 
     def parse_timestamp(self, datetime_str: str) -> float:
         for fmt in self.datetime_formats:
@@ -113,14 +125,15 @@ class PolyMarketDataConverter:
             end_date = market['endDate'] if 'endDate' in market else event['endDate']
             start_ts = self.parse_timestamp(start_date)
             end_ts = self.parse_timestamp(end_date)
-            time_series = self.parse_time_series(market, outcome_options)
+            hourly_time_series = self.parse_hourly_time_series(market, outcome_options)
+            daily_time_series = self.parse_daily_time_series(market, outcome_options)
             volumn = market.get('volume', None)
             resolution_source = market.get('resolutionSource', None)
             description = market.get('description', None)
 
             breakpoint_ts_pairs = {
                 outcome: self.find_breakpoints(data, start_ts, end_ts)
-                for outcome, data in time_series.items()
+                for outcome, data in hourly_time_series.items()
             }
 
             return PolyMarketData(
@@ -131,7 +144,8 @@ class PolyMarketDataConverter:
                 resolution_source=resolution_source,
                 volume=volumn,
                 outcome=outcome,
-                time_series=time_series,
+                hourly_time_series=hourly_time_series,
+                daily_time_series=daily_time_series,
                 tags=tags,
                 tag_ids=tag_ids,
                 categories=categories,

@@ -16,7 +16,10 @@ class PolyMarketData(BaseModel):
     tags: Optional[List[str]] = Field(default=None)
     tag_ids: Optional[List[str]] = Field(default=None)
     categories: Optional[List[str]] = Field(default=None)
-    time_series: Optional[Dict[str, List[Dict[str, Union[int, float]]]]] = Field(
+    daily_time_series: Optional[Dict[str, List[Dict[str, Union[int, float]]]]] = Field(
+        default=None
+    )
+    hourly_time_series: Optional[Dict[str, List[Dict[str, Union[int, float]]]]] = Field(
         default=None
     )
     breakpoint_ts_pairs: Optional[Dict[str, List[Tuple[float, float, float]]]] = Field(
@@ -34,8 +37,16 @@ class PolyMarketData(BaseModel):
 
         return cls(**{k: v for k, v in data.items() if k in cls.__annotations__})
 
+    class Config:
+        arbitrary_types_allowed = True
+        extra = 'allow'
+
 
 class DailyNewsData(BaseModel):
     uuid: str
     title: str
     description: str
+
+    class Config:
+        arbitrary_types_allowed = True
+        extra = 'allow'
