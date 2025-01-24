@@ -27,7 +27,7 @@ def parse_args():
     )
     parser.add_argument(
         '--output_dir',
-        default='../data/splitted',
+        default='../data/splitted_polymarket',
     )
     parser.add_argument(
         '--seed',
