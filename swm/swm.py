@@ -39,7 +39,7 @@ class RAGSocialWM:
         eval_steps: int = 50,
         fp16: bool = False,
         output_dir: str = './market_predictor',
-        top_k: int = 5,
+        top_k: int = 50,
         retriever_batch_size: int = 32,
         max_seq_length: int = 512,
     ):
@@ -226,8 +226,12 @@ class RAGSocialWM:
         train_similar = {m.market_id: self.find_similar(m) for m in train_data}
         valid_similar = {m.market_id: self.find_similar(m) for m in valid_data}
 
-        train_dataset = PolyMarketDataset(train_data, train_similar, self.model.tokenizer)
-        valid_dataset = PolyMarketDataset(valid_data, valid_similar, self.model.tokenizer)
+        train_dataset = PolyMarketDataset(
+            train_data, train_similar, self.model.tokenizer
+        )
+        valid_dataset = PolyMarketDataset(
+            valid_data, valid_similar, self.model.tokenizer
+        )
 
         best_model_dir = Path(self.output_dir) / 'checkpoint-best'
 
@@ -239,8 +243,7 @@ class RAGSocialWM:
             eval_dataset=valid_dataset,
             compute_metrics=lambda eval_pred: {
                 'mse': mean_squared_error(
-                    eval_pred.label_ids,
-                    eval_pred.predictions.squeeze()
+                    eval_pred.label_ids, eval_pred.predictions.squeeze()
                 )
             },
         )

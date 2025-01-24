@@ -28,12 +28,12 @@ def parse_args():
     parser.add_argument(
         '--train-data-path',
         type=str,
-        default='../data/splitted_polymarket/polymarket_data_processed_Crypto_test.jsonl',
+        default='../data/splitted_polymarket/polymarket_data_processed_Crypto_train.jsonl',
     )
     parser.add_argument(
         '--valid-data-path',
         type=str,
-        default='../data/splitted_polymarket/polymarket_data_processed_Crypto_test.jsonl',
+        default='../data/splitted_polymarket/polymarket_data_processed_Crypto_dev.jsonl',
     )
     parser.add_argument(
         '--test-data-path',
@@ -70,16 +70,16 @@ def parse_args():
     parser.add_argument('--grad-accum-steps', type=int, default=4)
     parser.add_argument('--max-grad-norm', type=float, default=1.0)
     parser.add_argument('--logging-steps', type=int, default=10)
-    parser.add_argument('--save-steps', type=int, default=50)
-    parser.add_argument('--eval-steps', type=int, default=50)
+    parser.add_argument('--save-steps', type=int, default=1000)
+    parser.add_argument('--eval-steps', type=int, default=1000)
 
     # Retriever parameters
-    parser.add_argument('--top-k', type=int, default=5)
+    parser.add_argument('--top-k', type=int, default=10)
     parser.add_argument('--retriever-batch-size', type=int, default=32)
     parser.add_argument('--max-seq-length', type=int, default=512)
 
     # Output paths
-    parser.add_argument('--output-dir', type=str, default='../saves')
+    parser.add_argument('--output-dir', type=str, default='../saves_crypto')
     parser.add_argument('--predictions-path', type=str, default='predictions.csv')
     parser.add_argument('--model-save-path', type=str, default='model')
 

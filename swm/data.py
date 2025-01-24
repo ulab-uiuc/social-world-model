@@ -22,6 +22,7 @@ class PolyMarketData(BaseModel):
     breakpoint_ts_pairs: Optional[Dict[str, List[Tuple[float, float, float]]]] = Field(
         default=None
     )
+    window_series: Optional[List[Dict[str, Union[int, float]]]] = Field(default=None)
 
     @classmethod
     def from_dict(cls, data: Dict) -> 'PolyMarketData':
