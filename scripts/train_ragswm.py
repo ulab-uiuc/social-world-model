@@ -2,13 +2,11 @@
 
 import argparse
 
-import torch
 from peft import LoraConfig
 from transformers import TrainingArguments
 
-from swm.data import PolyMarketData
 from swm.swm import RAGSocialWM
-from swm.utils.utils import set_seed, load_polymarket_data
+from swm.utils.utils import load_polymarket_data, set_seed
 
 
 def parse_args():
