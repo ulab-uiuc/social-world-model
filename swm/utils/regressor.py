@@ -1,71 +1,97 @@
-from pathlib import Path
-
 import torch
-from torch import nn
-from transformers import AutoModelForCausalLM, AutoTokenizer
+import torch.nn as nn
+from transformers import PreTrainedModel, PretrainedConfig, AutoModelForCausalLM, AutoTokenizer
+import json
+from pathlib import Path
+from typing import Optional
+from peft import LoraConfig, get_peft_model, PeftModel
 
 
-class LLMRegressor(nn.Module):
-    def __init__(self, model_name: str, max_length: int = 1024):
-        super().__init__()
-        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.llm = AutoModelForCausalLM.from_pretrained(model_name).to(self.device)
+class LLMRegressorConfig(PretrainedConfig):
+    model_type = "llm_regressor"
+    
+    def __init__(self, base_model_name_or_path="gpt2", max_length=1024, **kwargs):
+        super().__init__(**kwargs)
+        self.base_model_name_or_path = base_model_name_or_path
+        self.max_length = max_length
 
+
+class LLMRegressor(PreTrainedModel):
+    config_class = LLMRegressorConfig
+
+    def __init__(
+        self, 
+        config: LLMRegressorConfig, 
+        lora_config: Optional[LoraConfig] = None, 
+        device: torch.device = torch.device('cpu')
+    ):
+        super().__init__(config)
+        self.llm = AutoModelForCausalLM.from_pretrained(config.base_model_name_or_path).to(device)
+        hidden_size = self.llm.config.hidden_size
         self.regression_head = nn.Sequential(
-            nn.Linear(self.llm.config.hidden_size, 256),
+            nn.Linear(hidden_size, 256),
             nn.ReLU(),
             nn.Dropout(0.1),
             nn.Linear(256, 64),
             nn.ReLU(),
             nn.Linear(64, 1),
-        ).to(self.device)
-
-        self.max_length = max_length
-
-    def to(self, device):
-        self.device = device
-        self.llm = self.llm.to(device)
-        self.regression_head = self.regression_head.to(device)
-        return self
-
-    def save_pretrained(self, path: str, safe_serialization: bool = True):
-        path = Path(path)
-        path.mkdir(exist_ok=True)
-        self.llm.save_pretrained(path / 'llm', safe_serialization=False)
-        torch.save(self.regression_head.state_dict(), path / 'regression_head.pt')
-
-    @classmethod
-    def from_pretrained(cls, path: str):
-        path = Path(path)
-        model = cls()
-        model.llm = AutoModelForCausalLM.from_pretrained(path / 'llm')
-        regression_head_state = torch.load(path / 'regression_head.pt')
-        model.regression_head.load_state_dict(regression_head_state)
-        return model
+        ).to(device)
+        self.max_length = config.max_length
+        if lora_config:
+            self.llm = get_peft_model(self.llm, lora_config).to(device)
 
     def forward(self, input_ids, attention_mask=None, labels=None):
-        input_ids = input_ids.to(self.device)
+        input_ids = input_ids.to(self.llm.device)
         if attention_mask is not None:
-            attention_mask = attention_mask.to(self.device)
+            attention_mask = attention_mask.to(self.llm.device)
         if labels is not None:
-            labels = labels.to(self.device)
-
+            labels = labels.to(self.llm.device)
+        
         outputs = self.llm(
             input_ids=input_ids,
             attention_mask=attention_mask,
-            output_hidden_states=True,
+            output_hidden_states=True
         )
-
+        
         last_hidden = outputs.hidden_states[-1][:, -1, :]
         predictions = self.regression_head(last_hidden)
-
+        
         loss = None
         if labels is not None:
-            loss = nn.MSELoss()(predictions, labels.unsqueeze(-1))
+            loss = nn.MSELoss()(predictions.view(-1), labels.view(-1))
+            return {"loss": loss, "predictions": predictions}
+        
+        return predictions
 
-        return (
-            {'loss': loss, 'predictions': predictions}
-            if loss is not None
-            else predictions
-        )
+    def save_pretrained(self, save_directory: str, **kwargs):
+        Path(save_directory).mkdir(parents=True, exist_ok=True)
+        self.llm.save_pretrained(save_directory, **kwargs)
+        self.regression_head.cpu()
+        torch.save(self.regression_head.state_dict(), Path(save_directory) / 'regression_head.bin')
+        tokenizer = AutoTokenizer.from_pretrained(self.config.base_model_name_or_path)
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
+        tokenizer.save_pretrained(save_directory)
+
+    @classmethod
+    def from_pretrained(
+        cls, 
+        pretrained_model_name_or_path: str, 
+        device: torch.device = torch.device('cpu'), 
+        *model_args, 
+        **kwargs
+    ):
+        config = LLMRegressorConfig.from_pretrained(pretrained_model_name_or_path, **kwargs)
+        lora_config_path = Path(pretrained_model_name_or_path) / 'peft_config.json'
+        lora_config = None
+        if lora_config_path.exists():
+            with open(lora_config_path, 'r') as f:
+                lora_config_dict = json.load(f)
+                lora_config = LoraConfig.from_dict(lora_config_dict)
+        model = cls(config, lora_config=lora_config, device=device)
+        regression_head_path = Path(pretrained_model_name_or_path) / 'regression_head.bin'
+        if regression_head_path.exists():
+            model.regression_head.load_state_dict(torch.load(regression_head_path, map_location=device))
+            model.regression_head.to(device)
+        model.llm.to(device)
+        return model
