@@ -13,7 +13,9 @@ def filter_midnight_points(series: List[Dict[str, float]]) -> List[Dict[str, flo
     midnight_points = []
     for point in series:
         dt = datetime.fromtimestamp(point['t'])
-        aoe_hour = (dt.hour + 12) % 24  # Convert to AoE time
-        if aoe_hour == 0 and dt.minute == 0:
+        if dt.hour == 0 and dt.minute == 0:
             midnight_points.append(point)
     return midnight_points
+
+def normalize_timestamp(ts: float) -> int:
+    return ts - (ts % 60)
