@@ -18,10 +18,16 @@ from transformers import (
 class LLMRegressorConfig(PretrainedConfig):
     model_type = 'llm_regressor'
 
-    def __init__(self, base_model_name_or_path='gpt2', max_length=1024, **kwargs):
+    def __init__(
+        self,
+        base_model_name_or_path: Optional[str] = None,
+        max_length: Optional[int] = 512,
+        **kwargs
+    ):
         super().__init__(**kwargs)
         self.base_model_name_or_path = base_model_name_or_path
         self.max_length = max_length
+
 
 
 class LLMRegressor(PreTrainedModel):
@@ -66,14 +72,13 @@ class LLMRegressor(PreTrainedModel):
     def save_pretrained(self, save_directory: str, **kwargs):
         Path(save_directory).mkdir(parents=True, exist_ok=True)
         self.llm.save_pretrained(save_directory, **kwargs)
+        self.config.save_pretrained(save_directory)
+        
         torch.save(
             self.regression_head.state_dict(),
             Path(save_directory) / 'regression_head.bin',
         )
-        tokenizer = AutoTokenizer.from_pretrained(self.config.base_model_name_or_path)
-        if tokenizer.pad_token is None:
-            tokenizer.pad_token = tokenizer.eos_token
-        tokenizer.save_pretrained(save_directory)
+
 
     @classmethod
     def from_pretrained(cls, pretrained_model_name_or_path: str, *model_args, **kwargs):

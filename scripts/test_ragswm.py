@@ -39,7 +39,7 @@ def parse_args():
     parser.add_argument('--model-checkpoint', type=str, required=True)
     parser.add_argument('--model-name', type=str, default='Qwen/Qwen2.5-0.5B-Instruct')
     parser.add_argument('--retriever-name', type=str, default='all-MiniLM-L6-v2')
-    parser.add_argument('--batch-size', type=int, default=8)
+    parser.add_argument('--test-batch-size', type=int, default=8)
     parser.add_argument('--cache-dir', type=str, default='./cache')
     parser.add_argument('--output-dir', type=str, default='./output')
     parser.add_argument('--predictions-path', type=str, default='predictions.csv')
@@ -66,11 +66,9 @@ def predict(args):
         retriever_batch_size=args.retriever_batch_size,
     )
 
-    swm.load(
-        args.model_checkpoint,
-    )
+    swm.load(args.model_checkpoint)
 
-    predictions = swm.predict(markets=test_data, batch_size=args.batch_size)
+    predictions = swm.predict(markets=test_data, batch_size=args.test_batch_size)
 
     results = []
     for market in test_data:

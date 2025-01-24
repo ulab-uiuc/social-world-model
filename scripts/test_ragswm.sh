@@ -4,4 +4,4 @@ CUDA_VISIBLE_DEVICES=3 python test_ragswm.py \
 --model-checkpoint ../saves/saves_crypto/checkpoint-10 \
 --output-dir ../saves/saves_crypto \
 --predictions-path ../saves/predictions_crypto.csv \
---batch-size 40
+--test-batch-size 40

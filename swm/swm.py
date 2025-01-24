@@ -46,7 +46,7 @@ class RAGSocialWM:
         if corpus_markets:
             self.setup_retriever(corpus_markets)
 
-    def setup_model(self, device: torch.device = torch.device('cuda')) -> None:
+    def setup_model(self) -> None:
         config = LLMRegressorConfig(
             base_model_name_or_path=self.model_name, max_length=self.max_seq_length
         )
@@ -96,10 +96,9 @@ class RAGSocialWM:
         train_data: List[PolyMarketData],
         valid_data: List[PolyMarketData],
         training_args: TrainingArguments,
-        device: torch.device = torch.device('cuda'),
     ) -> str:
         if self.model is None:
-            self.setup_model(device=device)
+            self.setup_model()
         train_similar = {
             m.market_id: self.retriever.find_similar(m) for m in train_data
         }
@@ -167,3 +166,4 @@ class RAGSocialWM:
 
     def load(self, path: str) -> None:
         self.model = LLMRegressor.from_pretrained(path)
+        self.model.to('cuda' if torch.cuda.is_available() else 'cpu')

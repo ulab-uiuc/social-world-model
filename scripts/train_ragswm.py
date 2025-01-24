@@ -78,7 +78,7 @@ def train(args):
         task_type='CAUSAL_LM',
     )
 
-    rag_sw = RAGSocialWM(
+    rag_swm = RAGSocialWM(
         model_name=args.model_name,
         retriever_name=args.retriever_name,
         cache_dir=args.cache_dir,
@@ -110,16 +110,13 @@ def train(args):
         save_safetensors=False,
     )
 
-    best_model_checkpoint = rag_sw.train(
+    best_model_checkpoint = rag_swm.train(
         train_data=train_data,
         valid_data=valid_data,
         training_args=training_args,
-        device=torch.device('cuda')
-        if torch.cuda.is_available()
-        else torch.device('cpu'),
     )
 
-    rag_sw.save(best_model_checkpoint)
+    rag_swm.save(best_model_checkpoint)
 
 
 if __name__ == '__main__':
