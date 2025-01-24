@@ -7,12 +7,7 @@ from typing import Optional
 import torch
 import torch.nn as nn
 from peft import LoraConfig, get_peft_model
-from transformers import (
-    AutoModelForCausalLM,
-    AutoTokenizer,
-    PretrainedConfig,
-    PreTrainedModel,
-)
+from transformers import AutoModelForCausalLM, PretrainedConfig, PreTrainedModel
 
 
 class LLMRegressorConfig(PretrainedConfig):
@@ -22,12 +17,11 @@ class LLMRegressorConfig(PretrainedConfig):
         self,
         base_model_name_or_path: Optional[str] = None,
         max_length: Optional[int] = 512,
-        **kwargs
+        **kwargs,
     ):
         super().__init__(**kwargs)
         self.base_model_name_or_path = base_model_name_or_path
         self.max_length = max_length
-
 
 
 class LLMRegressor(PreTrainedModel):
@@ -73,12 +67,11 @@ class LLMRegressor(PreTrainedModel):
         Path(save_directory).mkdir(parents=True, exist_ok=True)
         self.llm.save_pretrained(save_directory, **kwargs)
         self.config.save_pretrained(save_directory)
-        
+
         torch.save(
             self.regression_head.state_dict(),
             Path(save_directory) / 'regression_head.bin',
         )
-
 
     @classmethod
     def from_pretrained(cls, pretrained_model_name_or_path: str, *model_args, **kwargs):
@@ -97,6 +90,6 @@ class LLMRegressor(PreTrainedModel):
         )
         if regression_head_path.exists():
             model.regression_head.load_state_dict(
-                torch.load(regression_head_path, map_location='cpu')
+                torch.load(regression_head_path, map_location='cpu', weights_only=True)
             )
         return model

@@ -1,7 +1,6 @@
 # predict_ragswm.py
 
 import argparse
-from pathlib import Path
 
 import pandas as pd
 import torch
@@ -88,8 +87,7 @@ def predict(args):
             )
 
     results_df = pd.DataFrame(results)
-    predictions_file_path = Path(args.output_dir) / args.predictions_path
-    results_df.to_csv(predictions_file_path, index=False)
+    results_df.to_csv(args.predictions_path, index=False)
 
 
 if __name__ == '__main__':
