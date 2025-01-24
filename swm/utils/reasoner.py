@@ -1,4 +1,8 @@
 from datetime import datetime, timedelta
+from typing import Dict, List, Optional
+
+from ..data import DailyNewsData, PolyMarketData
+from .utils import unix_to_date
 
 
 class MarketNewsReasoner:
@@ -116,6 +120,7 @@ class MarketNewsReasoner:
             match = re.search(r'\[[\d\s,\.]+\]', model_output)
             if match:
                 return json.loads(match.group())
-        except:
+        except Exception as e:
+            print(e)
             pass
         return []
