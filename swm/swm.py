@@ -13,7 +13,7 @@ from transformers import AutoTokenizer, Trainer, TrainingArguments
 from .data import PolyMarketData
 from .dataset import PolyMarketDataset
 from .utils.regressor import LLMRegressor, LLMRegressorConfig
-from .utils.retriever import Retriever
+from .utils.retriever import SimilarityBasedPolyMarketRetriever
 
 
 class RAGSocialWM:
@@ -36,7 +36,7 @@ class RAGSocialWM:
         self.lora_config = lora_config
         self.cache_dir = Path(cache_dir)
         self.retriever_batch_size = retriever_batch_size
-        self.retriever = Retriever(
+        self.retriever = SimilarityBasedPolyMarketRetriever(
             retriever_name=retriever_name,
             cache_dir=cache_dir,
             max_seq_length=max_seq_length,

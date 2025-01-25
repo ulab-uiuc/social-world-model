@@ -25,7 +25,8 @@ faiss-cpu = "*"
 sentence_transformers = "*"
 datasets = "*"
 jsonlines = "*"
-
+openai = "*"
+litellm = "*"
 
 
 [tool.poetry.group.dev.dependencies]
