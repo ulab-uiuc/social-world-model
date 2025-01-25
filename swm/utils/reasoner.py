@@ -28,12 +28,7 @@ class PolyMarketDailyNewsReasoner:
         self.polymarket_filter = TimeBasedPolyMarketFilter(corpus_markets)
         self.news_filter = TimeBasedDailyNewsFilter(corpus_news)
 
-        self.use_openai = bool(openai_api_key)
-        if self.use_openai:
-            openai.api_key = openai_api_key
-        else:
-            self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-            self.model = AutoModelForCausalLM.from_pretrained(model_name)
+        openai.api_key = openai_api_key
 
     def analyze(self, date: str) -> List[Dict]:
         top_changes = self._get_top_market_changes(date)
@@ -56,13 +51,13 @@ class PolyMarketDailyNewsReasoner:
                 continue
             series = market.daily_time_series.get('Yes', [])
             for i, point in enumerate(series):
-                current_date = datetime.fromtimestamp(point['t']).strftime('%Y-%m-%d')
-                if current_date == date and i > 0:
-                    change = abs(point['p'] - series[i - 1]['p'])
+                current_date = datetime.fromtimestamp(series[i]['t']).strftime('%Y-%m-%d')
+                if current_date == date and i < len(series) - 1:
+                    change = abs(point['p'] - series[i+1]['p'])
                     changes.append(
                         {
                             'market': market,
-                            'prev_point': series[i - 1],
+                            'prev_point': series[i+1],
                             'current_point': point,
                             'change': change,
                         }
@@ -94,19 +89,15 @@ class PolyMarketDailyNewsReasoner:
         return prompt
 
     def _get_model_response(self, prompt: str) -> str:
-        if self.use_openai:
-            messages = [{'role': 'user', 'content': prompt}]
-            response = model_prompting(
-                llm_model='gpt-4o',
-                messages=messages,
-                temperature=0.0,
-                max_token_num=2048,
-            )[0]
-            return response
-        else:
-            inputs = self.tokenizer(prompt, return_tensors='pt', truncation=True)
-            outputs = self.model.generate(**inputs, max_length=1024)
-            return self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+        messages = [{'role': 'user', 'content': prompt}]
+        response = model_prompting(
+            llm_model='gpt-4o',
+            messages=messages,
+            temperature=0.0,
+            max_token_num=2048,
+        )[0]
+        return response
+
 
     def _parse_scores(self, model_output: str, news: List[DailyNewsData]) -> List[Dict]:
         parsed_results = []
@@ -118,7 +109,7 @@ class PolyMarketDailyNewsReasoner:
             for result in results:
                 parsed_result = {}
                 parsed_result['news'] = news[result['news_id']]
-                parsed_result['score'] = result['score']
+                parsed_result['score'] = result['score'] / 100
                 parsed_results.append(parsed_result)
             return parsed_results
         except (ValueError, json.JSONDecodeError):

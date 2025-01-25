@@ -19,8 +19,8 @@ def parse_args():
         type=str,
         default='../data/splitted_polymarket/polymarket_data_processed_Crypto_test.jsonl',
     )
-    parser.add_argument('--analysis-date', type=str, default='2024-12-01')
-    parser.add_argument('--top-k', type=int, default=2)
+    parser.add_argument('--analysis-date', type=str, default='2024-11-06')
+    parser.add_argument('--top-k', type=int, default=10)
     parser.add_argument('--news-window', type=int, default=1)
     parser.add_argument('--output-path', type=str, default='analysis_results.json')
 
@@ -43,9 +43,11 @@ def main():
     )
 
     try:
-        scores = reasoner.analyze(args.analysis_date)
-        with open(args.output_path, 'w') as f:
-            json.dump(scores, f, indent=4)
+        results, top_change_markets = reasoner.analyze(args.analysis_date)
+        import pdb; pdb.set_trace()
+        with jsonlines.open(args.output_path, mode='w') as writer:
+            for result in results:
+                writer.write(result)
         print(f'Results saved to {args.output_path}')
     except Exception as e:
         print(f'An error occurred during analysis: {e}')

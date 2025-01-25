@@ -26,7 +26,6 @@ class TimeBasedDailyNewsFilter:
         self,
         target_date: str,
     ) -> List[DailyNewsData]:
-        target_date = datetime.strptime(target_date, '%Y-%m-%d')
         relevant = self.corpus_news_by_date.get(target_date, [])
         return relevant
 

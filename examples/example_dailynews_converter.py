@@ -14,7 +14,7 @@ def parse_args():
     parser.add_argument(
         '--input_file_path',
         type=str,
-        default='../data/raw_dailynews/daily_news_2024-01-01_2025-01-02.jsonl',
+        default='../data/raw_dailynews/daily_news_2021-01-01_2023-12-31.jsonl',
         help='Path to the input raw DailyNews JSONL file.',
     )
     parser.add_argument(
@@ -35,6 +35,9 @@ def main():
 
     with jsonlines.open(input_path) as reader:
         raw_dataset = list(reader)
+
+    with jsonlines.open('../data/raw_dailynews/daily_news_2024-01-01_2025-01-02.jsonl') as reader:
+        raw_dataset += list(reader)
 
     converter = DailyNewsConverter()
 
