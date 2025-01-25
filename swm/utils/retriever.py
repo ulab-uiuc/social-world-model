@@ -1,15 +1,14 @@
 # retriever.py
 
-from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 import faiss
 import numpy as np
 import torch
 from sentence_transformers import SentenceTransformer
 
-from ..data import DailyNewsData, PolyMarketData
+from ..data import PolyMarketData
 
 
 class SimilarityBasedPolyMarketRetriever:
@@ -75,4 +74,3 @@ class SimilarityBasedPolyMarketRetriever:
     def _compute_embedding(self, market: PolyMarketData) -> np.ndarray:
         query = f"{market.question} {market.description or ''}"[: self.max_seq_length]
         return self.sentence_transformer.encode([query])[0]
-

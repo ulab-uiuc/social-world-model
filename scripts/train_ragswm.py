@@ -101,6 +101,7 @@ def train(args):
 
     rag_swm.save(best_model_checkpoint)
 
+
 if __name__ == '__main__':
     args = parse_args()
     train(args)

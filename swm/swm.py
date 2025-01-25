@@ -1,16 +1,16 @@
 # swm.py
 
+import pickle
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+import faiss
+import numpy as np
 import torch
-import pickle
 from peft import LoraConfig
 from sklearn.metrics import mean_squared_error
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-import numpy as np
-import faiss
 from transformers import AutoTokenizer, Trainer, TrainingArguments
 
 from .data import PolyMarketData
@@ -128,7 +128,6 @@ class BasicSocialWM:
         self.model.to('cuda' if torch.cuda.is_available() else 'cpu')
 
 
-
 class RAGSocialWM(BasicSocialWM):
     def __init__(
         self,
@@ -159,12 +158,11 @@ class RAGSocialWM(BasicSocialWM):
         )
         if corpus_markets:
             self.setup_retriever(corpus_markets)
-    
+
     def setup_retriever(self, corpus_markets: List[PolyMarketData]) -> None:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.retriever.setup_corpus(corpus_markets)
-    
-    
+
     def train(
         self,
         train_data: List[PolyMarketData],
@@ -173,21 +171,21 @@ class RAGSocialWM(BasicSocialWM):
     ) -> str:
         if self.model is None:
             self.setup_model()
-        
+
         train_similar = {
             m.market_id: self.retriever.find_similar(m) for m in train_data
         }
         valid_similar = {
             m.market_id: self.retriever.find_similar(m) for m in valid_data
         }
-        
+
         train_dataset = RAGSocialWMDataset(
             train_data, train_similar, self.tokenizer, self.cache_dir
         )
         valid_dataset = RAGSocialWMDataset(
             valid_data, valid_similar, self.tokenizer, self.cache_dir
         )
-        
+
         trainer = Trainer(
             model=self.model,
             args=training_args,
@@ -198,29 +196,29 @@ class RAGSocialWM(BasicSocialWM):
                 'mse': mean_squared_error(p.label_ids, p.predictions)
             },
         )
-        
+
         trainer.train()
-        
+
         best_model_dir = Path(training_args.output_dir) / 'checkpoint-best'
         trainer.save_model(best_model_dir)
         return str(best_model_dir)
-    
+
     def predict(
         self, markets: List[PolyMarketData], batch_size: int = 8
     ) -> Tuple[List[float], List[float]]:
-        similar_markets = {
-            m.market_id: self.retriever.find_similar(m) for m in markets
-        }
-        
-        dataset = RAGSocialWMDataset(markets, similar_markets, self.tokenizer, self.cache_dir)
-        
+        similar_markets = {m.market_id: self.retriever.find_similar(m) for m in markets}
+
+        dataset = RAGSocialWMDataset(
+            markets, similar_markets, self.tokenizer, self.cache_dir
+        )
+
         dataloader = DataLoader(
             dataset,
             batch_size=batch_size,
             shuffle=False,
             collate_fn=self._create_collate_fn(),
         )
-        
+
         preds = []
         gths = []
         self.model.eval()
@@ -236,16 +234,16 @@ class RAGSocialWM(BasicSocialWM):
                 )
                 preds += outputs['predictions'].view(-1).cpu().numpy().tolist()
                 gths += labels.view(-1).cpu().numpy().tolist()
-        
+
         return preds, gths
 
     def save(self, path: str) -> None:
         super().save(path)
-        
+
         save_path = Path(path)
         np.save(save_path / 'embeddings.npy', self.retriever.embeddings)
         np.save(save_path / 'corpus_ids.npy', np.array(self.retriever.corpus_ids))
-        
+
         with open(save_path / 'market_embeddings.pkl', 'wb') as f:
             pickle.dump(self.retriever.market_embeddings, f)
         with open(save_path / 'corpus.pkl', 'wb') as f:
@@ -253,15 +251,15 @@ class RAGSocialWM(BasicSocialWM):
 
     def load(self, path: str) -> None:
         super().load(path)
-        
+
         load_path = Path(path)
         self.retriever.embeddings = np.load(load_path / 'embeddings.npy')
         self.retriever.corpus_ids = np.load(load_path / 'corpus_ids.npy').tolist()
-        
+
         with open(load_path / 'market_embeddings.pkl', 'rb') as f:
             self.retriever.market_embeddings = pickle.load(f)
         with open(load_path / 'corpus.pkl', 'rb') as f:
             self.retriever.corpus = pickle.load(f)
-            
+
         self.retriever.index = faiss.IndexFlatL2(self.retriever.embeddings.shape[1])
         self.retriever.index.add(self.retriever.embeddings)
