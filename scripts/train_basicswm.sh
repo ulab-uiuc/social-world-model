@@ -57,9 +57,10 @@ CUDA_VISIBLE_DEVICES=4 python train_basicswm.py \
 CUDA_VISIBLE_DEVICES=8 python train_basicswm.py \
 --train-data-path ../data/splitted_polymarket/polymarket_data_processed_Crypto_test.jsonl \
 --valid-data-path ../data/splitted_polymarket/polymarket_data_processed_Crypto_test.jsonl \
---output-dir ../saves/saves_crypto_basicswm \
---cache-dir ../cache/cache_crypto_basicswm \
+--output-dir ../saves/saves_crypto_basicswm_sanitycheck \
+--cache-dir ../cache/cache_crypto_basicswm_sanitycheck \
 --epochs 160 \
 --save-steps 10 \
 --eval-steps 10 \
---warmup-steps 0
+--warmup-steps 0 \
+--sanity-check
