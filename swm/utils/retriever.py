@@ -1,15 +1,15 @@
 # retriever.py
 
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import List, Optional, Dict
+from typing import Dict, List, Optional
 
 import faiss
 import numpy as np
 import torch
 from sentence_transformers import SentenceTransformer
-from datetime import datetime, timedelta
 
-from ..data import PolyMarketData, DailyNewsData
+from ..data import DailyNewsData, PolyMarketData
 
 
 class SimilarityBasedPolyMarketRetriever:
@@ -93,7 +93,9 @@ class TimeBasedDailyNewsRetriever:
                 news_dict.setdefault(date, []).append(item)
         return news_dict
 
-    def get_relevant_news(self, target_date: str, window_days: int) -> List[DailyNewsData]:
+    def get_relevant_news(
+        self, target_date: str, window_days: int
+    ) -> List[DailyNewsData]:
         target = datetime.strptime(target_date, '%Y-%m-%d')
         relevant = []
         for delta in range(window_days + 1):

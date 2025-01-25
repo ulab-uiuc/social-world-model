@@ -1,12 +1,12 @@
 import argparse
 from pathlib import Path
-from typing import List, Dict
+from typing import List
 
 import jsonlines
 from tqdm import tqdm
 
-from swm.utils.converter import DailyNewsConverter
 from swm.data import DailyNewsData
+from swm.utils.converter import DailyNewsConverter
 
 
 def parse_args():
@@ -15,13 +15,13 @@ def parse_args():
         '--input_file_path',
         type=str,
         default='../data/raw_dailynews/daily_news_2024-01-01_2025-01-02.jsonl',
-        help='Path to the input raw DailyNews JSONL file.'
+        help='Path to the input raw DailyNews JSONL file.',
     )
     parser.add_argument(
         '--output_dir',
         type=str,
         default='../data/processed_dailynews',
-        help='Directory to save the processed DailyNews data.'
+        help='Directory to save the processed DailyNews data.',
     )
     return parser.parse_args()
 
@@ -39,14 +39,14 @@ def main():
     converter = DailyNewsConverter()
 
     processed_dataset: List[DailyNewsData] = []
-    for event_data in tqdm(raw_dataset, desc="Converting DailyNews data"):
+    for event_data in tqdm(raw_dataset, desc='Converting DailyNews data'):
         processed_data = converter.convert(event_data)
         if processed_data:
             processed_dataset.append(processed_data)
 
     processed_output_path = output_dir / 'dailynews_data_processed.jsonl'
     with jsonlines.open(processed_output_path, mode='w') as writer:
-        for data in tqdm(processed_dataset, desc="Saving processed DailyNews data"):
+        for data in tqdm(processed_dataset, desc='Saving processed DailyNews data'):
             writer.write(data.model_dump())
 
 

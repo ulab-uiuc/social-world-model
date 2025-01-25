@@ -4,9 +4,10 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
-from ..data import PolyMarketData, DailyNewsData
-from .utils import filter_midnight_points
 from pydantic import ValidationError
+
+from ..data import DailyNewsData, PolyMarketData
+from .utils import filter_midnight_points
 
 
 class Category(str, Enum):
@@ -171,7 +172,6 @@ class PolyMarketDataConverter:
             return []
 
 
-
 class DailyNewsConverter:
     def __init__(self):
         self.datetime_format = '%Y-%m-%d'
@@ -192,8 +192,12 @@ class DailyNewsConverter:
             print(f"Validation error for article UUID {data.get('uuid')}: {ve}")
             return None
         except Exception as e:
-            print(f"Unexpected error during conversion for article UUID {data.get('uuid')}: {e}")
+            print(
+                f"Unexpected error during conversion for article UUID {data.get('uuid')}: {e}"
+            )
             return None
 
     def parse_date(self, date_str: str) -> Optional[str]:
-        return datetime.strptime(date_str, '%Y-%m-%dT%H:%M:%S.%fZ').strftime(self.datetime_format)
+        return datetime.strptime(date_str, '%Y-%m-%dT%H:%M:%S.%fZ').strftime(
+            self.datetime_format
+        )
