@@ -11,17 +11,17 @@ def parse_args():
     parser.add_argument(
         '--start-date',
         type=str,
-        default='2024-01-01',
+        default='2021-01-01',
     )
     parser.add_argument(
         '--end-date',
         type=str,
-        default='2025-01-02',
+        default='2023-12-31',
     )
     parser.add_argument(
         '--output-dir',
         type=str,
-        default='../data/raw_news',
+        default='../data/raw_dailynews',
     )
     parser.add_argument(
         '--api-key',
