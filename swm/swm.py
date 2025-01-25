@@ -11,7 +11,7 @@ from tqdm import tqdm
 from transformers import AutoTokenizer, Trainer, TrainingArguments
 
 from .data import PolyMarketData
-from .dataset import RAGSocialWMDataset, BasicSocialWMDataset
+from .dataset import BasicSocialWMDataset, RAGSocialWMDataset
 from .utils.regressor import LLMRegressor, LLMRegressorConfig
 from .utils.retriever import SimilarityBasedPolyMarketRetriever
 
@@ -67,10 +67,10 @@ class BasicSocialWM:
     ) -> str:
         if self.model is None:
             self.setup_model()
-        
+
         train_dataset = BasicSocialWMDataset(train_data, self.tokenizer, self.cache_dir)
         valid_dataset = BasicSocialWMDataset(valid_data, self.tokenizer, self.cache_dir)
-        
+
         trainer = Trainer(
             model=self.model,
             args=training_args,
@@ -130,8 +130,6 @@ class BasicSocialWM:
     def load(self, path: str) -> None:
         self.model = LLMRegressor.from_pretrained(path)
         self.model.to('cuda' if torch.cuda.is_available() else 'cpu')
-
-
 
 
 class RAGSocialWM:

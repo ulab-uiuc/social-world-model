@@ -1,6 +1,7 @@
 import argparse
-import json
 import os
+
+import jsonlines
 
 from swm.utils.reasoner import PolyMarketDailyNewsReasoner
 from swm.utils.utils import load_dailynews_data, load_polymarket_data
@@ -44,14 +45,12 @@ def main():
 
     try:
         results, top_change_markets = reasoner.analyze(args.analysis_date)
-        import pdb; pdb.set_trace()
         with jsonlines.open(args.output_path, mode='w') as writer:
             for result in results:
                 writer.write(result)
         print(f'Results saved to {args.output_path}')
     except Exception as e:
         print(f'An error occurred during analysis: {e}')
-        scores = []
 
 
 if __name__ == '__main__':

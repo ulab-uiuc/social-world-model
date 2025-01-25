@@ -5,7 +5,6 @@ from datetime import datetime
 from typing import Dict, List, Optional
 
 import openai
-from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from ..data import DailyNewsData, PolyMarketData
 from .filter import TimeBasedDailyNewsFilter, TimeBasedPolyMarketFilter
@@ -51,13 +50,15 @@ class PolyMarketDailyNewsReasoner:
                 continue
             series = market.daily_time_series.get('Yes', [])
             for i, point in enumerate(series):
-                current_date = datetime.fromtimestamp(series[i]['t']).strftime('%Y-%m-%d')
+                current_date = datetime.fromtimestamp(series[i]['t']).strftime(
+                    '%Y-%m-%d'
+                )
                 if current_date == date and i < len(series) - 1:
-                    change = abs(point['p'] - series[i+1]['p'])
+                    change = abs(point['p'] - series[i + 1]['p'])
                     changes.append(
                         {
                             'market': market,
-                            'prev_point': series[i+1],
+                            'prev_point': series[i + 1],
                             'current_point': point,
                             'change': change,
                         }
@@ -97,7 +98,6 @@ class PolyMarketDailyNewsReasoner:
             max_token_num=2048,
         )[0]
         return response
-
 
     def _parse_scores(self, model_output: str, news: List[DailyNewsData]) -> List[Dict]:
         parsed_results = []

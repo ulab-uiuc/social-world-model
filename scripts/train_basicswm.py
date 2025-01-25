@@ -5,6 +5,7 @@ from transformers import TrainingArguments
 from swm.swm import BasicSocialWM
 from swm.utils.utils import load_polymarket_data, set_seed
 
+
 def parse_args():
     parser = argparse.ArgumentParser(description='Train the Basic Social Wisdom Model')
 
@@ -28,6 +29,7 @@ def parse_args():
     parser.add_argument('--eval-steps', type=int, default=500)
     parser.add_argument('--fp16', action='store_true')
     return parser.parse_args()
+
 
 def train(args):
     set_seed(args.seed)
@@ -67,6 +69,7 @@ def train(args):
     )
 
     basic_swm.save(best_model_checkpoint)
+
 
 if __name__ == '__main__':
     args = parse_args()

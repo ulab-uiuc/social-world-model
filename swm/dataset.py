@@ -11,7 +11,6 @@ from transformers import PreTrainedTokenizer
 from .data import PolyMarketData
 from .utils.filter import TimeBasedPolyMarketFilter
 from .utils.utils import unix_to_date
-from pprint import pprint
 
 
 class BaseDataset(Dataset):

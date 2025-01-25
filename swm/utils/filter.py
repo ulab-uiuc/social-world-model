@@ -1,4 +1,3 @@
-from datetime import datetime
 from typing import Dict, List, Optional
 
 from ..data import DailyNewsData, PolyMarketData

@@ -36,7 +36,9 @@ def main():
     with jsonlines.open(input_path) as reader:
         raw_dataset = list(reader)
 
-    with jsonlines.open('../data/raw_dailynews/daily_news_2024-01-01_2025-01-02.jsonl') as reader:
+    with jsonlines.open(
+        '../data/raw_dailynews/daily_news_2024-01-01_2025-01-02.jsonl'
+    ) as reader:
         raw_dataset += list(reader)
 
     converter = DailyNewsConverter()

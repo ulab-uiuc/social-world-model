@@ -8,6 +8,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error
 from swm.swm import BasicSocialWM
 from swm.utils.utils import load_polymarket_data, set_seed
 
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description='Predict using the Basic Social Wisdom Model'
@@ -23,6 +24,7 @@ def parse_args():
     parser.add_argument('--max-seq-length', type=int, default=1024)
     parser.add_argument('--seed', type=int, default=42)
     return parser.parse_args()
+
 
 def predict(args):
     set_seed(args.seed)
@@ -81,6 +83,7 @@ def predict(args):
     }
     metrics_df = pd.DataFrame([metrics])
     metrics_df.to_csv(Path(args.output_dir) / 'evaluation_metrics.csv', index=False)
+
 
 if __name__ == '__main__':
     args = parse_args()
