@@ -111,8 +111,6 @@ class PolyMarketDataset(Dataset):
                 relevant_markets = self._filter_similar_markets(
                     sim_markets, 'Yes', window_data, target_data
                 )
-                if not relevant_markets:
-                    continue
 
                 prompt_text = self._build_prompt(
                     market, window_data, target_data, relevant_markets
