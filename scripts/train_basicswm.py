@@ -1,10 +1,10 @@
 import argparse
 
+from peft import LoraConfig
 from transformers import TrainingArguments
 
 from swm.swm import BasicSocialWM
 from swm.utils.utils import load_polymarket_data, set_seed
-from peft import LoraConfig
 
 
 def parse_args():

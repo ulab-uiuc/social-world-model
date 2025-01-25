@@ -58,6 +58,7 @@ def predict(args):
     metrics_df = pd.DataFrame([metrics])
     metrics_df.to_csv(Path(args.output_dir) / 'evaluation_metrics.csv', index=False)
 
+
 if __name__ == '__main__':
     args = parse_args()
     predict(args)

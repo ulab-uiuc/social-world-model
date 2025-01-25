@@ -1,6 +1,5 @@
 # utils/regressor.py
 
-import json
 from pathlib import Path
 from typing import Optional
 
@@ -54,8 +53,8 @@ class LLMRegressor(PreTrainedModel):
             attention_mask=attention_mask,
             output_hidden_states=True,
         )
-        attention_mask = attention_mask.unsqueeze(-1) 
-        hidden_states = outputs.hidden_states[-1] * attention_mask  
+        attention_mask = attention_mask.unsqueeze(-1)
+        hidden_states = outputs.hidden_states[-1] * attention_mask
         mean_pooled = hidden_states.sum(dim=1) / attention_mask.sum(dim=1)
         predictions = self.regression_head(mean_pooled)
 
@@ -66,28 +65,36 @@ class LLMRegressor(PreTrainedModel):
 
         return predictions
 
-
     def save_pretrained(self, save_directory: str, **kwargs):
         Path(save_directory).mkdir(parents=True, exist_ok=True)
         self.config.save_pretrained(save_directory)
         self.lora_config.save_pretrained(save_directory)
         self.llm.save_pretrained(save_directory)
-        
-        torch.save(self.regression_head.state_dict(), 
-                Path(save_directory) / 'regression_head.bin')
+
+        torch.save(
+            self.regression_head.state_dict(),
+            Path(save_directory) / 'regression_head.bin',
+        )
 
     @classmethod
     def from_pretrained(cls, pretrained_model_name_or_path: str, *model_args, **kwargs):
-        config = LLMRegressorConfig.from_pretrained(pretrained_model_name_or_path, **kwargs)
+        config = LLMRegressorConfig.from_pretrained(
+            pretrained_model_name_or_path, **kwargs
+        )
         lora_config = LoraConfig.from_pretrained(pretrained_model_name_or_path)
-        
-        base_model = AutoModelForCausalLM.from_pretrained(config.base_model_name_or_path)
+
+        base_model = AutoModelForCausalLM.from_pretrained(
+            config.base_model_name_or_path
+        )
         model = cls(config, lora_config=lora_config)
-        
+
         model.llm = get_peft_model(base_model, lora_config)
-        model.llm.load_adapter(pretrained_model_name_or_path, adapter_name="default")
-        
+        model.llm.load_adapter(pretrained_model_name_or_path, adapter_name='default')
+
         model.regression_head.load_state_dict(
-            torch.load(Path(pretrained_model_name_or_path) / 'regression_head.bin', map_location='cpu')
+            torch.load(
+                Path(pretrained_model_name_or_path) / 'regression_head.bin',
+                map_location='cpu',
+            )
         )
         return model
