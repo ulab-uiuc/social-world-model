@@ -151,8 +151,8 @@ class RAGSocialWM:
                     attention_mask=attention_mask,
                     labels=labels,
                 )
-                pred_values = preds['predictions'].squeeze(-1).cpu().numpy()
-                label_values = labels.squeeze(-1).cpu().numpy()
+                pred_values = preds['predictions'].view(-1).cpu().numpy()
+                label_values = labels.view(-1).cpu().numpy()
                 for i, market_id in enumerate(batch['market_ids']):
                     outcome = batch['outcomes'][i]
                     pred_value = pred_values[i].item()
