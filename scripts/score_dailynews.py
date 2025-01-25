@@ -1,99 +1,55 @@
-# your_script_openai.py
-
+import argparse
 import json
 import os
-from datetime import datetime
 
-from swm.data import DailyNewsData, PolyMarketData
 from swm.utils.reasoner import PolyMarketDailyNewsReasoner
+from swm.utils.utils import load_dailynews_data, load_polymarket_data
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description='Analyze PolyMarket data with OpenAI')
+
+    parser.add_argument(
+        '--news-path',
+        type=str,
+        default='../data/processed_dailynews/dailynews_data_processed.jsonl',
+    )
+    parser.add_argument(
+        '--market-path',
+        type=str,
+        default='../data/splitted_polymarket/polymarket_data_processed_Crypto_test.jsonl',
+    )
+    parser.add_argument('--analysis-date', type=str, default='2024-12-01')
+    parser.add_argument('--top-k', type=int, default=2)
+    parser.add_argument('--news-window', type=int, default=1)
+    parser.add_argument('--output-path', type=str, default='analysis_results.json')
+
+    return parser.parse_args()
 
 
 def main():
-    # Initialize OpenAI API key
+    args = parse_args()
     openai_api_key = os.environ.get('OPENAI_API_KEY')
 
-    # Sample market data
-    markets = [
-        PolyMarketData(
-            event_id='event1',
-            market_id='market1',
-            question="Will Company X's stock price exceed $150 today?",
-            description="Prediction market for Company X's stock price.",
-            start_ts=1672531200.0,  # Example Unix timestamp
-            end_ts=1672617600.0,  # Example Unix timestamp
-            tags=['finance', 'stocks'],
-            categories=['Economy'],
-            daily_time_series={
-                'outcome1': [
-                    {'t': int(datetime(2025, 1, 24).timestamp()), 'p': 145.0},
-                    {'t': int(datetime(2025, 1, 25).timestamp()), 'p': 1001.0},
-                ]
-            },
-        ),
-        PolyMarketData(
-            event_id='event2',
-            market_id='market2',
-            question='Will the price of Oil drop below $70 per barrel?',
-            description='Prediction market for oil prices.',
-            start_ts=1672531200.0,
-            end_ts=1672617600.0,
-            tags=['energy', 'commodities'],
-            categories=['Economy'],
-            daily_time_series={
-                'outcome2': [
-                    {'t': int(datetime(2025, 1, 24).timestamp()), 'p': 72.0},
-                    {'t': int(datetime(2025, 1, 25).timestamp()), 'p': 500.0},
-                ]
-            },
-        ),
-    ]
+    news = load_dailynews_data(args.news_path)
+    markets = load_polymarket_data(args.market_path)
 
-    # Sample news data
-    news = [
-        DailyNewsData(
-            uuid='news1',
-            title='Company X Announces Record Profits',
-            description='Company X has reported record profits this quarter, exceeding market expectations.',
-            date='2025-01-24',
-        ),
-        DailyNewsData(
-            uuid='news2',
-            title='Oil Reserves Increase Unexpectedly',
-            description='New reports indicate a significant increase in global oil reserves, impacting prices.',
-            date='2025-01-24',
-        ),
-        DailyNewsData(
-            uuid='news3',
-            title='Economic Forecast Revised for 2025',
-            description='The latest economic forecast predicts a robust growth trajectory for the global market.',
-            date='2025-01-24',
-        ),
-    ]
-
-    # Initialize the reasoner with OpenAI API
     reasoner = PolyMarketDailyNewsReasoner(
         openai_api_key=openai_api_key,
-        markets=markets,
-        news=news,
-        top_k=2,
-        news_window_days=1,
+        corpus_markets=markets,
+        corpus_news=news,
+        top_k=args.top_k,
+        news_window_days=args.news_window,
     )
 
-    # Specify the date to analyze
-    analysis_date = '2025-01-25'
-
-    # Analyze market changes
     try:
-        scores = reasoner.analyze(analysis_date)
+        scores = reasoner.analyze(args.analysis_date)
+        with open(args.output_path, 'w') as f:
+            json.dump(scores, f, indent=4)
+        print(f'Results saved to {args.output_path}')
     except Exception as e:
         print(f'An error occurred during analysis: {e}')
         scores = []
-
-    # Output the results
-    if scores:
-        print(json.dumps(scores, indent=4))
-    else:
-        print('No scores returned. Please check the input data and model output.')
 
 
 if __name__ == '__main__':

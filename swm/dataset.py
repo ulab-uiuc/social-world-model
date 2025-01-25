@@ -1,47 +1,26 @@
 import hashlib
 import pickle
 from pathlib import Path
-from typing import Dict, List
+from typing import Any, Dict, List
 
 import torch
 from torch.utils.data import Dataset
 from tqdm import tqdm
 
 from .data import PolyMarketData
+from .utils.filter import TimeBasedPolyMarketFilter
 from .utils.utils import unix_to_date
 
 
-class PolyMarketDataset(Dataset):
-    def __init__(
-        self,
-        markets: List[PolyMarketData],
-        similar_markets_dict: Dict[str, List[PolyMarketData]],
-        tokenizer,
-        cache_dir: str = './cache',
-        window_size: int = 5,
-        max_sim_markets: int = 3,
-        use_cache: bool = True,
-    ):
-        self.markets = markets
-        self.similar_markets_dict = similar_markets_dict
-        self.tokenizer = tokenizer
+class BaseDataset(Dataset):
+    def __init__(self, cache_dir: str = './cache', use_cache: bool = True):
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(exist_ok=True)
-
-        self.window_size = window_size
-        self.max_sim_markets = max_sim_markets
         self.use_cache = use_cache
+        self.datapoints = []
 
-        self.datapoints = self._prepare_datapoints()
-
-    def __len__(self) -> int:
-        return len(self.datapoints)
-
-    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
-        return self.datapoints[idx]
-
-    def _prepare_datapoints(self) -> List[Dict[str, torch.Tensor]]:
-        dataset_hash = self._compute_dataset_hash(self.markets, self.window_size)
+    def _prepare_datapoints(self) -> List[Dict[str, Any]]:
+        dataset_hash = self._compute_dataset_hash()
         cache_path = self._get_cache_path(dataset_hash)
 
         if self.use_cache and cache_path.exists():
@@ -63,59 +42,81 @@ class PolyMarketDataset(Dataset):
 
         return datapoints
 
-    def _compute_dataset_hash(
-        self, markets: List[PolyMarketData], window_size: int
-    ) -> str:
-        hash_content = []
-        for market in markets:
-            if market.daily_time_series:
-                hash_content.extend(
-                    [
-                        market.market_id,
-                        str(market.start_ts or ''),
-                        str(market.end_ts or ''),
-                        str(window_size),
-                    ]
-                )
-        return hashlib.md5(''.join(hash_content).encode()).hexdigest()
+    def _compute_dataset_hash(self) -> str:
+        raise NotImplementedError
 
     def _get_cache_path(self, dataset_hash: str) -> Path:
         return self.cache_dir / f'datapoints_{dataset_hash}.pkl'
+
+    def _create_datapoints(self) -> List[Dict[str, Any]]:
+        raise NotImplementedError
+
+    def __len__(self) -> int:
+        return len(self.datapoints)
+
+    def __getitem__(self, idx: int) -> Dict[str, Any]:
+        return self.datapoints[idx]
+
+
+class PolyMarketDataset(BaseDataset):
+    def __init__(
+        self,
+        markets: List[PolyMarketData],
+        similar_markets_dict: Dict[str, List[PolyMarketData]],
+        tokenizer,
+        cache_dir: str = './cache',
+        window_size: int = 5,
+        max_sim_markets: int = 3,
+        use_cache: bool = True,
+    ):
+        super().__init__(cache_dir, use_cache)
+        self.markets = markets
+        self.similar_markets_dict = similar_markets_dict
+        self.tokenizer = tokenizer
+        self.window_size = window_size
+        self.max_sim_markets = max_sim_markets
+        self.datapoints = self._prepare_datapoints()
+
+    def _compute_dataset_hash(self) -> str:
+        hash_content = [
+            market.market_id
+            + str(market.start_ts or '')
+            + str(market.end_ts or '')
+            + str(self.window_size)
+            for market in self.markets
+            if market.daily_time_series
+        ]
+        return hashlib.md5(''.join(hash_content).encode()).hexdigest()
 
     def _create_datapoints(self) -> List[Dict[str, torch.Tensor]]:
         prompts = []
         metadata = []
 
         for market in tqdm(self.markets, desc='Creating datapoints'):
-            if not market.daily_time_series:
-                continue
-
-            if 'Yes' not in market.daily_time_series:
+            if not market.daily_time_series or 'Yes' not in market.daily_time_series:
                 continue
 
             series = market.daily_time_series['Yes']
-
             if len(series) <= self.window_size:
                 continue
 
-            sim_markets = [
-                m
-                for m in self.similar_markets_dict.get(market.market_id, [])
-                if m.market_id != market.market_id and m.start_ts and m.end_ts
-            ]
+            sim_markets = self.similar_markets_dict.get(market.market_id, [])
 
             for start_idx in range(len(series) - self.window_size):
                 window_data = series[start_idx : start_idx + self.window_size]
                 target_data = series[start_idx + self.window_size]
 
-                relevant_markets = self._filter_similar_markets(
-                    sim_markets, 'Yes', window_data, target_data
+                relevant_markets = self._filter_markets(
+                    sim_markets, window_data, target_data
                 )
 
-                prompt_text = self._build_prompt(
+                prompt = self._build_prompt(
                     market, window_data, target_data, relevant_markets
                 )
-                prompts.append(prompt_text)
+                import pdb
+
+                pdb.set_trace()
+                prompts.append(prompt)
                 metadata.append(
                     {
                         'target': target_data['p'],
@@ -129,46 +130,57 @@ class PolyMarketDataset(Dataset):
             for prompt in tqdm(prompts, desc='Tokenizing prompts')
         ]
 
-        datapoints = []
-        for i, meta in enumerate(metadata):
-            datapoints.append(
-                {
-                    'input_ids': encodings[i]['input_ids'][0],
-                    'labels': torch.tensor(meta['target'], dtype=torch.float),
-                    'market_id': meta['market_id'],
-                    'outcome': meta['outcome'],
-                }
-            )
-
-        return datapoints
+        return [
+            {
+                'input_ids': encodings[i]['input_ids'][0],
+                'labels': torch.tensor(meta['target'], dtype=torch.float),
+                'market_id': meta['market_id'],
+                'outcome': meta['outcome'],
+            }
+            for i, meta in enumerate(metadata)
+        ]
 
     def _filter_similar_markets(
         self,
+        markets: List[PolyMarketData],
+        target_ts: int,
+    ) -> List[PolyMarketData]:
+        time_filter = TimeBasedPolyMarketFilter(markets)
+        return time_filter.filter(target_ts)[: self.max_sim_markets]
+
+    def _include_window_data(
+        self,
+        markets: List[PolyMarketData],
+        window_start_ts: int,
+        window_end_ts: int,
+        outcome: str = 'Yes',
+    ) -> List[PolyMarketData]:
+        filtered = []
+        for market in markets:
+            if outcome not in market.daily_time_series:
+                continue
+
+            market.window_series = [
+                x
+                for x in market.daily_time_series[outcome]
+                if window_start_ts <= x['t'] <= window_end_ts
+            ]
+            filtered.append(market)
+        return filtered
+
+    def _filter_markets(
+        self,
         similar_markets: List[PolyMarketData],
-        outcome: str,
         window_data: List[Dict[str, float]],
         target_data: Dict[str, float],
     ) -> List[PolyMarketData]:
-        window_start_ts = window_data[0]['t']
-        window_end_ts = window_data[-1]['t']
-        target_ts = target_data['t']
+        filtered_markets = self._filter_similar_markets(
+            similar_markets, target_data['t']
+        )
 
-        filtered = []
-        for sim_mkt in similar_markets:
-            if not (sim_mkt.start_ts <= target_ts <= sim_mkt.end_ts):
-                continue
-
-            if outcome not in sim_mkt.daily_time_series:
-                continue
-
-            sim_mkt.window_series = [
-                x
-                for x in sim_mkt.daily_time_series[outcome]
-                if window_start_ts <= x['t'] <= window_end_ts
-            ]
-            filtered.append(sim_mkt)
-
-        return filtered[: self.max_sim_markets]
+        return self._include_window_data(
+            filtered_markets, window_data[0]['t'], window_data[-1]['t']
+        )
 
     def _build_prompt(
         self,
@@ -177,9 +189,7 @@ class PolyMarketDataset(Dataset):
         target_data: Dict[str, float],
         relevant_markets: List[PolyMarketData],
     ) -> str:
-        prompt_lines = [
-            f'You are given an event: {market.question}',
-        ]
+        prompt_lines = [f'You are given an event: {market.question}']
         if market.description:
             prompt_lines.append(market.description)
 

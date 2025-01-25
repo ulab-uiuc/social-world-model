@@ -72,7 +72,7 @@ CUDA_VISIBLE_DEVICES=4 python train_ragswm.py \
 
 
 # for sanity check
-CUDA_VISIBLE_DEVICES=9 python train_ragswm.py \
+CUDA_VISIBLE_DEVICES=8 python train_ragswm.py \
 --train-data-path ../data/splitted_polymarket/polymarket_data_processed_Crypto_test.jsonl \
 --valid-data-path ../data/splitted_polymarket/polymarket_data_processed_Crypto_test.jsonl \
 --corpus-data-path ../data/splitted_polymarket/polymarket_data_processed_Crypto_test.jsonl \
