@@ -4,7 +4,6 @@ CUDA_VISIBLE_DEVICES=9 python train_ragswm.py \
 --corpus-data-path ../data/splitted_polymarket/polymarket_data_processed_train.jsonl \
 --output-dir ../saves/saves_crypto_ragswm \
 --cache-dir ../cache/cache_crypto_ragswm \
---predictions-path ../saves/predictions_crypto_ragswm.csv \
 --train-batch-size 16 \
 --eval-batch-size 16 \
 --top-k 50 \
@@ -16,7 +15,6 @@ CUDA_VISIBLE_DEVICES=8 python train_ragswm.py \
 --corpus-data-path ../data/splitted_polymarket/polymarket_data_processed_train.jsonl \
 --output-dir ../saves/saves_sports_ragswm \
 --cache-dir ../cache/cache_sports_ragswm \
---predictions-path ../saves/predictions_sports_ragswm.csv \
 --train-batch-size 16 \
 --eval-batch-size 16 \
 --top-k 50 \
@@ -28,7 +26,6 @@ CUDA_VISIBLE_DEVICES=7 python train_ragswm.py \
 --corpus-data-path ../data/splitted_polymarket/polymarket_data_processed_train.jsonl \
 --output-dir ../saves/saves_other_ragswm \
 --cache-dir ../cache/cache_other_ragswm \
---predictions-path ../saves/predictions_other_ragswm.csv \
 --train-batch-size 16 \
 --eval-batch-size 16 \
 --top-k 50 \
@@ -40,7 +37,6 @@ CUDA_VISIBLE_DEVICES=6 python train_ragswm.py \
 --corpus-data-path ../data/splitted_polymarket/polymarket_data_processed_train.jsonl \
 --output-dir ../saves/saves_election_ragswm \
 --cache-dir ../cache/cache_election_ragswm \
---predictions-path ../saves/predictions_election_ragswm.csv \
 --train-batch-size 16 \
 --eval-batch-size 16 \
 --top-k 50 \
@@ -52,7 +48,6 @@ CUDA_VISIBLE_DEVICES=5 python train_ragswm.py \
 --corpus-data-path ../data/splitted_polymarket/polymarket_data_processed_train.jsonl \
 --output-dir ../saves/saves_politics_ragswm \
 --cache-dir ../cache/cache_politics_ragswm \
---predictions-path ../saves/predictions_politics_ragswm.csv \
 --train-batch-size 16 \
 --eval-batch-size 16 \
 --top-k 50 \
@@ -64,7 +59,6 @@ CUDA_VISIBLE_DEVICES=4 python train_ragswm.py \
 --corpus-data-path ../data/splitted_polymarket/polymarket_data_processed_train.jsonl \
 --output-dir ../saves/saves_all_ragswm \
 --cache-dir ../cache/cache_all_ragswm \
---predictions-path ../saves/predictions_all_ragswm.csv \
 --train-batch-size 16 \
 --eval-batch-size 16 \
 --top-k 50 \
@@ -76,9 +70,8 @@ CUDA_VISIBLE_DEVICES=8 python train_ragswm.py \
 --train-data-path ../data/splitted_polymarket/polymarket_data_processed_Crypto_test.jsonl \
 --valid-data-path ../data/splitted_polymarket/polymarket_data_processed_Crypto_test.jsonl \
 --corpus-data-path ../data/splitted_polymarket/polymarket_data_processed_Crypto_test.jsonl \
---output-dir ../saves/saves_crypto_ragswm \
---cache-dir ../cache/cache_crypto_ragswm \
---predictions-path ../saves/predictions_crypto_ragswm.csv \
+--output-dir ../saves/saves_crypto_ragswm_sanitycheck \
+--cache-dir ../cache/cache_crypto_ragswm_sanitycheck \
 --top-k 50 \
 --epochs 160 \
 --save-steps 10 \
