@@ -8,7 +8,7 @@ import pandas as pd
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 
 from swm.swm import RAGSocialWM
-from swm.swm.utils import load_polymarket_data, set_seed
+from swm.utils.utils import load_polymarket_data, set_seed
 
 
 def parse_args():
