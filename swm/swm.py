@@ -236,30 +236,3 @@ class RAGSocialWM(BasicSocialWM):
                 gths += labels.view(-1).cpu().numpy().tolist()
 
         return preds, gths
-
-    def save(self, path: str) -> None:
-        super().save(path)
-
-        save_path = Path(path)
-        np.save(save_path / 'embeddings.npy', self.retriever.embeddings)
-        np.save(save_path / 'corpus_ids.npy', np.array(self.retriever.corpus_ids))
-
-        with open(save_path / 'market_embeddings.pkl', 'wb') as f:
-            pickle.dump(self.retriever.market_embeddings, f)
-        with open(save_path / 'corpus.pkl', 'wb') as f:
-            pickle.dump(self.retriever.corpus, f)
-
-    def load(self, path: str) -> None:
-        super().load(path)
-
-        load_path = Path(path)
-        self.retriever.embeddings = np.load(load_path / 'embeddings.npy')
-        self.retriever.corpus_ids = np.load(load_path / 'corpus_ids.npy').tolist()
-
-        with open(load_path / 'market_embeddings.pkl', 'rb') as f:
-            self.retriever.market_embeddings = pickle.load(f)
-        with open(load_path / 'corpus.pkl', 'rb') as f:
-            self.retriever.corpus = pickle.load(f)
-
-        self.retriever.index = faiss.IndexFlatL2(self.retriever.embeddings.shape[1])
-        self.retriever.index.add(self.retriever.embeddings)

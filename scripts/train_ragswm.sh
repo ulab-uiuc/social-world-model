@@ -1,4 +1,4 @@
-CUDA_VISIBLE_DEVICES=9 python train_ragswm.py \
+CUDA_VISIBLE_DEVICES=1 python train_ragswm.py \
 --train-data-path ../data/splitted_polymarket/polymarket_data_processed_Crypto_train.jsonl \
 --valid-data-path ../data/splitted_polymarket/polymarket_data_processed_Crypto_dev.jsonl \
 --corpus-data-path ../data/splitted_polymarket/polymarket_data_processed_train.jsonl \
@@ -7,7 +7,7 @@ CUDA_VISIBLE_DEVICES=9 python train_ragswm.py \
 --train-batch-size 16 \
 --eval-batch-size 16 \
 --retriever-top-k 50 \
---epochs 3
+--epochs 10
 
 CUDA_VISIBLE_DEVICES=8 python train_ragswm.py \
 --train-data-path ../data/splitted_polymarket/polymarket_data_processed_Sports_train.jsonl \
@@ -18,7 +18,7 @@ CUDA_VISIBLE_DEVICES=8 python train_ragswm.py \
 --train-batch-size 16 \
 --eval-batch-size 16 \
 --retriever-top-k 50 \
---epochs 3
+--epochs 10
 
 CUDA_VISIBLE_DEVICES=7 python train_ragswm.py \
 --train-data-path ../data/splitted_polymarket/polymarket_data_processed_Other_train.jsonl \
@@ -29,7 +29,7 @@ CUDA_VISIBLE_DEVICES=7 python train_ragswm.py \
 --train-batch-size 16 \
 --eval-batch-size 16 \
 --retriever-top-k 50 \
---epochs 3
+--epochs 10
 
 CUDA_VISIBLE_DEVICES=6 python train_ragswm.py \
 --train-data-path ../data/splitted_polymarket/polymarket_data_processed_Election_train.jsonl \
@@ -40,7 +40,7 @@ CUDA_VISIBLE_DEVICES=6 python train_ragswm.py \
 --train-batch-size 16 \
 --eval-batch-size 16 \
 --retriever-top-k 50 \
---epochs 3
+--epochs 10
 
 CUDA_VISIBLE_DEVICES=5 python train_ragswm.py \
 --train-data-path ../data/splitted_polymarket/polymarket_data_processed_Politics_train.jsonl \
@@ -51,7 +51,7 @@ CUDA_VISIBLE_DEVICES=5 python train_ragswm.py \
 --train-batch-size 16 \
 --eval-batch-size 16 \
 --retriever-top-k 50 \
---epochs 3
+--epochs 10
 
 CUDA_VISIBLE_DEVICES=4 python train_ragswm.py \
 --train-data-path ../data/splitted_polymarket/polymarket_data_processed_train.jsonl \
@@ -62,14 +62,14 @@ CUDA_VISIBLE_DEVICES=4 python train_ragswm.py \
 --train-batch-size 16 \
 --eval-batch-size 16 \
 --retriever-top-k 50 \
---epochs 3
+--epochs 10
 
 
 # for sanity check
 CUDA_VISIBLE_DEVICES=2 python train_ragswm.py \
 --train-data-path ../data/splitted_polymarket/polymarket_data_processed_Crypto_test.jsonl \
 --valid-data-path ../data/splitted_polymarket/polymarket_data_processed_Crypto_test.jsonl \
---corpus-data-path ../data/splitted_polymarket/polymarket_data_processed_Crypto_test.jsonl \
+--corpus-data-path ../data/splitted_polymarket/polymarket_data_processed_Crypto_train.jsonl \
 --output-dir ../saves/saves_crypto_ragswm_sanitycheck \
 --cache-dir ../cache/cache_crypto_ragswm_sanitycheck \
 --retriever-top-k 50 \

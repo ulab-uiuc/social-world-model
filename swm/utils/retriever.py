@@ -59,6 +59,8 @@ class SimilarityBasedPolyMarketRetriever:
         self, market: PolyMarketData, k: Optional[int] = None
     ) -> List[PolyMarketData]:
         k = k or self.retriever_top_k
+        k = min(k, len(self.corpus_ids))
+        
         if market.market_id not in self.market_embeddings:
             embedding = self._compute_embedding(market)
             self.market_embeddings[market.market_id] = embedding
@@ -67,9 +69,22 @@ class SimilarityBasedPolyMarketRetriever:
             self.embeddings = np.vstack([self.embeddings, new_embedding])
             self.corpus_ids.append(market.market_id)
             self.corpus[market.market_id] = market
+            
         query_embedding = self.market_embeddings[market.market_id].reshape(1, -1)
-        distances, indices = self.index.search(query_embedding, k)
-        return [self.corpus[self.corpus_ids[idx]] for idx in indices[0]]
+        distances, indices = self.index.search(query_embedding, k + 1)
+        
+        similar_markets = []
+        seen_ids = {market.market_id}
+        
+        for idx in indices[0]:
+            market_id = self.corpus_ids[idx]
+            if market_id not in seen_ids:
+                seen_ids.add(market_id)
+                similar_markets.append(self.corpus[market_id])
+                if len(similar_markets) == k:
+                    break
+                    
+        return similar_markets
 
     def _compute_embedding(self, market: PolyMarketData) -> np.ndarray:
         query = f"{market.question} {market.description or ''}"[: self.max_seq_length]

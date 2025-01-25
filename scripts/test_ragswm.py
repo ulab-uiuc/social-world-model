@@ -45,7 +45,6 @@ def predict(args):
         model_name=args.model_name,
         retriever_name=args.retriever_name,
         cache_dir=args.cache_dir,
-        lora_config=None,
         corpus_markets=corpus_data,
         max_seq_length=args.max_seq_length,
         retriever_top_k=args.retriever_top_k,
