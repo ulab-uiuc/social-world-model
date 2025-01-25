@@ -1,17 +1,18 @@
 # retriever.py
 
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import faiss
 import numpy as np
 import torch
 from sentence_transformers import SentenceTransformer
 
-from ..data import PolyMarketData
+from ..data import DailyNewsData, PolyMarketData
 
 
-class Retriever:
+class SimilarityBasedPolyMarketRetriever:
     def __init__(
         self,
         retriever_name: str,
@@ -74,3 +75,30 @@ class Retriever:
     def _compute_embedding(self, market: PolyMarketData) -> np.ndarray:
         query = f"{market.question} {market.description or ''}"[: self.max_seq_length]
         return self.sentence_transformer.encode([query])[0]
+
+
+class TimeBasedDailyNewsRetriever:
+    def __init__(self, news: List[DailyNewsData]):
+        self.news_by_date = self._index_news(news)
+
+    @staticmethod
+    def _extract_date(news: DailyNewsData) -> Optional[str]:
+        return news.date
+
+    def _index_news(self, news: List[DailyNewsData]) -> Dict[str, List[DailyNewsData]]:
+        news_dict = {}
+        for item in news:
+            date = self._extract_date(item)
+            if date:
+                news_dict.setdefault(date, []).append(item)
+        return news_dict
+
+    def get_relevant_news(
+        self, target_date: str, window_days: int
+    ) -> List[DailyNewsData]:
+        target = datetime.strptime(target_date, '%Y-%m-%d')
+        relevant = []
+        for delta in range(window_days + 1):
+            date = (target - timedelta(days=delta)).strftime('%Y-%m-%d')
+            relevant.extend(self.news_by_date.get(date, []))
+        return relevant
