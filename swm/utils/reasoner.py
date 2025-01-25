@@ -5,7 +5,7 @@ from ..data import DailyNewsData, PolyMarketData
 from .utils import unix_to_date
 
 
-class MarketNewsReasoner:
+class PolyMarketNewsReasoner:
     def __init__(
         self,
         tokenizer,
