@@ -68,8 +68,12 @@ class BasicSocialWM:
         if self.model is None:
             self.setup_model()
 
-        train_dataset = BasicPolyMarketDataset(train_data, self.tokenizer, self.cache_dir)
-        valid_dataset = BasicPolyMarketDataset(valid_data, self.tokenizer, self.cache_dir)
+        train_dataset = BasicPolyMarketDataset(
+            train_data, self.tokenizer, self.cache_dir
+        )
+        valid_dataset = BasicPolyMarketDataset(
+            valid_data, self.tokenizer, self.cache_dir
+        )
 
         trainer = Trainer(
             model=self.model,
@@ -316,27 +320,26 @@ class BasicELBOSocialWM:
                     if i > 0:
                         change = {
                             'market': market,
-                            'prev_point': series[i-1],
-                            'current_point': point
+                            'prev_point': series[i - 1],
+                            'current_point': point,
                         }
                         market_changes.append(change)
                     break
 
         # Get news importance weights
         reasoning_results = self.reasoner.analyze(news_data, market_changes, date)
-        
+
         # Use predictor with weighted news
         prediction_results = self.predictor.predict(markets, reasoning_results)
-        
+
         # Combine results
         combined_results = {}
         for market_id, predictions in prediction_results.items():
             combined_results[market_id] = {
                 'predictions': predictions,
                 'news_weights': {
-                    result['news'].id: result['score']
-                    for result in reasoning_results
-                }
+                    result['news'].id: result['score'] for result in reasoning_results
+                },
             }
-            
+
         return combined_results

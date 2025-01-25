@@ -109,7 +109,9 @@ class PolyMarketDailyNewsPosteriorReasoner:
             for result in results:
                 parsed_result = {}
                 parsed_result['news'] = news[result['news_id']]
-                parsed_result['score'] = result['score'] / sum(r['score'] for r in results)
+                parsed_result['score'] = result['score'] / sum(
+                    r['score'] for r in results
+                )
                 parsed_results.append(parsed_result)
             return parsed_results
         except (ValueError, json.JSONDecodeError):
@@ -124,34 +126,40 @@ class PolyMarketDailyNewsPriorReasoner:
         max_seq_length: int = 512,
     ):
         self.model = WeightedBasicSocialWM(
-            model_name=model_name,
-            cache_dir=cache_dir,
-            max_seq_length=max_seq_length
+            model_name=model_name, cache_dir=cache_dir, max_seq_length=max_seq_length
         )
-        
-    def analyze(self, news_data: List[DailyNewsData], market_changes: List[Dict], date: str) -> List[Dict]:
-        news_texts = [f"{n.title}: {n.description}" for n in news_data]
-        
+
+    def analyze(
+        self, news_data: List[DailyNewsData], market_changes: List[Dict], date: str
+    ) -> List[Dict]:
+        news_texts = [f'{n.title}: {n.description}' for n in news_data]
+
         market_change_texts = []
         for change in market_changes:
             market = change['market']
-            direction = 'increased' if change['current_point']['p'] > change['prev_point']['p'] else 'decreased'
+            direction = (
+                'increased'
+                if change['current_point']['p'] > change['prev_point']['p']
+                else 'decreased'
+            )
             change_text = (
                 f"{market.question}: {direction} from "
                 f"{change['prev_point']['p']:.3f} to {change['current_point']['p']:.3f}"
             )
             market_change_texts.append(change_text)
-            
+
         prompt = self._create_prompt(market_change_texts, date, news_texts)
         scores = self.model.predict([prompt])[0]
-        
+
         results = []
         for news, score in zip(news_data, scores):
-            results.append({
-                'news': news,
-                'score': score,
-            })
-            
+            results.append(
+                {
+                    'news': news,
+                    'score': score,
+                }
+            )
+
         return results
 
     def train(
@@ -163,51 +171,53 @@ class PolyMarketDailyNewsPriorReasoner:
     ) -> str:
         train_data = []
         valid_data = []
-        
+
         for date in train_dates:
             parsed_results, top_changes = posterior_reasoner.analyze(date)
             if not parsed_results:
                 continue
-                
+
             posterior_scores = [r['score'] for r in parsed_results]
             news_data = [r['news'] for r in parsed_results]
-            news_texts = [f"{n.title}: {n.description}" for n in news_data]
-            
+            news_texts = [f'{n.title}: {n.description}' for n in news_data]
+
             market_changes = []
             for change in top_changes:
                 market = change['market']
-                direction = 'increased' if change['current_point']['p'] > change['prev_point']['p'] else 'decreased'
+                direction = (
+                    'increased'
+                    if change['current_point']['p'] > change['prev_point']['p']
+                    else 'decreased'
+                )
                 change_text = (
                     f"{market.question}: {direction} from "
                     f"{change['prev_point']['p']:.3f} to {change['current_point']['p']:.3f}"
                 )
                 market_changes.append(change_text)
-                
+
             prompt = self._create_prompt(market_changes, date, news_texts)
-            train_data.append({
-                'prompt': prompt,
-                'scores': posterior_scores
-            })
-        
+            train_data.append({'prompt': prompt, 'scores': posterior_scores})
+
         # Do the same for validation data
         for date in valid_dates:
             parsed_results, top_changes = posterior_reasoner.analyze(date)
             if parsed_results:
                 prompt = self._process_results(parsed_results, top_changes, date)
-                valid_data.append({
-                    'prompt': prompt,
-                    'scores': [r['score'] for r in parsed_results]
-                })
-            
+                valid_data.append(
+                    {'prompt': prompt, 'scores': [r['score'] for r in parsed_results]}
+                )
+
         return self.model.train(
-            train_data=train_data,
-            valid_data=valid_data,
-            training_args=training_args
+            train_data=train_data, valid_data=valid_data, training_args=training_args
         )
-        
-    def _create_prompt(self, market_changes: List[str], date: str, news: List[str]) -> str:
-        prompt = f'Analyze which news caused these significant market changes on {date}:\n\n'
-        prompt += '\n'.join(f"- {change}" for change in market_changes)
+
+    def _create_prompt(
+        self, market_changes: List[str], date: str, news: List[str]
+    ) -> str:
+        prompt = (
+            f'Analyze which news caused these significant market changes on {date}:\n\n'
+        )
+        prompt += '\n'.join(f'- {change}' for change in market_changes)
         prompt += '\n\nNews:\n'
         prompt += '\n'.join(f'- {news_item}' for news_item in news)
         prompt += "\nRate each news item's likelihood (0-100) of causing these market changes."

@@ -58,7 +58,9 @@ class LLMRegressor(PreTrainedModel):
         loss = None
         if labels is not None:
             if weights is not None:
-                loss = torch.mean(weights * (predictions.view(-1) - labels.view(-1)) ** 2)
+                loss = torch.mean(
+                    weights * (predictions.view(-1) - labels.view(-1)) ** 2
+                )
             else:
                 loss = nn.MSELoss()(predictions.view(-1), labels.view(-1))
             return {'loss': loss, 'predictions': predictions}
