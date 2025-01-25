@@ -16,7 +16,13 @@ collection = db['cards']
 @app.route('/api/cards', methods=['GET'])
 def get_cards() -> Response:
     try:
-        cards = list(collection.find({}, {'_id': 0}))
+        tag_filter = request.args.get('tag')
+        query = {}
+
+        if tag_filter:
+            query = {'tags': tag_filter}
+
+        cards = list(collection.find(query, {'_id': 0}))
 
         for card in cards:
             options = card.get('options', [])
@@ -37,6 +43,20 @@ def get_cards() -> Response:
         error_response = jsonify({'error': str(e)})
         error_response.status_code = 500
         return error_response
+
+
+@app.route('/api/tags', methods=['GET'])
+def get_tags():
+    try:
+        tags_cursor = collection.aggregate(
+            [{'$unwind': '$tags'}, {'$group': {'_id': '$tags'}}]
+        )
+
+        tags = [tag['_id'] for tag in tags_cursor]
+
+        return jsonify(tags), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/vote', methods=['POST'])
