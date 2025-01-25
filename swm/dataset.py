@@ -20,34 +20,28 @@ class BaseDataset(Dataset):
         self.use_cache = use_cache
         self.datapoints = []
 
-    def _prepare_datapoints(self) -> List[Dict[str, Any]]:
-        dataset_hash = self._compute_dataset_hash()
-        cache_path = self._get_cache_path(dataset_hash)
+    def _load_or_create_datapoints(self) -> List[Dict[str, Any]]:
+        dataset_hash = self._compute_hash()
+        cache_path = self.cache_dir / f'datapoints_{dataset_hash}.pkl'
 
         if self.use_cache and cache_path.exists():
             try:
                 with cache_path.open('rb') as f:
-                    print(f'Loading dataset from cache: {cache_path}')
                     return pickle.load(f)
             except Exception as e:
-                print(f'Cache loading failed ({cache_path}): {e}')
+                print(f'Cache loading failed: {e}')
 
         datapoints = self._create_datapoints()
         if self.use_cache:
             try:
                 with cache_path.open('wb') as f:
-                    print(f'Saving dataset to cache: {cache_path}')
                     pickle.dump(datapoints, f)
             except Exception as e:
-                print(f'Cache saving failed ({cache_path}): {e}')
-
+                print(f'Cache saving failed: {e}')
         return datapoints
 
-    def _compute_dataset_hash(self) -> str:
+    def _compute_hash(self) -> str:
         raise NotImplementedError
-
-    def _get_cache_path(self, dataset_hash: str) -> Path:
-        return self.cache_dir / f'datapoints_{dataset_hash}.pkl'
 
     def _create_datapoints(self) -> List[Dict[str, Any]]:
         raise NotImplementedError
@@ -62,125 +56,28 @@ class BaseDataset(Dataset):
 class BasicSocialWMDataset(BaseDataset):
     def __init__(
         self,
-        markets: List[PolyMarketData],
+        markets: List['PolyMarketData'],
         tokenizer: PreTrainedTokenizer,
         cache_dir: str = './cache',
         window_size: int = 5,
         use_cache: bool = True,
     ):
-        super().__init__(cache_dir, use_cache)
+        super().__init__(cache_dir=cache_dir, use_cache=use_cache)
         self.markets = markets
         self.tokenizer = tokenizer
         self.window_size = window_size
-        self.datapoints = self._prepare_datapoints()
+        self.datapoints = self._load_or_create_datapoints()
 
-    def _compute_dataset_hash(self) -> str:
-        hash_content = [
-            market.market_id + str(market.start_ts or '') + str(market.end_ts or '')
-            for market in self.markets
-            if market.daily_time_series
+    def _compute_hash(self) -> str:
+        content = [
+            f"{m.market_id}{m.start_ts or ''}{m.end_ts or ''}"
+            for m in self.markets
+            if m.daily_time_series
         ]
-        return hashlib.md5(''.join(hash_content).encode()).hexdigest()
-
-    def _prepare_datapoints(self) -> List[Dict[str, torch.Tensor]]:
-        prompts = []
-        metadata = []
-
-        for market in tqdm(self.markets, desc='Preparing datapoints'):
-            if not market.daily_time_series or 'Yes' not in market.daily_time_series:
-                continue
-
-            series = market.daily_time_series['Yes']
-            if len(series) <= self.window_size:
-                continue
-
-            for start_idx in range(len(series) - self.window_size):
-                window_data = series[start_idx : start_idx + self.window_size]
-                target_data = series[start_idx + self.window_size]
-
-                prompt = self._build_prompt(market, window_data, target_data)
-
-                prompts.append(prompt)
-                metadata.append(
-                    {
-                        'target': target_data['p'],
-                        'market_id': market.market_id,
-                        'outcome': 'Yes',
-                    }
-                )
-
-        encodings = [
-            self.tokenizer(prompt, padding=True, truncation=True, return_tensors='pt')
-            for prompt in tqdm(prompts, desc='Tokenizing prompts')
-        ]
-
-        return [
-            {
-                'input_ids': encodings[i]['input_ids'][0],
-                'labels': torch.tensor(meta['target'], dtype=torch.float),
-                'market_id': meta['market_id'],
-                'outcome': meta['outcome'],
-            }
-            for i, meta in enumerate(metadata)
-        ]
-
-    def _build_prompt(
-        self,
-        market: PolyMarketData,
-        window_data: List[Dict[str, float]],
-        target_data: Dict[str, float],
-    ) -> str:
-        prompt_lines = [f'You are given an event: {market.question}']
-        if market.description:
-            prompt_lines.append(market.description)
-
-        for day_data in window_data:
-            date_str = unix_to_date(day_data['t'])
-            prompt_lines.append(
-                f"At date {date_str}, its possibility to happen is {day_data['p']:.3f}"
-            )
-
-        target_date_str = unix_to_date(target_data['t'])
-        prompt_lines.append(
-            f'\nPlease predict the possibility to happen at date {target_date_str}.'
-        )
-
-        return '\n'.join(prompt_lines)
-
-
-class RAGSocialWMDataset(BaseDataset):
-    def __init__(
-        self,
-        markets: List[PolyMarketData],
-        similar_markets_dict: Dict[str, List[PolyMarketData]],
-        tokenizer: PreTrainedTokenizer,
-        cache_dir: str = './cache',
-        window_size: int = 5,
-        max_sim_markets: int = 3,
-        use_cache: bool = True,
-    ):
-        super().__init__(cache_dir, use_cache)
-        self.markets = markets
-        self.similar_markets_dict = similar_markets_dict
-        self.tokenizer = tokenizer
-        self.window_size = window_size
-        self.max_sim_markets = max_sim_markets
-        self.datapoints = self._prepare_datapoints()
-
-    def _compute_dataset_hash(self) -> str:
-        hash_content = [
-            market.market_id
-            + str(market.start_ts or '')
-            + str(market.end_ts or '')
-            + str(self.window_size)
-            for market in self.markets
-            if market.daily_time_series
-        ]
-        return hashlib.md5(''.join(hash_content).encode()).hexdigest()
+        return hashlib.md5(''.join(content).encode()).hexdigest()
 
     def _create_datapoints(self) -> List[Dict[str, torch.Tensor]]:
-        prompts = []
-        metadata = []
+        prompts, metadata = [], []
 
         for market in tqdm(self.markets, desc='Creating datapoints'):
             if not market.daily_time_series or 'Yes' not in market.daily_time_series:
@@ -190,120 +87,151 @@ class RAGSocialWMDataset(BaseDataset):
             if len(series) <= self.window_size:
                 continue
 
-            sim_markets = self.similar_markets_dict.get(market.market_id, [])
-
             for start_idx in range(len(series) - self.window_size):
-                window_data = series[start_idx : start_idx + self.window_size]
-                target_data = series[start_idx + self.window_size]
+                window = series[start_idx : start_idx + self.window_size]
+                target = series[start_idx + self.window_size]
 
-                relevant_markets = self._filter_markets(
-                    sim_markets, window_data, target_data
-                )
-
-                prompt = self._build_prompt(
-                    market, window_data, target_data, relevant_markets
-                )
-                import pdb
-
-                pdb.set_trace()
+                prompt = self._build_prompt(market, window, target)
                 prompts.append(prompt)
                 metadata.append(
                     {
-                        'target': target_data['p'],
+                        'target': target['p'],
                         'market_id': market.market_id,
                         'outcome': 'Yes',
                     }
                 )
 
         encodings = [
-            self.tokenizer(prompt, padding=True, truncation=True, return_tensors='pt')
-            for prompt in tqdm(prompts, desc='Tokenizing prompts')
+            self.tokenizer(p, padding=True, truncation=True, return_tensors='pt')
+            for p in tqdm(prompts, desc='Tokenizing')
         ]
 
         return [
             {
-                'input_ids': encodings[i]['input_ids'][0],
+                'input_ids': enc['input_ids'][0],
                 'labels': torch.tensor(meta['target'], dtype=torch.float),
                 'market_id': meta['market_id'],
                 'outcome': meta['outcome'],
             }
-            for i, meta in enumerate(metadata)
+            for enc, meta in zip(encodings, metadata)
         ]
 
-    def _filter_similar_markets(
-        self,
-        markets: List[PolyMarketData],
-        target_ts: int,
-    ) -> List[PolyMarketData]:
-        time_filter = TimeBasedPolyMarketFilter(markets)
-        return time_filter.filter(target_ts)[: self.max_sim_markets]
+    def _build_prompt(self, market, window_data, target_data):
+        lines = [f'You are given an event: {market.question}']
+        if market.description:
+            lines.append(market.description)
 
-    def _include_window_data(
+        for day in window_data:
+            date = unix_to_date(day['t'])
+            lines.append(f"At date {date}, its possibility to happen is {day['p']:.3f}")
+
+        target_date = unix_to_date(target_data['t'])
+        lines.append(
+            f'\nPlease predict the possibility to happen at date {target_date}.'
+        )
+        return '\n'.join(lines)
+
+
+class RAGSocialWMDataset(BasicSocialWMDataset):
+    def __init__(
         self,
-        markets: List[PolyMarketData],
-        window_start_ts: int,
-        window_end_ts: int,
-        outcome: str = 'Yes',
-    ) -> List[PolyMarketData]:
-        filtered = []
-        for market in markets:
-            if outcome not in market.daily_time_series:
+        markets: List['PolyMarketData'],
+        similar_markets: Dict[str, List['PolyMarketData']],
+        tokenizer: PreTrainedTokenizer,
+        cache_dir: str = './cache',
+        window_size: int = 5,
+        max_sim_markets: int = 3,
+        use_cache: bool = True,
+    ):
+        self.similar_markets = similar_markets
+        self.max_sim_markets = max_sim_markets
+        super().__init__(
+            markets=markets,
+            tokenizer=tokenizer,
+            cache_dir=cache_dir,
+            window_size=window_size,
+            use_cache=use_cache,
+        )
+
+    def _create_datapoints(self) -> List[Dict[str, torch.Tensor]]:
+        prompts, metadata = [], []
+
+        for market in tqdm(self.markets, desc='Creating datapoints'):
+            if not market.daily_time_series or 'Yes' not in market.daily_time_series:
                 continue
 
+            series = market.daily_time_series['Yes']
+            if len(series) <= self.window_size:
+                continue
+
+            for start_idx in range(len(series) - self.window_size):
+                window = series[start_idx : start_idx + self.window_size]
+                target = series[start_idx + self.window_size]
+
+                sim_markets = self.similar_markets.get(market.market_id, [])
+                time_overlapped_markets = self._filter_markets(
+                    sim_markets, window, target
+                )
+
+                prompt = self._build_prompt(
+                    market, window, target, time_overlapped_markets
+                )
+                prompts.append(prompt)
+                metadata.append(
+                    {
+                        'target': target['p'],
+                        'market_id': market.market_id,
+                        'outcome': 'Yes',
+                    }
+                )
+
+        encodings = [
+            self.tokenizer(p, padding=True, truncation=True, return_tensors='pt')
+            for p in tqdm(prompts, desc='Tokenizing')
+        ]
+
+        return [
+            {
+                'input_ids': enc['input_ids'][0],
+                'labels': torch.tensor(meta['target'], dtype=torch.float),
+                'market_id': meta['market_id'],
+                'outcome': meta['outcome'],
+            }
+            for enc, meta in zip(encodings, metadata)
+        ]
+
+    def _filter_markets(self, markets, window_data, target_data):
+        filtered_markets = TimeBasedPolyMarketFilter(markets).filter(target_data['t'])
+        filtered_markets = filtered_markets[: self.max_sim_markets]
+
+        window_start, window_end = window_data[0]['t'], window_data[-1]['t']
+
+        for market in filtered_markets:
+            if 'Yes' not in market.daily_time_series:
+                continue
             market.window_series = [
                 x
-                for x in market.daily_time_series[outcome]
-                if window_start_ts <= x['t'] <= window_end_ts
+                for x in market.daily_time_series['Yes']
+                if window_start <= x['t'] <= window_end
             ]
-            filtered.append(market)
-        return filtered
 
-    def _filter_markets(
-        self,
-        similar_markets: List[PolyMarketData],
-        window_data: List[Dict[str, float]],
-        target_data: Dict[str, float],
-    ) -> List[PolyMarketData]:
-        filtered_markets = self._filter_similar_markets(
-            similar_markets, target_data['t']
-        )
-
-        return self._include_window_data(
-            filtered_markets, window_data[0]['t'], window_data[-1]['t']
-        )
+        return [m for m in filtered_markets if m.window_series]
 
     def _build_prompt(
-        self,
-        market: PolyMarketData,
-        window_data: List[Dict[str, float]],
-        target_data: Dict[str, float],
-        relevant_markets: List[PolyMarketData],
-    ) -> str:
-        prompt_lines = [f'You are given an event: {market.question}']
-        if market.description:
-            prompt_lines.append(market.description)
+        self, market, window_data, target_data, time_overlapped_markets=None
+    ):
+        lines = super()._build_prompt(market, window_data, target_data).split('\n')
 
-        for day_data in window_data:
-            date_str = unix_to_date(day_data['t'])
-            prompt_lines.append(
-                f"At date {date_str}, its possibility to happen is {day_data['p']:.3f}"
-            )
-
-        target_date_str = unix_to_date(target_data['t'])
-        prompt_lines.append(
-            f'\nPlease predict the possibility to happen at date {target_date_str}.'
-        )
-
-        if relevant_markets:
-            prompt_lines.append('\nThere are a few similar events:')
-            for sim_mkt in relevant_markets:
-                prompt_lines.append(f'Event: {sim_mkt.question}')
-                if sim_mkt.description:
-                    prompt_lines.append(sim_mkt.description)
-                for sim_day_data in sim_mkt.window_series:
-                    sim_date_str = unix_to_date(sim_day_data['t'])
-                    prompt_lines.append(
-                        f"At date {sim_date_str}, its possibility to happen is {sim_day_data['p']:.3f}"
+        if time_overlapped_markets:
+            lines.append('\nThere are a few similar events:')
+            for mkt in time_overlapped_markets:
+                lines.append(f'Event: {mkt.question}')
+                if mkt.description:
+                    lines.append(mkt.description)
+                for day in mkt.window_series:
+                    date = unix_to_date(day['t'])
+                    lines.append(
+                        f"At date {date}, its possibility to happen is {day['p']:.3f}"
                     )
 
-        return '\n'.join(prompt_lines)
+        return '\n'.join(lines)
