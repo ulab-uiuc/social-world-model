@@ -53,7 +53,7 @@ class BaseDataset(Dataset):
         return self.datapoints[idx]
 
 
-class BasicSocialWMDataset(BaseDataset):
+class BasicPolyMarketDataset(BaseDataset):
     def __init__(
         self,
         markets: List['PolyMarketData'],
@@ -132,7 +132,72 @@ class BasicSocialWMDataset(BaseDataset):
         return '\n'.join(lines)
 
 
-class RAGSocialWMDataset(BasicSocialWMDataset):
+class BasicPolyMarketDatasetWithReasoner(BasicPolyMarketDataset):
+    def __init__(
+        self,
+        markets: List['PolyMarketData'],
+        tokenizer: PreTrainedTokenizer,
+        reasoner: NewsReasoner,
+        cache_dir: str = './cache',
+        window_size: int = 5,
+        use_cache: bool = True,
+    ):
+        self.reasoner = reasoner
+        super().__init__(
+            markets=markets,
+            tokenizer=tokenizer,
+            cache_dir=cache_dir,
+            window_size=window_size,
+            use_cache=use_cache
+        )
+
+    def _compute_hash(self) -> str:
+        content = super()._compute_hash()
+        reasoner_hash = hashlib.md5(str(self.reasoner.__dict__).encode()).hexdigest()
+        return hashlib.md5(f"{content}{reasoner_hash}".encode()).hexdigest()
+
+    def _create_datapoints(self) -> List[Dict[str, torch.Tensor]]:
+        prompts, metadata = [], []
+        
+        for market in tqdm(self.markets, desc='Creating datapoints'):
+            if not market.daily_time_series or 'Yes' not in market.daily_time_series:
+                continue
+                
+            series = market.daily_time_series['Yes']
+            if len(series) <= self.window_size:
+                continue
+                
+            market_scores = self.reasoner.analyze_market(market)
+            weight = market_scores['relevance_score']
+            
+            for start_idx in range(len(series) - self.window_size):
+                window = series[start_idx : start_idx + self.window_size]
+                target = series[start_idx + self.window_size]
+                prompt = self._build_prompt(market, window, target)
+                prompts.append(prompt)
+                metadata.append({
+                    'target': target['p'],
+                    'market_id': market.market_id,
+                    'outcome': 'Yes',
+                    'weight': weight
+                })
+
+        encodings = [
+            self.tokenizer(p, padding=True, truncation=True, return_tensors='pt')
+            for p in tqdm(prompts, desc='Tokenizing')
+        ]
+
+        return [{
+            'input_ids': enc['input_ids'][0],
+            'labels': torch.tensor(meta['target'], dtype=torch.float),
+            'market_id': meta['market_id'],
+            'outcome': meta['outcome'],
+            'weights': torch.tensor(meta['weight'], dtype=torch.float)
+        } for enc, meta in zip(encodings, metadata)]
+
+
+
+class RAGPolyMarketDataset(BasicPolyMarketDataset):
     def __init__(
         self,
         markets: List['PolyMarketData'],

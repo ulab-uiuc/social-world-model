@@ -3,7 +3,7 @@ import os
 
 import jsonlines
 
-from swm.utils.reasoner import PolyMarketDailyNewsReasoner
+from swm.reasoner import PolyMarketDailyNewsPosteriorReasoner
 from swm.utils.utils import load_dailynews_data, load_polymarket_data
 
 
@@ -35,7 +35,7 @@ def main():
     news = load_dailynews_data(args.news_path)
     markets = load_polymarket_data(args.market_path)
 
-    reasoner = PolyMarketDailyNewsReasoner(
+    reasoner = PolyMarketDailyNewsPosteriorReasoner(
         openai_api_key=openai_api_key,
         corpus_markets=markets,
         corpus_news=news,

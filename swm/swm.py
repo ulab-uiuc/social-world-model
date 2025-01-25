@@ -11,7 +11,7 @@ from tqdm import tqdm
 from transformers import AutoTokenizer, Trainer, TrainingArguments
 
 from .data import PolyMarketData
-from .dataset import BasicSocialWMDataset, RAGSocialWMDataset
+from .dataset import BasicPolyMarketDataset, RAGPolyMarketDataset
 from .utils.regressor import LLMRegressor, LLMRegressorConfig
 from .utils.retriever import SimilarityBasedPolyMarketRetriever
 
@@ -68,8 +68,8 @@ class BasicSocialWM:
         if self.model is None:
             self.setup_model()
 
-        train_dataset = BasicSocialWMDataset(train_data, self.tokenizer, self.cache_dir)
-        valid_dataset = BasicSocialWMDataset(valid_data, self.tokenizer, self.cache_dir)
+        train_dataset = BasicPolyMarketDataset(train_data, self.tokenizer, self.cache_dir)
+        valid_dataset = BasicPolyMarketDataset(valid_data, self.tokenizer, self.cache_dir)
 
         trainer = Trainer(
             model=self.model,
@@ -89,7 +89,7 @@ class BasicSocialWM:
     def predict(
         self, markets: List[PolyMarketData], batch_size: int = 8
     ) -> Dict[str, Dict[str, float]]:
-        dataset = BasicSocialWMDataset(markets, self.tokenizer, self.cache_dir)
+        dataset = BasicPolyMarketDataset(markets, self.tokenizer, self.cache_dir)
         results = {}
         dataloader = DataLoader(
             dataset,
@@ -221,10 +221,10 @@ class RAGSocialWM:
         valid_similar = {
             m.market_id: self.retriever.find_similar(m) for m in valid_data
         }
-        train_dataset = RAGSocialWMDataset(
+        train_dataset = RAGPolyMarketDataset(
             train_data, train_similar, self.tokenizer, self.cache_dir
         )
-        valid_dataset = RAGSocialWMDataset(
+        valid_dataset = RAGPolyMarketDataset(
             valid_data, valid_similar, self.tokenizer, self.cache_dir
         )
         trainer = Trainer(
@@ -246,7 +246,7 @@ class RAGSocialWM:
         self, markets: List[PolyMarketData], batch_size: int = 8
     ) -> Dict[str, Dict[str, float]]:
         similar_markets = {m.market_id: self.retriever.find_similar(m) for m in markets}
-        dataset = RAGSocialWMDataset(
+        dataset = RAGPolyMarketDataset(
             markets, similar_markets, self.tokenizer, self.cache_dir
         )
         results = {}
@@ -288,3 +288,55 @@ class RAGSocialWM:
     def load(self, path: str) -> None:
         self.model = LLMRegressor.from_pretrained(path)
         self.model.to('cuda' if torch.cuda.is_available() else 'cpu')
+
+
+class BasicELBOSocialWM:
+    def __init__(
+        self,
+        predictor: BasicPredictor,
+        reasoner: PolyMarketDailyNewsPriorReasoner,
+    ):
+        self.predictor = predictor
+        self.reasoner = reasoner
+
+    def analyze_and_predict(
+        self,
+        markets: List[PolyMarketData],
+        news_data: List[DailyNewsData],
+        date: str,
+    ) -> Dict[str, Dict[str, Any]]:
+        # Get market changes for reasoning
+        market_changes = []
+        for market in markets:
+            if not market.daily_time_series or 'Yes' not in market.daily_time_series:
+                continue
+            series = market.daily_time_series['Yes']
+            for i, point in enumerate(series):
+                if datetime.fromtimestamp(point['t']).strftime('%Y-%m-%d') == date:
+                    if i > 0:
+                        change = {
+                            'market': market,
+                            'prev_point': series[i-1],
+                            'current_point': point
+                        }
+                        market_changes.append(change)
+                    break
+
+        # Get news importance weights
+        reasoning_results = self.reasoner.analyze(news_data, market_changes, date)
+        
+        # Use predictor with weighted news
+        prediction_results = self.predictor.predict(markets, reasoning_results)
+        
+        # Combine results
+        combined_results = {}
+        for market_id, predictions in prediction_results.items():
+            combined_results[market_id] = {
+                'predictions': predictions,
+                'news_weights': {
+                    result['news'].id: result['score']
+                    for result in reasoning_results
+                }
+            }
+            
+        return combined_results
