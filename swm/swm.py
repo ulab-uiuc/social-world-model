@@ -22,18 +22,20 @@ class BasicSocialWM:
         model_name: str,
         cache_dir: str,
         max_seq_length: int = 512,
+        lora_config: Optional[LoraConfig] = None,
     ):
         self.model_name = model_name
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.max_seq_length = max_seq_length
         self.model = None
         self.cache_dir = Path(cache_dir)
+        self.lora_config = lora_config
 
     def setup_model(self) -> None:
         config = LLMRegressorConfig(
             base_model_name_or_path=self.model_name, max_length=self.max_seq_length
         )
-        self.model = LLMRegressor(config)
+        self.model = LLMRegressor(config, lora_config=self.lora_config)
 
     def _create_collate_fn(self):
         def collate_fn(batch):
@@ -90,38 +92,29 @@ class BasicSocialWM:
         self, markets: List[PolyMarketData], batch_size: int = 8
     ) -> Dict[str, Dict[str, float]]:
         dataset = BasicSocialWMDataset(markets, self.tokenizer, self.cache_dir)
-        results = {}
         dataloader = DataLoader(
             dataset,
             batch_size=batch_size,
             shuffle=False,
             collate_fn=self._create_collate_fn(),
         )
+        preds = []
+        gths = []
         self.model.eval()
         with torch.no_grad():
             for batch in tqdm(dataloader, desc='Predicting Batches'):
                 input_ids = batch['input_ids'].to(self.model.llm.device)
                 attention_mask = batch['attention_mask'].to(self.model.llm.device)
                 labels = batch['labels'].to(self.model.llm.device)
-                preds = self.model(
+                outputs = self.model(
                     input_ids=input_ids,
                     attention_mask=attention_mask,
                     labels=labels,
                 )
-                pred_values = preds['predictions'].view(-1).cpu().numpy()
-                label_values = labels.view(-1).cpu().numpy()
-                for i, data in enumerate(batch):
-                    market_id = data['market_id']
-                    outcome = data['outcome']
-                    pred_value = pred_values[i].item()
-                    label_value = label_values[i].item()
-                    if market_id not in results:
-                        results[market_id] = {}
-                    results[market_id][outcome] = {
-                        'pred': pred_value,
-                        'label': label_value,
-                    }
-        return results
+                preds += outputs['predictions'].view(-1).cpu().numpy().tolist()
+                gths += labels.view(-1).cpu().numpy().tolist()
+
+        return preds, gths
 
     def save(self, path: str) -> None:
         if self.model:

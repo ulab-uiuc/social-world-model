@@ -4,6 +4,7 @@ from transformers import TrainingArguments
 
 from swm.swm import BasicSocialWM
 from swm.utils.utils import load_polymarket_data, set_seed
+from peft import LoraConfig
 
 
 def parse_args():
@@ -28,18 +29,36 @@ def parse_args():
     parser.add_argument('--save-steps', type=int, default=500)
     parser.add_argument('--eval-steps', type=int, default=500)
     parser.add_argument('--fp16', action='store_true')
+    parser.add_argument('--lora-alpha', type=float, default=32)
+    parser.add_argument('--lora-dropout', type=float, default=0.1)
+    parser.add_argument('--r', type=int, default=16)
+    parser.add_argument('--sanity-check', action='store_true')
     return parser.parse_args()
 
 
 def train(args):
     set_seed(args.seed)
-    train_data = load_polymarket_data(args.train_data_path)
-    valid_data = load_polymarket_data(args.valid_data_path)
+    if args.sanity_check:
+        train_data = load_polymarket_data(args.train_data_path)[:1]
+        valid_data = load_polymarket_data(args.valid_data_path)[:1]
+    else:
+        train_data = load_polymarket_data(args.train_data_path)
+        valid_data = load_polymarket_data(args.valid_data_path)
+
+    lora_config = LoraConfig(
+        r=args.r,
+        lora_alpha=args.lora_alpha,
+        target_modules=['q_proj', 'v_proj'],
+        lora_dropout=args.lora_dropout,
+        bias='none',
+        task_type='CAUSAL_LM',
+    )
 
     basic_swm = BasicSocialWM(
         model_name=args.model_name,
         cache_dir=args.cache_dir,
         max_seq_length=args.max_seq_length,
+        lora_config=lora_config,
     )
 
     training_args = TrainingArguments(
