@@ -45,7 +45,12 @@ class PolyMarketData(BaseModel):
 class DailyNewsData(BaseModel):
     uuid: str
     title: str
-    description: str
+    date: Optional[str] = Field(default=None)
+    description: Optional[str] = Field(default=None)
+
+    @classmethod
+    def from_dict(cls, data: Dict) -> 'DailyNewsData':
+        return cls(**{k: v for k, v in data.items() if k in cls.__annotations__})
 
     class Config:
         arbitrary_types_allowed = True
