@@ -1,12 +1,5 @@
-
-from datetime import datetime, timedelta
-from pathlib import Path
+from datetime import datetime
 from typing import Dict, List, Optional
-
-import faiss
-import numpy as np
-import torch
-from sentence_transformers import SentenceTransformer
 
 from ..data import DailyNewsData, PolyMarketData
 
@@ -19,7 +12,9 @@ class TimeBasedDailyNewsFilter:
     def _extract_date(corpus_news: DailyNewsData) -> Optional[str]:
         return corpus_news.date
 
-    def _index_news(self, corpus_news: List[DailyNewsData]) -> Dict[str, List[DailyNewsData]]:
+    def _index_news(
+        self, corpus_news: List[DailyNewsData]
+    ) -> Dict[str, List[DailyNewsData]]:
         news_dict = {}
         for item in corpus_news:
             date = self._extract_date(item)
@@ -28,9 +23,10 @@ class TimeBasedDailyNewsFilter:
         return news_dict
 
     def filter(
-        self, target_date: str,
+        self,
+        target_date: str,
     ) -> List[DailyNewsData]:
-        target = datetime.strptime(target_date, '%Y-%m-%d')
+        target_date = datetime.strptime(target_date, '%Y-%m-%d')
         relevant = self.corpus_news_by_date.get(target_date, [])
         return relevant
 
@@ -44,7 +40,7 @@ class TimeBasedPolyMarketFilter:
         target_ts: int,
     ) -> List[PolyMarketData]:
         relevant_markets = []
-        
+
         for market in self.corpus_markets:
             if not market.start_ts or not market.end_ts:
                 continue
@@ -53,5 +49,5 @@ class TimeBasedPolyMarketFilter:
             if not market.daily_time_series:
                 continue
             relevant_markets.append(market)
-            
+
         return relevant_markets
