@@ -1,11 +1,8 @@
 # swm.py
 
-import pickle
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-import faiss
-import numpy as np
 import torch
 from peft import LoraConfig
 from sklearn.metrics import mean_squared_error
