@@ -176,6 +176,7 @@ class RAGSocialWMDataset(BasicSocialWMDataset):
                 prompt = self._build_prompt(
                     market, window, target, time_overlapped_markets
                 )
+
                 prompts.append(prompt)
                 metadata.append(
                     {
