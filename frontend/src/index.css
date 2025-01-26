@@ -362,3 +362,16 @@ body {
   border-color: #6c63ff;
   box-shadow: 0 0 4px #6c63ff;
 }
+
+.chart-container {
+  display: flex;
+  justify-content: space-between;
+}
+
+.left-section {
+  flex: 1;
+}
+
+.right-section {
+  width: 50%;
+}

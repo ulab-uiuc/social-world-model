@@ -1,5 +1,7 @@
+from datetime import datetime
 from typing import Any
 
+from apscheduler.schedulers.background import BackgroundScheduler
 from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
 from pymongo import MongoClient
@@ -10,7 +12,31 @@ CORS(app)
 
 client: MongoClient[Any] = MongoClient('mongodb://localhost:27017/')
 db = client['electionDB']
-collection = db['cards']
+cards_collection = db['cards']
+history_collection = db['vote_history']
+
+
+def record_hourly_data():
+    try:
+        cards = list(cards_collection.find({}, {'_id': 0}))
+        for card in cards:
+            options = card.get('options', [])
+            votes = {opt['option']: opt['bets'] for opt in options}
+
+            history = {
+                'card_id': card['card_id'],
+                'timestamp': datetime.utcnow().isoformat(),
+                'votes': votes,
+            }
+            history_collection.insert_one(history)
+        print('Hourly data recorded successfully.')
+    except Exception as e:
+        print(f'Error recording hourly data: {e}')
+
+
+scheduler = BackgroundScheduler()
+scheduler.add_job(record_hourly_data, 'interval', hours=1)
+scheduler.start()
 
 
 @app.route('/api/cards', methods=['GET'])
@@ -22,7 +48,7 @@ def get_cards() -> Response:
         if tag_filter:
             query = {'tags': tag_filter}
 
-        cards = list(collection.find(query, {'_id': 0}))
+        cards = list(cards_collection.find(query, {'_id': 0}))
 
         for card in cards:
             options = card.get('options', [])
@@ -48,7 +74,7 @@ def get_cards() -> Response:
 @app.route('/api/tags', methods=['GET'])
 def get_tags():
     try:
-        tags_cursor = collection.aggregate(
+        tags_cursor = cards_collection.aggregate(
             [{'$unwind': '$tags'}, {'$group': {'_id': '$tags'}}]
         )
 
@@ -66,7 +92,7 @@ def vote():
         card_id = data['card_id']
         option = data['option']
 
-        result = collection.update_one(
+        result = cards_collection.update_one(
             {'card_id': card_id, 'options.option': option},
             {'$inc': {'options.$.bets': 1}},
         )
@@ -81,5 +107,17 @@ def vote():
         return error_response
 
 
+@app.route('/api/vote_history/<card_id>', methods=['GET'])
+def get_vote_history(card_id):
+    try:
+        history = list(history_collection.find({'card_id': card_id}, {'_id': 0}))
+        return jsonify(history), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 if __name__ == '__main__':
-    app.run(debug=True)
+    try:
+        app.run(debug=True)
+    finally:
+        scheduler.shutdown()
