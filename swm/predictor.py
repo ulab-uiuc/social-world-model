@@ -32,7 +32,7 @@ class WeightedTrainer(Trainer):
         )
         return output
 
-    def compute_loss(self, model, inputs, return_outputs=False):
+    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
         labels = inputs.pop("labels")
         weights = inputs.pop("weights")
         group_ids = inputs.pop("group_ids")
@@ -40,7 +40,6 @@ class WeightedTrainer(Trainer):
         outputs = model(**inputs)
         logits = outputs.get("logits")
         
-        # Group predictions
         unique_groups = torch.unique(group_ids)
         loss = 0
         
@@ -48,10 +47,9 @@ class WeightedTrainer(Trainer):
             mask = group_ids == group
             group_preds = logits[mask]
             group_weights = weights[mask]
-            group_weights = group_weights / group_weights.sum()  # Normalize weights
-            group_label = labels[mask][0]  # All labels in group are same
+            group_weights = group_weights / group_weights.sum()
+            group_label = labels[mask][0]
             
-            # Weighted expectation
             expected_pred = (group_preds * group_weights).sum()
             loss += torch.nn.functional.mse_loss(expected_pred, group_label)
             
@@ -90,7 +88,6 @@ class BasicPredictor:
             all_weights = []
             all_group_ids = []
             
-            import pdb; pdb.set_trace()
             for group_idx, item in enumerate(batch):
                 padded_inputs = torch.nn.functional.pad(
                     item['input_ids'],
