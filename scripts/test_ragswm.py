@@ -3,11 +3,10 @@
 import argparse
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
-from sklearn.metrics import mean_absolute_error, mean_squared_error
 
 from swm.swm import RAGSocialWM
+from swm.utils.metric import calculate_metric
 from swm.utils.utils import load_polymarket_data, set_seed
 
 
@@ -53,22 +52,19 @@ def predict(args):
 
     swm.load(args.model_checkpoint)
 
-    preds, gths = swm.predict(markets=test_data, batch_size=args.test_batch_size)
-    rmse = np.sqrt(mean_squared_error(gths, preds))
-    mae = mean_absolute_error(gths, preds)
-    mse = mean_squared_error(gths, preds)
+    results = swm.predict(markets=test_data, batch_size=args.test_batch_size)
 
-    print(f'RMSE: {rmse:.4f}')
-    print(f'MAE: {mae:.4f}')
-    print(f'MSE: {mse:.4f}')
+    preds = [result['prediction'] for result in results]
+    gths = [result['ground_truth'] for result in results]
 
-    metrics = {
-        'RMSE': rmse,
-        'MAE': mae,
-        'MSE': mse,
-    }
+    metrics = calculate_metric(preds, gths)
+    print(metrics)
+
     metrics_df = pd.DataFrame([metrics])
-    metrics_df.to_csv(Path(args.output_dir) / 'evaluation_metrics.csv', index=False)
+    metrics_df.to_csv(Path(args.output_dir) / 'metrics.csv', index=False)
+
+    results_df = pd.DataFrame(results)
+    results_df.to_csv(Path(args.output_dir) / 'results.csv', index=False)
 
 
 if __name__ == '__main__':
