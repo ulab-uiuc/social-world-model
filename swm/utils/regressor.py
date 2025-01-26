@@ -47,7 +47,7 @@ class LLMRegressor(PreTrainedModel):
         if lora_config:
             self.llm = get_peft_model(self.llm, lora_config)
 
-    def forward(self, input_ids, attention_mask=None, labels=None, weights=None):
+    def forward(self, input_ids, attention_mask=None, labels=None, weights=None, **kwargs):
         outputs = self.llm(
             input_ids=input_ids,
             attention_mask=attention_mask,

@@ -91,6 +91,7 @@ def train(args):
         fp16=args.fp16,
         metric_for_best_model='loss',
         save_safetensors=False,
+        remove_unused_columns=False,
     )
 
     best_model_checkpoint = rag_swm.train(

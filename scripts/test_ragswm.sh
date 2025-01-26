@@ -1,7 +1,7 @@
 CUDA_VISIBLE_DEVICES=4 python test_ragswm.py \
 --test-data-path ../data/splitted_polymarket/polymarket_data_processed_Crypto_test.jsonl \
 --corpus-data-path ../data/splitted_polymarket/polymarket_data_processed_train.jsonl \
---model-checkpoint ../saves/saves_crypto_ragswm/checkpoint-best \
+--model-checkpoint ../saves/saves_crypto_ragswm/checkpoint-11500 \
 --output-dir ../saves/saves_crypto_ragswm \
 --cache-dir ../cache/cache_crypto_ragswm \
 --test-batch-size 20
@@ -48,7 +48,7 @@ CUDA_VISIBLE_DEVICES=4 python test_ragswm.py \
 
 
 # sanity check
-CUDA_VISIBLE_DEVICES=2 python test_ragswm.py \
+CUDA_VISIBLE_DEVICES=0 python test_ragswm.py \
 --test-data-path ../data/splitted_polymarket/polymarket_data_processed_Crypto_test.jsonl \
 --corpus-data-path ../data/splitted_polymarket/polymarket_data_processed_Crypto_train.jsonl \
 --model-checkpoint ../saves/saves_crypto_ragswm_sanitycheck/checkpoint-best \

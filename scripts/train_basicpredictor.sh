@@ -1,7 +1,8 @@
 # for sanity check
-CUDA_VISIBLE_DEVICES=2 python train_basicpredictor.py \
+CUDA_VISIBLE_DEVICES=0 python train_basicpredictor.py \
 --train-data-path ../data/splitted_polymarket/polymarket_data_processed_Crypto_test.jsonl \
 --valid-data-path ../data/splitted_polymarket/polymarket_data_processed_Crypto_test.jsonl \
+--corpus-news-path ../data/processed_dailynews/dailynews_data_processed.jsonl \
 --output-dir ../saves/saves_crypto_basicpredictor_sanitycheck \
 --cache-dir ../cache/cache_crypto_basicpredictor_sanitycheck \
 --epochs 160 \

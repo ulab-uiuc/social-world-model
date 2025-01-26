@@ -54,7 +54,7 @@ CUDA_VISIBLE_DEVICES=3 python train_basicswm.py \
 
 
 # for sanity check
-CUDA_VISIBLE_DEVICES=2 python train_basicswm.py \
+CUDA_VISIBLE_DEVICES=0 python train_basicswm.py \
 --train-data-path ../data/splitted_polymarket/polymarket_data_processed_Crypto_test.jsonl \
 --valid-data-path ../data/splitted_polymarket/polymarket_data_processed_Crypto_test.jsonl \
 --output-dir ../saves/saves_crypto_basicswm_sanitycheck \

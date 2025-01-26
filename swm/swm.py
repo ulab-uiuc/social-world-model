@@ -37,31 +37,7 @@ class BasicSocialWM:
         )
         self.model = LLMRegressor(config, lora_config=self.lora_config)
 
-    def _create_train_collate_fn(self):
-        def collate_fn(batch):
-            max_len = max(x['input_ids'].size(0) for x in batch)
-            max_len = min(max_len, self.max_seq_length)
-            input_ids = torch.stack(
-                [
-                    torch.nn.functional.pad(
-                        x['input_ids'][:max_len],
-                        (0, max_len - min(x['input_ids'].size(0), max_len)),
-                        value=self.tokenizer.pad_token_id,
-                    )
-                    for x in batch
-                ]
-            )
-            attention_mask = (input_ids != self.tokenizer.pad_token_id).long()
-            labels = torch.stack([x['label'] for x in batch])
-            return {
-                'input_ids': input_ids,
-                'attention_mask': attention_mask,
-                'labels': labels,
-            }
-
-        return collate_fn
-
-    def _create_test_collate_fn(self):
+    def _create_collate_fn(self):
         def collate_fn(batch):
             max_len = max(x['input_ids'].size(0) for x in batch)
             max_len = min(max_len, self.max_seq_length)
@@ -114,7 +90,7 @@ class BasicSocialWM:
             args=training_args,
             train_dataset=train_dataset,
             eval_dataset=valid_dataset,
-            data_collator=self._create_train_collate_fn(),
+            data_collator=self._create_collate_fn(),
             compute_metrics=lambda p: {
                 'mse': mean_squared_error(p.label_ids, p.predictions)
             },
@@ -133,7 +109,7 @@ class BasicSocialWM:
             dataset,
             batch_size=batch_size,
             shuffle=False,
-            collate_fn=self._create_test_collate_fn(),
+            collate_fn=self._create_collate_fn(),
         )
 
         results = []
@@ -161,7 +137,6 @@ class BasicSocialWM:
                             'ground_truth': labels[i].item(),
                         }
                     )
-
         return results
 
     def save(self, path: str) -> None:
@@ -235,7 +210,7 @@ class RAGSocialWM(BasicSocialWM):
             args=training_args,
             train_dataset=train_dataset,
             eval_dataset=valid_dataset,
-            data_collator=self._create_train_collate_fn(),
+            data_collator=self._create_collate_fn(),
             compute_metrics=lambda p: {
                 'mse': mean_squared_error(p.label_ids, p.predictions)
             },
@@ -258,7 +233,7 @@ class RAGSocialWM(BasicSocialWM):
             dataset,
             batch_size=batch_size,
             shuffle=False,
-            collate_fn=self._create_test_collate_fn(),
+            collate_fn=self._create_collate_fn(),
         )
 
         results = []
@@ -298,11 +273,12 @@ class RAGSocialWM(BasicSocialWM):
         self.model.to('cuda' if torch.cuda.is_available() else 'cpu')
 
 
-class BasicELBOSocialWM:
+'''
+class BasicSocialWMWithEvent:
     def __init__(
         self,
         predictor: BasicPredictor,
-        reasoner: PolyMarketDailyNewsPriorReasoner,
+        reasoner: BasicPriorReasoner,
     ):
         self.predictor = predictor
         self.reasoner = reasoner
@@ -347,3 +323,4 @@ class BasicELBOSocialWM:
             }
 
         return combined_results
+'''

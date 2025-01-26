@@ -1,124 +1,145 @@
-# swm/utils.py
-
 import json
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any, Union
 
-import openai
+from datetime import timedelta
 
-from ..data import DailyNewsData, PolyMarketData
-from .filter import TimeBasedDailyNewsFilter, TimeBasedPolyMarketFilter
-from .prompter import model_prompting
+from .data import DailyNewsData, PolyMarketData
+from .utils.filter import TimeBasedDailyNewsFilter
+from .utils.prompter import model_prompting
+from transformers import TrainingArguments
+import re
+from .utils.error_handler import api_calling_error_exponential_backoff, parsing_error_exponential_backoff
+from .utils.utils import convert_to_date
 
 
-class PolyMarketDailyNewsPosteriorReasoner:
+PROMPT_TEMPLATE = '''Analyze market price change causation for {date}:
+
+Market: {question}
+Price Change: {direction} from {current_price:.3f} ({current_date}) to {next_price:.3f} ({next_date}) ({change_pct:.1f}%)
+
+News:
+{news_items}
+
+Task: Rate each news item's likelihood (0-100) of causing this price change.
+Format: Return JSON array of objects with "news_id" and "score" fields. Example:
+[{{"news_id": 0, "score": 85}}, {{"news_id": 1, "score": 15}}]'''
+
+
+class BasicPosteriorReasoner:
     def __init__(
         self,
-        corpus_markets: List[PolyMarketData],
         corpus_news: List[DailyNewsData],
-        top_k: int = 5,
-        news_window_days: int = 1,
-        openai_api_key: Optional[str] = None,
         model_name: str = 'gpt-4o',
+        max_news_items: int = 30,
+        change_threshold: float = 0.2,
     ):
-        self.corpus_markets = {market.market_id: market for market in corpus_markets}
-        self.top_k = top_k
-        self.news_window_days = news_window_days
-        self.polymarket_filter = TimeBasedPolyMarketFilter(corpus_markets)
         self.news_filter = TimeBasedDailyNewsFilter(corpus_news)
+        self.model_name = model_name
+        self.max_news_items = max_news_items
+        self.change_threshold = change_threshold
 
-        openai.api_key = openai_api_key
-
-    def analyze(self, date: str) -> List[Dict]:
-        top_changes = self._get_top_market_changes(date)
-        if not top_changes:
+    def reason(self, time: Union[str, int], market: PolyMarketData) -> List[Dict[str, Any]]:
+        date = convert_to_date(time)
+        change = self._get_next_day_change(date, market)
+        if not change:
             return []
 
-        target_date_news = self.news_filter.filter(date)
-        if not target_date_news:
+        if abs(change['change']) < self.change_threshold:
+            news = self._get_filtered_news(date)
+            return [{'news': news_item, 'score': 0.01} for news_item in news]
+
+        news = self._get_filtered_news(date)
+        if not news:
             return []
 
-        prompt = self._create_prompt(top_changes, date, target_date_news)
-        model_output = self._get_model_response(prompt)
-        parsed_results = self._parse_scores(model_output, target_date_news)
-        return parsed_results, top_changes
+        prompt = self._create_prompt(change, date, news)
+        response = self._get_model_response(prompt)
+        return self._parse_scores(response, news)
 
-    def _get_top_market_changes(self, date: str) -> List[Dict]:
-        changes = []
-        for market in self.corpus_markets.values():
-            if not market.daily_time_series:
-                continue
-            series = market.daily_time_series.get('Yes', [])
-            for i, point in enumerate(series):
-                current_date = datetime.fromtimestamp(series[i]['t']).strftime(
-                    '%Y-%m-%d'
-                )
-                if current_date == date and i < len(series) - 1:
-                    change = abs(point['p'] - series[i + 1]['p'])
-                    changes.append(
-                        {
-                            'market': market,
-                            'prev_point': series[i + 1],
-                            'current_point': point,
-                            'change': change,
-                        }
-                    )
-        sorted_changes = sorted(changes, key=lambda x: x['change'], reverse=True)
-        return sorted_changes[: self.top_k]
+    def _get_next_day_change(self, date: str, market: PolyMarketData) -> Optional[Dict]:
+        if not market.daily_time_series or 'Yes' not in market.daily_time_series:
+            return None
+
+        current_date = datetime.strptime(date, '%Y-%m-%d')
+        next_date = current_date + timedelta(days=1)
+        series = market.daily_time_series['Yes']
+
+        current_point = next(
+            (p for p in series if datetime.fromtimestamp(p['t']).date() == current_date.date()),
+            None
+        )
+        next_point = next(
+            (p for p in series if datetime.fromtimestamp(p['t']).date() == next_date.date()),
+            None
+        )
+
+        if not (current_point and next_point):
+            return None
+
+        change = abs(current_point['p'] - next_point['p'])
+
+        return {
+            'market': market,
+            'current_point': current_point,
+            'next_point': next_point,
+            'change': change,
+            'direction': 'increased' if next_point['p'] > current_point['p'] else 'decreased'
+        }
+
+    def _get_filtered_news(self, date: str) -> List[DailyNewsData]:
+        news = self.news_filter.filter(date)
+        news = news[:self.max_news_items]
+        return news
 
     def _create_prompt(
-        self, changes: List[Dict], date: str, news: List[DailyNewsData]
+        self, change: Dict, date: str, news: List[DailyNewsData]
     ) -> str:
-        prompt = (
-            f'Analyze which news caused these significant market changes on {date}:\n\n'
+        return PROMPT_TEMPLATE.format(
+            date=date,
+            question=change['market'].question,
+            direction=change['direction'],
+            current_price=change['current_point']['p'],
+            next_price=change['next_point']['p'],
+            current_date=change['current_point']['t'],
+            next_date=change['next_point']['t'],
+            change_pct=abs(change['change'])*100,
+            news_items=self._format_news_items(news)
         )
-        for change in changes:
-            market = change['market']
-            direction = (
-                'increased'
-                if change['current_point']['p'] > change['prev_point']['p']
-                else 'decreased'
-            )
-            prompt += f"- {market.question}: {direction} from {change['prev_point']['p']:.3f} to {change['current_point']['p']:.3f}\n"
 
-        prompt += '\nNews:\n'
-        for idx, item in enumerate(news):
-            prompt += f'- [news_id{idx}] {item.title}: {item.description}\n'
+    def _format_news_items(self, news: List[DailyNewsData]) -> str:
+        return '\n'.join(
+            f'[news_id{i}] {item.title}: {item.description}'
+            for i, item in enumerate(news)
+        )
 
-        prompt += "\nRate each news item's likelihood (0-100) of causing these market changes."
-        prompt += '\nReturn: JSON array of objects with "news_id" and "score" fields matching news order. Do not return anything else.'
-        return prompt
-
+    @api_calling_error_exponential_backoff()
     def _get_model_response(self, prompt: str) -> str:
-        messages = [{'role': 'user', 'content': prompt}]
-        response = model_prompting(
-            llm_model='gpt-4o',
+        messages = [
+            {'role': 'system', 'content': 'You analyze news impact on prediction markets.'},
+            {'role': 'user', 'content': prompt}
+        ]
+        return model_prompting(
+            llm_model=self.model_name,
             messages=messages,
             temperature=0.0,
             max_token_num=2048,
         )[0]
-        return response
 
+    @parsing_error_exponential_backoff()
     def _parse_scores(self, model_output: str, news: List[DailyNewsData]) -> List[Dict]:
-        parsed_results = []
-        try:
-            start = model_output.index('[')
-            end = model_output.rindex(']') + 1
-            json_str = model_output[start:end]
-            results = json.loads(json_str)
-            for result in results:
-                parsed_result = {}
-                parsed_result['news'] = news[result['news_id']]
-                parsed_result['score'] = result['score'] / sum(
-                    r['score'] for r in results
-                )
-                parsed_results.append(parsed_result)
-            return parsed_results
-        except (ValueError, json.JSONDecodeError):
+        json_match = re.search(r'\[.*\]', model_output, re.DOTALL)
+        if not json_match:
             return []
 
+        results = json.loads(json_match.group())
+        if not results:
+            return []
 
-class PolyMarketDailyNewsPriorReasoner:
+        return [{'news': news[r['news_id']], 'score': r['score'] / 100} for r in results]
+
+
+class BasicPriorReasoner:
     def __init__(
         self,
         model_name: str,
@@ -166,7 +187,7 @@ class PolyMarketDailyNewsPriorReasoner:
         self,
         train_dates: List[str],
         valid_dates: List[str],
-        posterior_reasoner: PolyMarketDailyNewsPosteriorReasoner,
+        posterior_reasoner: BasicPosteriorReasoner,
         training_args: TrainingArguments,
     ) -> str:
         train_data = []
