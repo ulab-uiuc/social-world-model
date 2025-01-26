@@ -1,15 +1,14 @@
 # retriever.py
 
-from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 import faiss
 import numpy as np
 import torch
 from sentence_transformers import SentenceTransformer
 
-from ..data import DailyNewsData, PolyMarketData
+from ..data import PolyMarketData
 
 
 class SimilarityBasedPolyMarketRetriever:
@@ -18,13 +17,13 @@ class SimilarityBasedPolyMarketRetriever:
         retriever_name: str,
         cache_dir: str,
         max_seq_length: int = 512,
-        top_k: int = 50,
+        retriever_top_k: int = 50,
         retriever_batch_size: int = 32,
     ):
         self.retriever_name = retriever_name
         self.cache_dir = Path(cache_dir)
         self.max_seq_length = max_seq_length
-        self.top_k = top_k
+        self.retriever_top_k = retriever_top_k
         self.retriever_batch_size = retriever_batch_size
         self.sentence_transformer = SentenceTransformer(
             retriever_name, device='cuda' if torch.cuda.is_available() else 'cpu'
@@ -59,7 +58,9 @@ class SimilarityBasedPolyMarketRetriever:
     def find_similar(
         self, market: PolyMarketData, k: Optional[int] = None
     ) -> List[PolyMarketData]:
-        k = k or self.top_k
+        k = k or self.retriever_top_k
+        k = min(k, len(self.corpus_ids))
+
         if market.market_id not in self.market_embeddings:
             embedding = self._compute_embedding(market)
             self.market_embeddings[market.market_id] = embedding
@@ -68,37 +69,23 @@ class SimilarityBasedPolyMarketRetriever:
             self.embeddings = np.vstack([self.embeddings, new_embedding])
             self.corpus_ids.append(market.market_id)
             self.corpus[market.market_id] = market
+
         query_embedding = self.market_embeddings[market.market_id].reshape(1, -1)
-        distances, indices = self.index.search(query_embedding, k)
-        return [self.corpus[self.corpus_ids[idx]] for idx in indices[0]]
+        distances, indices = self.index.search(query_embedding, k + 1)
+
+        similar_markets = []
+        seen_ids = {market.market_id}
+
+        for idx in indices[0]:
+            market_id = self.corpus_ids[idx]
+            if market_id not in seen_ids:
+                seen_ids.add(market_id)
+                similar_markets.append(self.corpus[market_id])
+                if len(similar_markets) == k:
+                    break
+
+        return similar_markets
 
     def _compute_embedding(self, market: PolyMarketData) -> np.ndarray:
         query = f"{market.question} {market.description or ''}"[: self.max_seq_length]
         return self.sentence_transformer.encode([query])[0]
-
-
-class TimeBasedDailyNewsRetriever:
-    def __init__(self, news: List[DailyNewsData]):
-        self.news_by_date = self._index_news(news)
-
-    @staticmethod
-    def _extract_date(news: DailyNewsData) -> Optional[str]:
-        return news.date
-
-    def _index_news(self, news: List[DailyNewsData]) -> Dict[str, List[DailyNewsData]]:
-        news_dict = {}
-        for item in news:
-            date = self._extract_date(item)
-            if date:
-                news_dict.setdefault(date, []).append(item)
-        return news_dict
-
-    def get_relevant_news(
-        self, target_date: str, window_days: int
-    ) -> List[DailyNewsData]:
-        target = datetime.strptime(target_date, '%Y-%m-%d')
-        relevant = []
-        for delta in range(window_days + 1):
-            date = (target - timedelta(days=delta)).strftime('%Y-%m-%d')
-            relevant.extend(self.news_by_date.get(date, []))
-        return relevant

@@ -95,8 +95,10 @@ class BasicPolyMarketDataset(BaseDataset):
                 prompts.append(prompt)
                 metadata.append(
                     {
-                        'target': target['p'],
                         'market_id': market.market_id,
+                        'event_id': market.event_id,
+                        'label': target['p'],
+                        't': target['t'],
                         'outcome': 'Yes',
                     }
                 )
@@ -109,8 +111,10 @@ class BasicPolyMarketDataset(BaseDataset):
         return [
             {
                 'input_ids': enc['input_ids'][0],
-                'labels': torch.tensor(meta['target'], dtype=torch.float),
+                'label': torch.tensor(meta['label'], dtype=torch.float),
                 'market_id': meta['market_id'],
+                'event_id': meta['event_id'],
+                't': meta['t'],
                 'outcome': meta['outcome'],
             }
             for enc, meta in zip(encodings, metadata)
@@ -245,11 +249,14 @@ class RAGPolyMarketDataset(BasicPolyMarketDataset):
                 prompt = self._build_prompt(
                     market, window, target, time_overlapped_markets
                 )
+
                 prompts.append(prompt)
                 metadata.append(
                     {
-                        'target': target['p'],
                         'market_id': market.market_id,
+                        'event_id': market.event_id,
+                        'label': target['p'],
+                        't': target['t'],
                         'outcome': 'Yes',
                     }
                 )
@@ -262,8 +269,10 @@ class RAGPolyMarketDataset(BasicPolyMarketDataset):
         return [
             {
                 'input_ids': enc['input_ids'][0],
-                'labels': torch.tensor(meta['target'], dtype=torch.float),
+                'label': torch.tensor(meta['label'], dtype=torch.float),
                 'market_id': meta['market_id'],
+                'event_id': meta['event_id'],
+                't': meta['t'],
                 'outcome': meta['outcome'],
             }
             for enc, meta in zip(encodings, metadata)

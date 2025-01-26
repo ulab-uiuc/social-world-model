@@ -1,6 +1,5 @@
 # utils/regressor.py
 
-import json
 from pathlib import Path
 from typing import Optional
 
@@ -44,6 +43,7 @@ class LLMRegressor(PreTrainedModel):
             nn.Linear(64, 1),
         )
         self.max_length = config.max_length
+        self.lora_config = lora_config
         if lora_config:
             self.llm = get_peft_model(self.llm, lora_config)
 
@@ -53,8 +53,11 @@ class LLMRegressor(PreTrainedModel):
             attention_mask=attention_mask,
             output_hidden_states=True,
         )
-        last_hidden = outputs.hidden_states[-1][:, -1, :]
-        predictions = self.regression_head(last_hidden)
+        attention_mask = attention_mask.unsqueeze(-1)
+        hidden_states = outputs.hidden_states[-1] * attention_mask
+        mean_pooled = hidden_states.sum(dim=1) / attention_mask.sum(dim=1)
+        predictions = self.regression_head(mean_pooled)
+
         loss = None
         if labels is not None:
             if weights is not None:
@@ -68,8 +71,9 @@ class LLMRegressor(PreTrainedModel):
 
     def save_pretrained(self, save_directory: str, **kwargs):
         Path(save_directory).mkdir(parents=True, exist_ok=True)
-        self.llm.save_pretrained(save_directory, **kwargs)
         self.config.save_pretrained(save_directory)
+        self.lora_config.save_pretrained(save_directory)
+        self.llm.save_pretrained(save_directory)
 
         torch.save(
             self.regression_head.state_dict(),
@@ -81,18 +85,20 @@ class LLMRegressor(PreTrainedModel):
         config = LLMRegressorConfig.from_pretrained(
             pretrained_model_name_or_path, **kwargs
         )
-        lora_config_path = Path(pretrained_model_name_or_path) / 'peft_config.json'
-        lora_config = None
-        if lora_config_path.exists():
-            with open(lora_config_path, 'r') as f:
-                lora_config_dict = json.load(f)
-                lora_config = LoraConfig.from_dict(lora_config_dict)
-        model = cls(config, lora_config=lora_config)
-        regression_head_path = (
-            Path(pretrained_model_name_or_path) / 'regression_head.bin'
+        lora_config = LoraConfig.from_pretrained(pretrained_model_name_or_path)
+
+        base_model = AutoModelForCausalLM.from_pretrained(
+            config.base_model_name_or_path
         )
-        if regression_head_path.exists():
-            model.regression_head.load_state_dict(
-                torch.load(regression_head_path, map_location='cpu', weights_only=True)
+        model = cls(config, lora_config=lora_config)
+
+        model.llm = get_peft_model(base_model, lora_config)
+        model.llm.load_adapter(pretrained_model_name_or_path, adapter_name='default')
+
+        model.regression_head.load_state_dict(
+            torch.load(
+                Path(pretrained_model_name_or_path) / 'regression_head.bin',
+                map_location='cpu',
             )
+        )
         return model
