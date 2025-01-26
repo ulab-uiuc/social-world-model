@@ -1,7 +1,7 @@
 # swm.py
 
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Union
 
 import torch
 from peft import LoraConfig
@@ -130,7 +130,7 @@ class BasicSocialWM:
             shuffle=False,
             collate_fn=self._create_test_collate_fn(),
         )
-        
+
         results = []
         self.model.eval()
         with torch.no_grad():
@@ -144,17 +144,19 @@ class BasicSocialWM:
                     labels=labels,
                 )
                 predictions = outputs['predictions'].view(-1).cpu().numpy().tolist()
-                
+
                 for i in range(len(predictions)):
-                    results.append({
-                        'market_id': batch['market_ids'][i],
-                        'event_id': batch['event_ids'][i],
-                        't': batch['ts'][i],
-                        'outcome': batch['outcomes'][i],
-                        'prediction': predictions[i],
-                        'ground_truth': labels[i].item()
-                    })
-        
+                    results.append(
+                        {
+                            'market_id': batch['market_ids'][i],
+                            'event_id': batch['event_ids'][i],
+                            't': batch['ts'][i],
+                            'outcome': batch['outcomes'][i],
+                            'prediction': predictions[i],
+                            'ground_truth': labels[i].item(),
+                        }
+                    )
+
         return results
 
     def save(self, path: str) -> None:
@@ -245,14 +247,16 @@ class RAGSocialWM(BasicSocialWM):
         self, markets: List[PolyMarketData], batch_size: int = 8
     ) -> List[Dict[str, Union[str, float]]]:
         similar_markets = {m.market_id: self.retriever.find_similar(m) for m in markets}
-        dataset = RAGSocialWMDataset(markets, similar_markets, self.tokenizer, self.cache_dir)
+        dataset = RAGSocialWMDataset(
+            markets, similar_markets, self.tokenizer, self.cache_dir
+        )
         dataloader = DataLoader(
             dataset,
             batch_size=batch_size,
             shuffle=False,
             collate_fn=self._create_test_collate_fn(),
         )
-        
+
         results = []
         self.model.eval()
         with torch.no_grad():
@@ -266,15 +270,17 @@ class RAGSocialWM(BasicSocialWM):
                     labels=labels,
                 )
                 predictions = outputs['predictions'].view(-1).cpu().numpy().tolist()
-                
+
                 for i in range(len(predictions)):
-                    results.append({
-                        'market_id': batch['market_ids'][i],
-                        'event_id': batch['event_ids'][i],
-                        't': batch['ts'][i],
-                        'outcome': batch['outcomes'][i],
-                        'prediction': predictions[i],
-                        'ground_truth': labels[i].item()
-                    })
-        
+                    results.append(
+                        {
+                            'market_id': batch['market_ids'][i],
+                            'event_id': batch['event_ids'][i],
+                            't': batch['ts'][i],
+                            'outcome': batch['outcomes'][i],
+                            'prediction': predictions[i],
+                            'ground_truth': labels[i].item(),
+                        }
+                    )
+
         return results

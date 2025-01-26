@@ -93,13 +93,15 @@ class BasicSocialWMDataset(BaseDataset):
 
                 prompt = self._build_prompt(market, window, target)
                 prompts.append(prompt)
-                metadata.append({
-                    'market_id': market.market_id,
-                    'event_id': market.event_id,
-                    'label': target['p'],
-                    't': target['t'],
-                    'outcome': 'Yes',
-                })
+                metadata.append(
+                    {
+                        'market_id': market.market_id,
+                        'event_id': market.event_id,
+                        'label': target['p'],
+                        't': target['t'],
+                        'outcome': 'Yes',
+                    }
+                )
 
         encodings = [
             self.tokenizer(p, padding=True, truncation=True, return_tensors='pt')
@@ -180,13 +182,15 @@ class RAGSocialWMDataset(BasicSocialWMDataset):
                 )
 
                 prompts.append(prompt)
-                metadata.append({
-                    'market_id': market.market_id,
-                    'event_id': market.event_id,
-                    'label': target['p'],
-                    't': target['t'],
-                    'outcome': 'Yes',
-                })
+                metadata.append(
+                    {
+                        'market_id': market.market_id,
+                        'event_id': market.event_id,
+                        'label': target['p'],
+                        't': target['t'],
+                        'outcome': 'Yes',
+                    }
+                )
 
         encodings = [
             self.tokenizer(p, padding=True, truncation=True, return_tensors='pt')

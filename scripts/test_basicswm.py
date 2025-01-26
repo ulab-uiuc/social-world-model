@@ -1,13 +1,11 @@
 import argparse
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
-from sklearn.metrics import mean_absolute_error, mean_squared_error
 
 from swm.swm import BasicSocialWM
-from swm.utils.utils import load_polymarket_data, set_seed
 from swm.utils.metric import calculate_metric
+from swm.utils.utils import load_polymarket_data, set_seed
 
 
 def parse_args():
