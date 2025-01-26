@@ -93,13 +93,13 @@ class BasicSocialWMDataset(BaseDataset):
 
                 prompt = self._build_prompt(market, window, target)
                 prompts.append(prompt)
-                metadata.append(
-                    {
-                        'target': target['p'],
-                        'market_id': market.market_id,
-                        'outcome': 'Yes',
-                    }
-                )
+                metadata.append({
+                    'market_id': market.market_id,
+                    'event_id': market.event_id,
+                    'label': target['p'],
+                    't': target['t'],
+                    'outcome': 'Yes',
+                })
 
         encodings = [
             self.tokenizer(p, padding=True, truncation=True, return_tensors='pt')
@@ -109,8 +109,10 @@ class BasicSocialWMDataset(BaseDataset):
         return [
             {
                 'input_ids': enc['input_ids'][0],
-                'labels': torch.tensor(meta['target'], dtype=torch.float),
+                'label': torch.tensor(meta['label'], dtype=torch.float),
                 'market_id': meta['market_id'],
+                'event_id': meta['event_id'],
+                't': meta['t'],
                 'outcome': meta['outcome'],
             }
             for enc, meta in zip(encodings, metadata)
@@ -178,13 +180,13 @@ class RAGSocialWMDataset(BasicSocialWMDataset):
                 )
 
                 prompts.append(prompt)
-                metadata.append(
-                    {
-                        'target': target['p'],
-                        'market_id': market.market_id,
-                        'outcome': 'Yes',
-                    }
-                )
+                metadata.append({
+                    'market_id': market.market_id,
+                    'event_id': market.event_id,
+                    'label': target['p'],
+                    't': target['t'],
+                    'outcome': 'Yes',
+                })
 
         encodings = [
             self.tokenizer(p, padding=True, truncation=True, return_tensors='pt')
@@ -194,8 +196,10 @@ class RAGSocialWMDataset(BasicSocialWMDataset):
         return [
             {
                 'input_ids': enc['input_ids'][0],
-                'labels': torch.tensor(meta['target'], dtype=torch.float),
+                'label': torch.tensor(meta['label'], dtype=torch.float),
                 'market_id': meta['market_id'],
+                'event_id': meta['event_id'],
+                't': meta['t'],
                 'outcome': meta['outcome'],
             }
             for enc, meta in zip(encodings, metadata)
