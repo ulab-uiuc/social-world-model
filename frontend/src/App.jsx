@@ -1,7 +1,30 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useParams } from 'react-router-dom';
+import TimeSeriesChart from "./TimeSeriesChart";
 import './App.css';
 import axios from "axios";
+
+export const HistoryChart = ({ cardId }) => {
+  const [data, setData] = useState([]);
+
+  useEffect(() => {
+    const fetchHistory = async () => {
+      try {
+        const response = await axios.get(`http://127.0.0.1:5000/api/vote_history/${cardId}`);
+        const formattedData = response.data.map(entry => ({
+          timestamp: entry.timestamp,
+          ...entry.votes,
+        }));
+        setData(formattedData);
+      } catch (error) {
+        console.error("Error fetching vote history:", error);
+      }
+    };
+    fetchHistory();
+  }, [cardId]);
+
+  return <TimeSeriesChart data={data} />;
+};
 
 function App() {
   const [cards, setCards] = useState([]);
@@ -148,6 +171,9 @@ function CardDetails({ cards }) {
         ) : (
           <p>Please select an option to vote.</p>
         )}
+        <div className="history-chart">
+          <HistoryChart cardId={card_id} />
+        </div>
       </div>
     </div>
   );

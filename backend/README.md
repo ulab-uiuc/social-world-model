@@ -10,6 +10,7 @@ Testing steps using local database:
 load sample data into MongoDB:
 ```
 mongoimport --db electionDB --collection cards --file backend/cards.json --jsonArray
+mongoimport --db electionDB --collection cards --file backend/vote_history.json --jsonArray
 ```
 
 Verify the data is correctly imported:

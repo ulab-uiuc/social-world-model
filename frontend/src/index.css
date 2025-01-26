@@ -362,3 +362,46 @@ body {
   border-color: #6c63ff;
   box-shadow: 0 0 4px #6c63ff;
 }
+
+.chart-container {
+  display: flex;
+  justify-content: space-between;
+}
+
+.left-section {
+  flex: 1;
+}
+
+.right-section {
+  width: 50%;
+}
+
+.tag-filter {
+  margin: 10px 0;
+}
+
+.tag-filter label {
+  font-weight: bold;
+  margin-right: 8px;
+  color: #ccc;
+}
+
+#tag-select {
+  padding: 5px 10px;
+  border: 1px solid #555;
+  border-radius: 4px;
+  background-color: #2a2a40;
+  color: #fff;
+  font-size: 14px;
+  outline: none;
+  cursor: pointer;
+}
+
+#tag-select:hover {
+  background-color: #3a3a50;
+}
+
+#tag-select:focus {
+  border-color: #6c63ff;
+  box-shadow: 0 0 4px #6c63ff;
+}
