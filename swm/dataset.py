@@ -472,12 +472,14 @@ class BasicPolyMarketDatasetWithEventForReasoner(BaseDataset):
 
                 key = (market.market_id, target['t'])
                 if grouped_points[key]['label'] is None:
-                    grouped_points[key].update({
-                        'label': torch.tensor(target['p'], dtype=torch.float),
-                        'market_id': market.market_id,
-                        'event_id': market.event_id,
-                        't': target['t']
-                    })
+                    grouped_points[key].update(
+                        {
+                            'label': torch.tensor(target['p'], dtype=torch.float),
+                            'market_id': market.market_id,
+                            'event_id': market.event_id,
+                            't': target['t'],
+                        }
+                    )
 
                 for event in events:
                     prompt = self._build_prompt(market, window, target, event['news'])
@@ -489,16 +491,23 @@ class BasicPolyMarketDatasetWithEventForReasoner(BaseDataset):
                         return_attention_mask=True,
                     )
 
-                    grouped_points[key]['input_ids'].append(encoding['input_ids'].squeeze(0))
-                    grouped_points[key]['attention_mask'].append(encoding['attention_mask'].squeeze(0))
+                    grouped_points[key]['input_ids'].append(
+                        encoding['input_ids'].squeeze(0)
+                    )
+                    grouped_points[key]['attention_mask'].append(
+                        encoding['attention_mask'].squeeze(0)
+                    )
                     grouped_points[key]['p_scores'].append(event['score'])
 
         return [self._process_group(group) for group in grouped_points.values()]
 
     def _process_group(self, group: Dict[str, Any]) -> Dict[str, Any]:
         scores_tensor = torch.tensor(group['p_scores'], dtype=torch.float)
-        dist_tensor = (scores_tensor / scores_tensor.sum() if scores_tensor.sum() > 1e-12 
-                      else torch.ones_like(scores_tensor) / len(scores_tensor))
+        dist_tensor = (
+            scores_tensor / scores_tensor.sum()
+            if scores_tensor.sum() > 1e-12
+            else torch.ones_like(scores_tensor) / len(scores_tensor)
+        )
 
         input_ids_tensor = pad_sequence(
             group['input_ids'],
@@ -531,12 +540,15 @@ class BasicPolyMarketDatasetWithEventForReasoner(BaseDataset):
         lines = [
             f'You are given an event: {market.question}',
             market.description if market.description else None,
-            *[f"On {unix_to_date(day['t'])}, price(Yes) = {day['p']:.3f}" for day in window_data],
+            *[
+                f"On {unix_to_date(day['t'])}, price(Yes) = {day['p']:.3f}"
+                for day in window_data
+            ],
             f'\nWe want to predict the possibility on {unix_to_date(target_data["t"])} based on this news:',
             f'News date: {news.date}',
             f'Title: {news.title}',
             f'Description: {news.description}',
-            "\nRate how relevant this news is (0-100) to the next day's price.\n"
+            "\nRate how relevant this news is (0-100) to the next day's price.\n",
         ]
         return '\n'.join(filter(None, lines))
 

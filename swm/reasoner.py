@@ -16,7 +16,9 @@ from .utils.regressor import LLMRegressor, LLMRegressorConfig
 
 
 class KLDivergenceTrainer(Trainer):
-    def _process_group(self, model, inputs, weights, group_indices, is_prediction=False):
+    def _process_group(
+        self, model, inputs, weights, group_indices, is_prediction=False
+    ):
         group_size = len(group_indices)
         chunk_size = 4
         collected_logits = []
@@ -57,7 +59,9 @@ class KLDivergenceTrainer(Trainer):
 
         return (kl_loss, q_dist, p_dist) if is_prediction else kl_loss
 
-    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
+    def compute_loss(
+        self, model, inputs, return_outputs=False, num_items_in_batch=None
+    ):
         weights = inputs.pop('weights').to(model.device)
         group_ids = inputs.pop('group_ids').to(model.device)
 
@@ -124,8 +128,7 @@ class BasicPriorReasoner:
 
     def setup_model(self) -> None:
         config = LLMRegressorConfig(
-            base_model_name_or_path=self.model_name,
-            max_length=self.max_seq_length
+            base_model_name_or_path=self.model_name, max_length=self.max_seq_length
         )
         self.model = LLMRegressor(config, lora_config=self.lora_config)
 
@@ -136,8 +139,7 @@ class BasicPriorReasoner:
             all_market_ids, all_event_ids, all_ts = [], [], []
 
             max_len = min(
-                max(item['input_ids'].size(-1) for item in batch),
-                self.max_seq_length
+                max(item['input_ids'].size(-1) for item in batch), self.max_seq_length
             )
 
             for group_idx, item in enumerate(batch):
@@ -146,7 +148,9 @@ class BasicPriorReasoner:
                     (0, max_len - min(item['input_ids'].size(-1), max_len)),
                     value=self.tokenizer.pad_token_id,
                 )
-                attention_masks = (input_ids_padded != self.tokenizer.pad_token_id).long()
+                attention_masks = (
+                    input_ids_padded != self.tokenizer.pad_token_id
+                ).long()
 
                 all_input_ids.append(input_ids_padded)
                 all_attention_masks.append(attention_masks)
@@ -201,7 +205,11 @@ class BasicPriorReasoner:
             data_collator=self._create_collate_fn(),
             compute_metrics=lambda p: {
                 'kl_div': float(
-                    np.mean(np.sum(p.label_ids * np.log(p.label_ids / p.predictions), axis=1))
+                    np.mean(
+                        np.sum(
+                            p.label_ids * np.log(p.label_ids / p.predictions), axis=1
+                        )
+                    )
                 )
             },
         )
@@ -232,7 +240,7 @@ class BasicPriorReasoner:
 
         self.model.eval()
         results = []
-        
+
         with torch.no_grad():
             for batch in tqdm(dataloader, desc='Predicting'):
                 input_ids = batch['input_ids'].to(self.model.llm.device)
@@ -254,18 +262,20 @@ class BasicPriorReasoner:
                 for group_idx in torch.unique(group_ids):
                     group_idx = group_idx.item()
                     group_indices = torch.where(group_ids == group_idx)[0]
-                    
+
                     logits = group_logits_map[group_idx]
                     q_dist = F.softmax(logits, dim=0)
                     group_weights = weights[group_indices]
 
-                    results.append({
-                        'event_id': batch['event_ids'][group_idx],
-                        'market_id': batch['market_ids'][group_idx],
-                        't': batch['ts'][group_idx],
-                        'q_dist': q_dist.cpu().numpy().tolist(),
-                        'p_dist': group_weights.cpu().numpy().tolist(),
-                    })
+                    results.append(
+                        {
+                            'event_id': batch['event_ids'][group_idx],
+                            'market_id': batch['market_ids'][group_idx],
+                            't': batch['ts'][group_idx],
+                            'q_dist': q_dist.cpu().numpy().tolist(),
+                            'p_dist': group_weights.cpu().numpy().tolist(),
+                        }
+                    )
 
         return results
 
