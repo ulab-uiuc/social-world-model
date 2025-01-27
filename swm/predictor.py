@@ -9,8 +9,9 @@ from tqdm import tqdm
 from transformers import AutoTokenizer, Trainer, TrainingArguments
 
 from .data import PolyMarketData
-from .dataset import BasicPolyMarketDatasetWithEvent
-from .reasoner import BasicPosteriorReasoner, BasicPriorReasoner
+from .dataset import BasicPolyMarketDatasetWithEventForPredictor
+from .reasoner import BasicPriorReasoner
+from .utils.posterior_reasoner import BasicPosteriorReasoner
 from .utils.regressor import LLMRegressor, LLMRegressorConfig
 
 
@@ -161,13 +162,13 @@ class BasicPredictor:
         if self.model is None:
             self.setup_model()
 
-        train_dataset = BasicPolyMarketDatasetWithEvent(
+        train_dataset = BasicPolyMarketDatasetWithEventForPredictor(
             markets=train_data,
             tokenizer=self.tokenizer,
             reasoner=reasoner,
             cache_dir=self.cache_dir,
         )
-        valid_dataset = BasicPolyMarketDatasetWithEvent(
+        valid_dataset = BasicPolyMarketDatasetWithEventForPredictor(
             markets=valid_data,
             tokenizer=self.tokenizer,
             reasoner=reasoner,
@@ -196,7 +197,7 @@ class BasicPredictor:
         reasoner: BasicPriorReasoner,
         batch_size: int = 8,
     ) -> Dict[str, Dict[str, float]]:
-        dataset = BasicPolyMarketDatasetWithEvent(
+        dataset = BasicPolyMarketDatasetWithEventForPredictor(
             markets=markets,
             tokenizer=self.tokenizer,
             reasoner=reasoner,

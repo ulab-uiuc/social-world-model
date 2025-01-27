@@ -3,7 +3,7 @@ import argparse
 import jsonlines
 from tqdm import tqdm
 
-from swm.reasoner import BasicPosteriorReasoner
+from swm.utils.posterior_reasoner import BasicPosteriorReasoner
 from swm.utils.utils import load_dailynews_data, load_polymarket_data
 
 
