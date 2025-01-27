@@ -25,30 +25,26 @@ from .dataset import BasicPolyMarketDatasetWithEventForReasoner
 from .utils.posterior_reasoner import BasicPosteriorReasoner
 from torch.utils.data import DataLoader
 import numpy as np
+from tqdm import tqdm
 
 
 class KLDivergenceTrainer(Trainer):
     def _process_group(
         self, model, inputs, weights, group_indices, is_prediction=False
     ):
-        """
-        Process a single group of items that share a 'group_id'.
-        
-        Instead of summing predictions, we:
-          1) Collect all logits in a list (or tensor).
-          2) 'weights' for these items is interpreted as p_i for KL.
-          3) We compute q = softmax(logits).
-          4) The loss is cross_entropy = - sum_i p_i log(q_i).
-        """
+        """Process a group of items and compute KL divergence loss."""
         group_size = len(group_indices)
-        chunk_size = 4  # or whatever chunk size to avoid OOM
+        chunk_size = 4
         collected_logits = []
 
-        # p-dist is the target distribution.
-        # If not yet normalized, we can do it here:
+        # Normalize weights to get proper probability distribution p
         group_weights = weights[group_indices]
-        p_dist = group_weights / group_weights.sum()
+        p_dist = group_weights / (group_weights.sum() + 1e-8)
+        
+        # Move p_dist to the same device as the model
+        p_dist = p_dist.to(model.device)
 
+        # Process in chunks to avoid OOM
         for i in range(0, group_size, chunk_size):
             chunk_indices = group_indices[i : i + chunk_size]
             chunk_inputs = {
@@ -56,89 +52,113 @@ class KLDivergenceTrainer(Trainer):
                 'attention_mask': inputs['attention_mask'][chunk_indices],
             }
 
-            with (
-                torch.amp.autocast('cuda', enabled=self.args.fp16)
-                if not is_prediction
-                else torch.no_grad()
-            ):
-                chunk_logits = model(**chunk_inputs)
-                # Suppose the model returns shape [batch_size] or [batch_size, 1].
-                # Make it [batch_size] either way:
+            with torch.set_grad_enabled(not is_prediction):
+                # Get logits from model
+                chunk_outputs = model(**chunk_inputs)
+                # Handle different model output formats
+                if isinstance(chunk_outputs, torch.Tensor):
+                    chunk_logits = chunk_outputs
+                else:
+                    chunk_logits = chunk_outputs.logits if hasattr(chunk_outputs, 'logits') else chunk_outputs[0]
+                
                 if chunk_logits.dim() == 2 and chunk_logits.size(-1) == 1:
                     chunk_logits = chunk_logits.squeeze(-1)
                 collected_logits.append(chunk_logits)
 
-        # Concatenate all item logits for this group
-        all_logits = torch.cat(collected_logits, dim=0)  # shape [group_size]
-
-        # For predictions (in eval), we might want the softmax distribution or the raw logits
+        # Combine all logits
+        all_logits = torch.cat(collected_logits, dim=0)  # [group_size]
+        
+        # Apply temperature scaling to make logits more reasonable
+        temperature = 1.0  # Adjust this parameter if needed
+        scaled_logits = all_logits / temperature
+        
+        # Compute q distribution using softmax
+        q_dist = F.softmax(scaled_logits, dim=0)
+        
+        # Add small epsilon to avoid log(0)
+        epsilon = 1e-8
+        q_dist = q_dist + epsilon
+        q_dist = q_dist / q_dist.sum()  # Renormalize
+        
+        # Compute KL divergence loss: KL(P||Q) = sum(p_i * log(p_i/q_i))
+        kl_loss = torch.sum(p_dist * torch.log(p_dist / q_dist))
+        
         if is_prediction:
-            # We'll compute the cross-entropy as well for logging
-            q_dist = F.softmax(all_logits, dim=0)
-            ce_loss = -(p_dist * torch.log(q_dist + 1e-9)).sum()
-            # Return both the cross-entropy and the predicted distribution
-            return ce_loss, q_dist, p_dist
-        else:
-            # Training step => compute cross-entropy = -sum_i p_i log q_i
-            q_dist = F.softmax(all_logits, dim=0)
-            ce_loss = -(p_dist * torch.log(q_dist + 1e-9)).sum()
-            return ce_loss
+            return kl_loss, q_dist, p_dist
+        return kl_loss
 
-    def compute_loss(
-        self, model, inputs, return_outputs=False, num_items_in_batch=None
-    ):
-        """
-        Overrides the default HF Trainer compute_loss to handle grouping
-        and compute KL-based loss for each group.
-        """
-        # Remove or pop out the labels if you have them, but here 'weights' is our p-dist
-        weights = inputs.pop('weights')  # shape ~ [sum_of_items_in_batch]
-        group_ids = inputs.pop('group_ids')  # shape ~ [sum_of_items_in_batch]
+    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
+        """Compute average KL divergence loss across all groups."""
+        weights = inputs.pop('weights')
+        group_ids = inputs.pop('group_ids')
+        
+        # Ensure inputs are on the correct device
+        weights = weights.to(model.device)
+        group_ids = group_ids.to(model.device)
 
         total_loss = 0.0
+        num_valid_groups = 0
         unique_groups = torch.unique(group_ids)
 
         for group in unique_groups:
             group_indices = torch.where(group_ids == group)[0]
-            loss = self._process_group(model, inputs, weights, group_indices, is_prediction=False)
-            total_loss += loss
+            
+            # Skip groups that are too small
+            if len(group_indices) < 2:
+                continue
+                
+            loss = self._process_group(model, inputs, weights, group_indices)
+            
+            # Check if loss is valid
+            if not torch.isnan(loss) and not torch.isinf(loss):
+                total_loss += loss
+                num_valid_groups += 1
 
-        # Average over the number of groups in the batch
-        avg_loss = total_loss / len(unique_groups)
+        # Compute average loss only over valid groups
+        avg_loss = total_loss / max(num_valid_groups, 1)
+        
+        if return_outputs:
+            return avg_loss, None
         return avg_loss
 
     def prediction_step(self, model, inputs, prediction_loss_only, ignore_keys=None):
-        """
-        For evaluation, we do a similar approach but also return predictions
-        so HF can compute metrics.
-        """
+        """Compute predictions and losses for evaluation."""
         weights = inputs.pop('weights')
         group_ids = inputs.pop('group_ids')
+        
+        # Move to correct device
+        weights = weights.to(model.device)
+        group_ids = group_ids.to(model.device)
 
         all_losses = []
         all_preds = []
-        all_labels = []  # In KL scenario, 'labels' might be p_dist
+        all_labels = []
 
         unique_groups = torch.unique(group_ids)
         for group in unique_groups:
             group_indices = torch.where(group_ids == group)[0]
+            
+            # Skip small groups
+            if len(group_indices) < 2:
+                continue
+                
             loss, q_dist, p_dist = self._process_group(
                 model, inputs, weights, group_indices, is_prediction=True
             )
-            all_losses.append(loss.unsqueeze(0))
+            
+            if not torch.isnan(loss) and not torch.isinf(loss):
+                all_losses.append(loss.unsqueeze(0))
+                all_preds.append(q_dist)
+                all_labels.append(p_dist)
 
-            # We'll store q_dist as 'predictions' and p_dist as 'labels'
-            # so that compute_metrics can see them
-            all_preds.append(q_dist.unsqueeze(0))  # shape [1, group_size]
-            all_labels.append(p_dist.unsqueeze(0)) # shape [1, group_size]
+        if not all_losses:
+            return (torch.tensor(0.0), None, None)
 
-        # Combine
-        final_loss = torch.cat(all_losses).mean()
-        final_preds = torch.cat(all_preds, dim=0)   # shape [num_groups, group_size]
-        final_labels = torch.cat(all_labels, dim=0) # shape [num_groups, group_size]
+        final_loss = torch.stack(all_losses).mean()
+        final_preds = torch.stack(all_preds)
+        final_labels = torch.stack(all_labels)
 
         return (final_loss, final_preds, final_labels)
-
 
 
 
@@ -279,11 +299,15 @@ class BasicPriorReasoner:
             eval_dataset=valid_dataset,
             data_collator=self._create_collate_fn(),
             compute_metrics=lambda p: {
-                # p.predictions => shape [num_groups, group_size]
-                # p.label_ids   => shape [num_groups, group_size]
-                # We can compute average cross-entropy or KL
-                'ce': -(p.label_ids * np.log(p.predictions + 1e-9)).sum(axis=1).mean()
-            },
+                'kl_div': float(
+                    np.mean(
+                        np.sum(
+                            p.label_ids * np.log(p.label_ids / (p.predictions)),
+                            axis=1
+                        )
+                    )
+                )
+            }
         )
 
         trainer.train()
