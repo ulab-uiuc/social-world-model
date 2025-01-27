@@ -1,3 +1,13 @@
+CUDA_VISIBLE_DEVICES=3 python test_basicpredictor.py \
+--test-data-path ../data/splitted_polymarket/polymarket_data_processed_Crypto_test.jsonl \
+--corpus-news-path ../data/processed_dailynews/dailynews_data_processed.jsonl \
+--model-checkpoint ../saves/saves_crypto_basicpredictor/checkpoint-1500 \
+--output-dir ../saves/saves_crypto_basicpredictor \
+--cache-dir ../cache/cache_crypto_basicpredictor \
+--test-batch-size 4 \
+--reasoner-max-news-items 5
+
+
 # sanity check
 CUDA_VISIBLE_DEVICES=4 python test_basicpredictor.py \
 --test-data-path ../data/splitted_polymarket/polymarket_data_processed_Crypto_test.jsonl \
