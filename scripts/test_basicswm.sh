@@ -41,7 +41,7 @@ CUDA_VISIBLE_DEVICES=2 python test_basicswm.py \
 --test-batch-size 20
 
 # sanity check
-CUDA_VISIBLE_DEVICES=2 python test_basicswm.py \
+CUDA_VISIBLE_DEVICES=0 python test_basicswm.py \
 --test-data-path ../data/splitted_polymarket/polymarket_data_processed_Crypto_test.jsonl \
 --model-checkpoint ../saves/saves_crypto_basicswm_sanitycheck/checkpoint-best \
 --output-dir ../saves/saves_crypto_basicswm_sanitycheck \

@@ -1,28 +1,24 @@
-# train_ragswm.py
-
 import argparse
 
 from peft import LoraConfig
 from transformers import TrainingArguments
 
-from swm.swm import RAGSocialWM
-from swm.utils.utils import load_polymarket_data, set_seed
+from swm.predictor import BasicPredictor
+from swm.reasoner import BasicPosteriorReasoner
+from swm.utils.utils import load_dailynews_data, load_polymarket_data, set_seed
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='Train the RAG Social Wisdom Model')
+    parser = argparse.ArgumentParser(description='Train the Basic Social Wisdom Model')
 
     parser.add_argument('--train-data-path', type=str, required=True)
     parser.add_argument('--valid-data-path', type=str, required=True)
-    parser.add_argument('--corpus-data-path', type=str, required=True)
+    parser.add_argument('--corpus-news-path', type=str, required=True)
     parser.add_argument('--model-name', type=str, default='Qwen/Qwen2.5-0.5B-Instruct')
-    parser.add_argument('--retriever-name', type=str, default='all-MiniLM-L6-v2')
-    parser.add_argument('--eval-batch-size', type=int, default=8)
     parser.add_argument('--cache-dir', type=str, default='./cache')
     parser.add_argument('--output-dir', type=str, default='./output')
+    parser.add_argument('--eval-batch-size', type=int, default=8)
     parser.add_argument('--max-seq-length', type=int, default=1024)
-    parser.add_argument('--retriever-top-k', type=int, default=50)
-    parser.add_argument('--retriever-batch-size', type=int, default=32)
     parser.add_argument('--epochs', type=int, default=3)
     parser.add_argument('--learning-rate', type=float, default=5e-5)
     parser.add_argument('--seed', type=int, default=42)
@@ -38,6 +34,8 @@ def parse_args():
     parser.add_argument('--lora-alpha', type=float, default=32)
     parser.add_argument('--lora-dropout', type=float, default=0.1)
     parser.add_argument('--r', type=int, default=16)
+    parser.add_argument('--reasoner-name', type=str, default='gpt-4o')
+    parser.add_argument('--reasoner-max-news-items', type=int, default=10)
     parser.add_argument('--sanity-check', action='store_true')
     return parser.parse_args()
 
@@ -45,13 +43,13 @@ def parse_args():
 def train(args):
     set_seed(args.seed)
     if args.sanity_check:
-        train_data = load_polymarket_data(args.train_data_path)[:1]
-        valid_data = load_polymarket_data(args.valid_data_path)[:1]
-        corpus_data = load_polymarket_data(args.corpus_data_path)[:1]
+        train_data = load_polymarket_data(args.train_data_path)[:2]
+        valid_data = load_polymarket_data(args.valid_data_path)[:2]
+        corpus_news = load_dailynews_data(args.corpus_news_path)
     else:
         train_data = load_polymarket_data(args.train_data_path)
         valid_data = load_polymarket_data(args.valid_data_path)
-        corpus_data = load_polymarket_data(args.corpus_data_path)
+        corpus_news = load_dailynews_data(args.corpus_news_path)
 
     lora_config = LoraConfig(
         r=args.r,
@@ -62,15 +60,11 @@ def train(args):
         task_type='CAUSAL_LM',
     )
 
-    rag_swm = RAGSocialWM(
+    basic_predictor = BasicPredictor(
         model_name=args.model_name,
-        retriever_name=args.retriever_name,
         cache_dir=args.cache_dir,
-        lora_config=lora_config,
-        corpus_markets=corpus_data,
         max_seq_length=args.max_seq_length,
-        retriever_top_k=args.retriever_top_k,
-        retriever_batch_size=args.retriever_batch_size,
+        lora_config=lora_config,
     )
 
     training_args = TrainingArguments(
@@ -94,13 +88,20 @@ def train(args):
         remove_unused_columns=False,
     )
 
-    best_model_checkpoint = rag_swm.train(
+    reasoner = BasicPosteriorReasoner(
+        model_name=args.reasoner_name,
+        max_news_items=args.reasoner_max_news_items,
+        corpus_news=corpus_news,
+    )
+
+    best_model_checkpoint = basic_predictor.train(
         train_data=train_data,
         valid_data=valid_data,
         training_args=training_args,
+        reasoner=reasoner,
     )
 
-    rag_swm.save(best_model_checkpoint)
+    basic_predictor.save(best_model_checkpoint)
 
 
 if __name__ == '__main__':

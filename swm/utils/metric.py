@@ -17,9 +17,8 @@ def calculate_mse(predictions: List[float], labels: List[float]) -> float:
 
 
 def calculate_mape(predictions: List[float], labels: List[float]) -> float:
-    return (
-        np.mean(np.abs((np.array(labels) - np.array(predictions)) / np.array(labels)))
-        * 100
+    return np.mean(
+        np.abs((np.array(labels) - np.array(predictions)) / np.array(labels))
     )
 
 

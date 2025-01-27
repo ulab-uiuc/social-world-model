@@ -47,7 +47,9 @@ class LLMRegressor(PreTrainedModel):
         if lora_config:
             self.llm = get_peft_model(self.llm, lora_config)
 
-    def forward(self, input_ids, attention_mask=None, labels=None):
+    def forward(
+        self, input_ids, attention_mask=None, labels=None, weights=None, **kwargs
+    ):
         outputs = self.llm(
             input_ids=input_ids,
             attention_mask=attention_mask,
@@ -60,9 +62,13 @@ class LLMRegressor(PreTrainedModel):
 
         loss = None
         if labels is not None:
-            loss = nn.MSELoss()(predictions.view(-1), labels.view(-1))
+            if weights is not None:
+                loss = torch.mean(
+                    weights * (predictions.view(-1) - labels.view(-1)) ** 2
+                )
+            else:
+                loss = nn.MSELoss()(predictions.view(-1), labels.view(-1))
             return {'loss': loss, 'predictions': predictions}
-
         return predictions
 
     def save_pretrained(self, save_directory: str, **kwargs):
