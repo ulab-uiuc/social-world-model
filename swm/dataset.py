@@ -426,40 +426,26 @@ class BasicPolyMarketDatasetWithEventForReasoner(BaseDataset):
         self.markets = markets
         self.tokenizer = tokenizer
         self.window_size = window_size
-
         self.datapoints = self._load_or_create_datapoints()
 
     def _compute_hash(self) -> str:
-        """
-        Create a unique hash for caching, so if the underlying data
-        or reasoner changes, you get a fresh dataset.
-        """
         content = [
             f"{m.market_id}{m.start_ts or ''}{m.end_ts or ''}"
             for m in self.markets
             if m.daily_time_series
         ]
         content_hash = hashlib.md5(''.join(content).encode()).hexdigest()
-        # Include the reasoner "signature" (e.g. name) so changes in reasoner break cache
         reasoner_hash = hashlib.md5(
             str(getattr(self.reasoner, 'model_name', 'posterior')).encode()
         ).hexdigest()
         return hashlib.md5(f'{content_hash}{reasoner_hash}'.encode()).hexdigest()
 
     def _create_datapoints(self) -> List[Dict[str, Any]]:
-        """
-        1) Iterate over each market & daily time series.
-        2) For each 'window_size' slice, pick the next day as the "target".
-        3) Use the Posterior reasoner to get a list of (news, posterior_score).
-        4) Build a prompt for each news item, tokenize it, store p_dist=score.
-        5) Group by (market_id, target timestamp) and collect the multiple
-           news items as multiple rows in that group.
-        """
         grouped_points = defaultdict(
             lambda: {
                 'input_ids': [],
                 'attention_mask': [],
-                'p_scores': [],  # We'll store the posterior 'score' for each news item
+                'p_scores': [],
                 'label': None,
                 'market_id': None,
                 'event_id': None,
@@ -480,12 +466,19 @@ class BasicPolyMarketDatasetWithEventForReasoner(BaseDataset):
                 target = series[start_idx + self.window_size]
                 current_ts = window[-1]['t']
 
-                # 1) Ask the Posterior reasoner for news events relevant to `current_ts`
                 events = self.reasoner.reason(current_ts, market)
                 if not events:
                     continue
 
-                # 2) For each news event, build a prompt, tokenize, and store the posterior "score"
+                key = (market.market_id, target['t'])
+                if grouped_points[key]['label'] is None:
+                    grouped_points[key].update({
+                        'label': torch.tensor(target['p'], dtype=torch.float),
+                        'market_id': market.market_id,
+                        'event_id': market.event_id,
+                        't': target['t']
+                    })
+
                 for event in events:
                     prompt = self._build_prompt(market, window, target, event['news'])
                     encoding = self.tokenizer(
@@ -495,68 +488,38 @@ class BasicPolyMarketDatasetWithEventForReasoner(BaseDataset):
                         return_tensors='pt',
                         return_attention_mask=True,
                     )
-                    # Key for grouping
-                    key = (market.market_id, target['t'])
 
-                    # Initialize group if needed
-                    if grouped_points[key]['label'] is None:
-                        grouped_points[key]['label'] = torch.tensor(
-                            target['p'], dtype=torch.float
-                        )
-                        grouped_points[key]['market_id'] = market.market_id
-                        grouped_points[key]['event_id'] = market.event_id
-                        grouped_points[key]['t'] = target['t']
+                    grouped_points[key]['input_ids'].append(encoding['input_ids'].squeeze(0))
+                    grouped_points[key]['attention_mask'].append(encoding['attention_mask'].squeeze(0))
+                    grouped_points[key]['p_scores'].append(event['score'])
 
-                    grouped_points[key]['input_ids'].append(
-                        encoding['input_ids'].squeeze(0)
-                    )
-                    grouped_points[key]['attention_mask'].append(
-                        encoding['attention_mask'].squeeze(0)
-                    )
+        return [self._process_group(group) for group in grouped_points.values()]
 
-                    # Posterior reasoner’s "score" => We interpret as p_i
-                    # For safety, clip or floor to small eps if needed
-                    # Usually the posterior reasoner returns something [0,1] but you can adapt
-                    raw_score = event['score']
-                    grouped_points[key]['p_scores'].append(raw_score)
+    def _process_group(self, group: Dict[str, Any]) -> Dict[str, Any]:
+        scores_tensor = torch.tensor(group['p_scores'], dtype=torch.float)
+        dist_tensor = (scores_tensor / scores_tensor.sum() if scores_tensor.sum() > 1e-12 
+                      else torch.ones_like(scores_tensor) / len(scores_tensor))
 
-        # 3) Convert to final list of datapoints
-        final_datapoints = []
-        for key, group in grouped_points.items():
-            # Convert the per-news scores into a torch.Tensor
-            scores_tensor = torch.tensor(group['p_scores'], dtype=torch.float)
+        input_ids_tensor = pad_sequence(
+            group['input_ids'],
+            batch_first=True,
+            padding_value=self.tokenizer.pad_token_id,
+        )
+        attn_mask_tensor = pad_sequence(
+            group['attention_mask'],
+            batch_first=True,
+            padding_value=0,
+        )
 
-            # Normalize them if needed to ensure they sum to 1:
-            sum_scores = scores_tensor.sum()
-            if sum_scores < 1e-12:
-                # Edge case: If all scores are near-zero, just distribute uniform
-                dist_tensor = torch.ones_like(scores_tensor) / len(scores_tensor)
-            else:
-                dist_tensor = scores_tensor / sum_scores
-
-            # Pack up all input_ids and attention_masks
-            input_ids_tensor = pad_sequence(
-                group['input_ids'],
-                batch_first=True,
-                padding_value=self.tokenizer.pad_token_id,
-            )
-            attn_mask_tensor = pad_sequence(
-                group['attention_mask'], batch_first=True, padding_value=0
-            )
-
-            final_datapoints.append(
-                {
-                    'input_ids': input_ids_tensor,
-                    'attention_mask': attn_mask_tensor,
-                    'label': group['label'],  # The next-day "Yes" price
-                    'p_dist': dist_tensor,  # The posterior-based distribution
-                    'market_id': group['market_id'],
-                    'event_id': group['event_id'],
-                    't': group['t'],
-                }
-            )
-
-        return final_datapoints
+        return {
+            'input_ids': input_ids_tensor,
+            'attention_mask': attn_mask_tensor,
+            'label': group['label'],
+            'p_dist': dist_tensor,
+            'market_id': group['market_id'],
+            'event_id': group['event_id'],
+            't': group['t'],
+        }
 
     def _build_prompt(
         self,
@@ -565,52 +528,20 @@ class BasicPolyMarketDatasetWithEventForReasoner(BaseDataset):
         target_data: Dict,
         news: Any,
     ) -> str:
-        """
-        Build a textual prompt that your Prior model sees to predict some distribution
-        over how likely this news item caused the price to move. (You can adapt
-        to your exact use-case.)
-        """
-        lines = [f'You are given an event: {market.question}']
-        if market.description:
-            lines.append(market.description)
-
-        for day in window_data:
-            date_str = unix_to_date(day['t'])
-            lines.append(f"On {date_str}, price(Yes) = {day['p']:.3f}")
-
-        target_str = unix_to_date(target_data['t'])
-        lines.append(
-            f'\nWe want to predict the possibility on {target_str} based on this news:'
-        )
-        lines.append(f'News date: {news.date}')
-        lines.append(f'Title: {news.title}')
-        lines.append(f'Description: {news.description}')
-
-        # Possibly add instructions for how your Prior model should produce a distribution
-        lines.append(
+        lines = [
+            f'You are given an event: {market.question}',
+            market.description if market.description else None,
+            *[f"On {unix_to_date(day['t'])}, price(Yes) = {day['p']:.3f}" for day in window_data],
+            f'\nWe want to predict the possibility on {unix_to_date(target_data["t"])} based on this news:',
+            f'News date: {news.date}',
+            f'Title: {news.title}',
+            f'Description: {news.description}',
             "\nRate how relevant this news is (0-100) to the next day's price.\n"
-        )
-        return '\n'.join(lines)
+        ]
+        return '\n'.join(filter(None, lines))
 
     def __getitem__(self, idx: int) -> Dict[str, Any]:
-        """
-        Return a single grouped datapoint that includes:
-         - input_ids: shape [num_news, seq_len]
-         - attention_mask: shape [num_news, seq_len]
-         - p_dist: shape [num_news]
-         - label: a single float (the next-day price) we might use for other tasks
-        """
-        item = self.datapoints[idx]
-
-        return {
-            'input_ids': item['input_ids'],
-            'attention_mask': item['attention_mask'],
-            'p_dist': item['p_dist'],  # The distribution from the Posterior reasoner
-            'label': item['label'],  # The next day price
-            'market_id': item['market_id'],
-            'event_id': item['event_id'],
-            't': item['t'],
-        }
+        return self.datapoints[idx]
 
     def __len__(self) -> int:
         return len(self.datapoints)
