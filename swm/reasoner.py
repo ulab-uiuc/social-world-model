@@ -170,9 +170,7 @@ class BasicPriorReasoner:
         cache_dir: str,
         max_seq_length: int = 512,
     ):
-        self.model = WeightedBasicSocialWM(
-            model_name=model_name, cache_dir=cache_dir, max_seq_length=max_seq_length
-        )
+        return
 
     def analyze(
         self, news_data: List[DailyNewsData], market_changes: List[Dict], date: str
