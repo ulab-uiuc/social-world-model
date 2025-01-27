@@ -2,7 +2,7 @@ import hashlib
 import pickle
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List
 
 import torch
 from torch.nn.utils.rnn import pad_sequence
@@ -11,7 +11,6 @@ from tqdm import tqdm
 from transformers import PreTrainedTokenizer
 
 from .data import PolyMarketData
-from .reasoner import BasicPosteriorReasoner, BasicPriorReasoner
 from .utils.filter import TimeBasedPolyMarketFilter
 from .utils.utils import unix_to_date
 
@@ -249,12 +248,12 @@ class RAGPolyMarketDataset(BasicPolyMarketDataset):
         return '\n'.join(lines)
 
 
-class BasicPolyMarketDatasetWithEvent(BaseDataset):
+class BasicPolyMarketDatasetWithEventForPredictor(BaseDataset):
     def __init__(
         self,
         markets: List['PolyMarketData'],
         tokenizer: PreTrainedTokenizer,
-        reasoner: Union[BasicPosteriorReasoner, BasicPriorReasoner],
+        reasoner: Any,
         cache_dir: str = './cache',
         window_size: int = 5,
         use_cache: bool = True,
@@ -325,6 +324,7 @@ class BasicPolyMarketDatasetWithEvent(BaseDataset):
                             target['p'], dtype=torch.float
                         )
                         grouped_points[key]['market_id'] = market.market_id
+                        grouped_points[key]['event_id'] = market.event_id
                         grouped_points[key]['t'] = target['t']
 
                     # Add tokenized data to group
@@ -356,6 +356,7 @@ class BasicPolyMarketDatasetWithEvent(BaseDataset):
                     'label': group['label'],
                     'weights': weights_tensor,
                     'market_id': group['market_id'],
+                    'event_id': group['event_id'],
                     't': group['t'],
                 }
             )
@@ -405,6 +406,154 @@ class BasicPolyMarketDatasetWithEvent(BaseDataset):
                 [hash(item['market_id']), item['t']], dtype=torch.long
             ),
             'market_id': item['market_id'],
-            'event_id': item['market_id'],
+            'event_id': item['event_id'],
             't': item['t'],
         }
+
+
+class BasicPolyMarketDatasetWithEventForReasoner(BaseDataset):
+    def __init__(
+        self,
+        markets: List[PolyMarketData],
+        tokenizer: PreTrainedTokenizer,
+        reasoner: Any,
+        cache_dir: str = './cache',
+        window_size: int = 5,
+        use_cache: bool = True,
+    ):
+        super().__init__(cache_dir=cache_dir, use_cache=use_cache)
+        self.reasoner = reasoner
+        self.markets = markets
+        self.tokenizer = tokenizer
+        self.window_size = window_size
+        self.datapoints = self._load_or_create_datapoints()
+
+    def _compute_hash(self) -> str:
+        content = [
+            f"{m.market_id}{m.start_ts or ''}{m.end_ts or ''}"
+            for m in self.markets
+            if m.daily_time_series
+        ]
+        content_hash = hashlib.md5(''.join(content).encode()).hexdigest()
+        reasoner_hash = hashlib.md5(
+            str(getattr(self.reasoner, 'model_name', 'posterior')).encode()
+        ).hexdigest()
+        return hashlib.md5(f'{content_hash}{reasoner_hash}'.encode()).hexdigest()
+
+    def _create_datapoints(self) -> List[Dict[str, Any]]:
+        grouped_points = defaultdict(
+            lambda: {
+                'input_ids': [],
+                'attention_mask': [],
+                'p_scores': [],
+                'label': None,
+                'market_id': None,
+                'event_id': None,
+                't': None,
+            }
+        )
+
+        for market in tqdm(self.markets, desc='Processing markets'):
+            if not market.daily_time_series or 'Yes' not in market.daily_time_series:
+                continue
+
+            series = market.daily_time_series['Yes']
+            if len(series) <= self.window_size:
+                continue
+
+            for start_idx in range(len(series) - self.window_size):
+                window = series[start_idx : start_idx + self.window_size]
+                target = series[start_idx + self.window_size]
+                current_ts = window[-1]['t']
+
+                events = self.reasoner.reason(current_ts, market)
+                if not events:
+                    continue
+
+                key = (market.market_id, target['t'])
+                if grouped_points[key]['label'] is None:
+                    grouped_points[key].update(
+                        {
+                            'label': torch.tensor(target['p'], dtype=torch.float),
+                            'market_id': market.market_id,
+                            'event_id': market.event_id,
+                            't': target['t'],
+                        }
+                    )
+
+                for event in events:
+                    prompt = self._build_prompt(market, window, target, event['news'])
+                    encoding = self.tokenizer(
+                        prompt,
+                        padding=True,
+                        truncation=True,
+                        return_tensors='pt',
+                        return_attention_mask=True,
+                    )
+
+                    grouped_points[key]['input_ids'].append(
+                        encoding['input_ids'].squeeze(0)
+                    )
+                    grouped_points[key]['attention_mask'].append(
+                        encoding['attention_mask'].squeeze(0)
+                    )
+                    grouped_points[key]['p_scores'].append(event['score'])
+
+        return [self._process_group(group) for group in grouped_points.values()]
+
+    def _process_group(self, group: Dict[str, Any]) -> Dict[str, Any]:
+        scores_tensor = torch.tensor(group['p_scores'], dtype=torch.float)
+        dist_tensor = (
+            scores_tensor / scores_tensor.sum()
+            if scores_tensor.sum() > 1e-12
+            else torch.ones_like(scores_tensor) / len(scores_tensor)
+        )
+
+        input_ids_tensor = pad_sequence(
+            group['input_ids'],
+            batch_first=True,
+            padding_value=self.tokenizer.pad_token_id,
+        )
+        attn_mask_tensor = pad_sequence(
+            group['attention_mask'],
+            batch_first=True,
+            padding_value=0,
+        )
+
+        return {
+            'input_ids': input_ids_tensor,
+            'attention_mask': attn_mask_tensor,
+            'label': group['label'],
+            'p_dist': dist_tensor,
+            'market_id': group['market_id'],
+            'event_id': group['event_id'],
+            't': group['t'],
+        }
+
+    def _build_prompt(
+        self,
+        market: PolyMarketData,
+        window_data: List[Dict],
+        target_data: Dict,
+        news: Any,
+    ) -> str:
+        lines = [
+            f'You are given an event: {market.question}',
+            market.description if market.description else None,
+            *[
+                f"On {unix_to_date(day['t'])}, price(Yes) = {day['p']:.3f}"
+                for day in window_data
+            ],
+            f'\nWe want to predict the possibility on {unix_to_date(target_data["t"])} based on this news:',
+            f'News date: {news.date}',
+            f'Title: {news.title}',
+            f'Description: {news.description}',
+            "\nRate how relevant this news is (0-100) to the next day's price.\n",
+        ]
+        return '\n'.join(filter(None, lines))
+
+    def __getitem__(self, idx: int) -> Dict[str, Any]:
+        return self.datapoints[idx]
+
+    def __len__(self) -> int:
+        return len(self.datapoints)

@@ -5,8 +5,8 @@ CUDA_VISIBLE_DEVICES=4 python train_basicpredictor.py \
 --output-dir ../saves/saves_crypto_basicpredictor \
 --cache-dir ../cache/cache_crypto_basicpredictor \
 --reasoner-cache-dir ../cache/cache_crypto_basicpredictor \
---train-batch-size 16 \
---eval-batch-size 16 \
+--train-batch-size 4 \
+--eval-batch-size 4 \
 --reasoner-max-news-items 5 \
 --reasoner-cache-dir ../cache/cache_crypto_basicpredictor \
 --epochs 10
