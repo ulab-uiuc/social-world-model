@@ -6,8 +6,8 @@ from peft import LoraConfig
 
 # Adapt import paths to your actual code structure
 from swm.reasoner import BasicPriorReasoner
-from swm.utils.posterior_reasoner import BasicPosteriorReasoner
 from swm.utils.metric import calculate_metric
+from swm.utils.posterior_reasoner import BasicPosteriorReasoner
 from swm.utils.utils import load_dailynews_data, load_polymarket_data, set_seed
 
 
@@ -91,7 +91,7 @@ def test_prior_reasoner(args):
     results = prior_reasoner.predict(
         markets=test_data,
         posterior_reasoner=posterior_reasoner,
-        batch_size=args.test_batch_size
+        batch_size=args.test_batch_size,
     )
 
     # Extract predictions & ground truths

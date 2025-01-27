@@ -2,7 +2,7 @@ import hashlib
 import pickle
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List
 
 import torch
 from torch.nn.utils.rnn import pad_sequence
@@ -459,7 +459,7 @@ class BasicPolyMarketDatasetWithEventForReasoner(BaseDataset):
             lambda: {
                 'input_ids': [],
                 'attention_mask': [],
-                'p_scores': [],   # We'll store the posterior 'score' for each news item
+                'p_scores': [],  # We'll store the posterior 'score' for each news item
                 'label': None,
                 'market_id': None,
                 'event_id': None,
@@ -548,8 +548,8 @@ class BasicPolyMarketDatasetWithEventForReasoner(BaseDataset):
                 {
                     'input_ids': input_ids_tensor,
                     'attention_mask': attn_mask_tensor,
-                    'label': group['label'],    # The next-day "Yes" price
-                    'p_dist': dist_tensor,       # The posterior-based distribution
+                    'label': group['label'],  # The next-day "Yes" price
+                    'p_dist': dist_tensor,  # The posterior-based distribution
                     'market_id': group['market_id'],
                     'event_id': group['event_id'],
                     't': group['t'],
@@ -576,19 +576,21 @@ class BasicPolyMarketDatasetWithEventForReasoner(BaseDataset):
 
         for day in window_data:
             date_str = unix_to_date(day['t'])
-            lines.append(
-                f"On {date_str}, price(Yes) = {day['p']:.3f}"
-            )
+            lines.append(f"On {date_str}, price(Yes) = {day['p']:.3f}")
 
         target_str = unix_to_date(target_data['t'])
-        lines.append(f"\nWe want to predict the possibility on {target_str} based on this news:")
-        lines.append(f"News date: {news.date}")
-        lines.append(f"Title: {news.title}")
-        lines.append(f"Description: {news.description}")
+        lines.append(
+            f'\nWe want to predict the possibility on {target_str} based on this news:'
+        )
+        lines.append(f'News date: {news.date}')
+        lines.append(f'Title: {news.title}')
+        lines.append(f'Description: {news.description}')
 
         # Possibly add instructions for how your Prior model should produce a distribution
-        lines.append("\nRate how relevant this news is (0-100) to the next day's price.\n")
-        return "\n".join(lines)
+        lines.append(
+            "\nRate how relevant this news is (0-100) to the next day's price.\n"
+        )
+        return '\n'.join(lines)
 
     def __getitem__(self, idx: int) -> Dict[str, Any]:
         """
@@ -604,7 +606,7 @@ class BasicPolyMarketDatasetWithEventForReasoner(BaseDataset):
             'input_ids': item['input_ids'],
             'attention_mask': item['attention_mask'],
             'p_dist': item['p_dist'],  # The distribution from the Posterior reasoner
-            'label': item['label'],    # The next day price
+            'label': item['label'],  # The next day price
             'market_id': item['market_id'],
             'event_id': item['event_id'],
             't': item['t'],

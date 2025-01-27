@@ -1,31 +1,18 @@
-import hashlib
-import json
-import re
-from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
-import jsonlines
-from transformers import TrainingArguments, AutoTokenizer
-
-from .data import DailyNewsData, PolyMarketData
-from .utils.error_handler import (
-    api_calling_error_exponential_backoff,
-    parsing_error_exponential_backoff,
-)
-from .utils.filter import TimeBasedDailyNewsFilter
-from .utils.prompter import model_prompting
-from .utils.utils import convert_to_date
+import numpy as np
 import torch
-from transformers import Trainer
 import torch.nn.functional as F
-from .utils.regressor import LLMRegressor, LLMRegressorConfig
 from peft import LoraConfig
+from torch.utils.data import DataLoader
+from tqdm import tqdm
+from transformers import AutoTokenizer, Trainer, TrainingArguments
+
+from .data import PolyMarketData
 from .dataset import BasicPolyMarketDatasetWithEventForReasoner
 from .utils.posterior_reasoner import BasicPosteriorReasoner
-from torch.utils.data import DataLoader
-import numpy as np
-from tqdm import tqdm
+from .utils.regressor import LLMRegressor, LLMRegressorConfig
 
 
 class KLDivergenceTrainer(Trainer):
@@ -40,7 +27,7 @@ class KLDivergenceTrainer(Trainer):
         # Normalize weights to get proper probability distribution p
         group_weights = weights[group_indices]
         p_dist = group_weights / (group_weights.sum() + 1e-8)
-        
+
         # Move p_dist to the same device as the model
         p_dist = p_dist.to(model.device)
 
@@ -59,39 +46,45 @@ class KLDivergenceTrainer(Trainer):
                 if isinstance(chunk_outputs, torch.Tensor):
                     chunk_logits = chunk_outputs
                 else:
-                    chunk_logits = chunk_outputs.logits if hasattr(chunk_outputs, 'logits') else chunk_outputs[0]
-                
+                    chunk_logits = (
+                        chunk_outputs.logits
+                        if hasattr(chunk_outputs, 'logits')
+                        else chunk_outputs[0]
+                    )
+
                 if chunk_logits.dim() == 2 and chunk_logits.size(-1) == 1:
                     chunk_logits = chunk_logits.squeeze(-1)
                 collected_logits.append(chunk_logits)
 
         # Combine all logits
         all_logits = torch.cat(collected_logits, dim=0)  # [group_size]
-        
+
         # Apply temperature scaling to make logits more reasonable
         temperature = 1.0  # Adjust this parameter if needed
         scaled_logits = all_logits / temperature
-        
+
         # Compute q distribution using softmax
         q_dist = F.softmax(scaled_logits, dim=0)
-        
+
         # Add small epsilon to avoid log(0)
         epsilon = 1e-8
         q_dist = q_dist + epsilon
         q_dist = q_dist / q_dist.sum()  # Renormalize
-        
+
         # Compute KL divergence loss: KL(P||Q) = sum(p_i * log(p_i/q_i))
         kl_loss = torch.sum(p_dist * torch.log(p_dist / q_dist))
-        
+
         if is_prediction:
             return kl_loss, q_dist, p_dist
         return kl_loss
 
-    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
+    def compute_loss(
+        self, model, inputs, return_outputs=False, num_items_in_batch=None
+    ):
         """Compute average KL divergence loss across all groups."""
         weights = inputs.pop('weights')
         group_ids = inputs.pop('group_ids')
-        
+
         # Ensure inputs are on the correct device
         weights = weights.to(model.device)
         group_ids = group_ids.to(model.device)
@@ -102,13 +95,13 @@ class KLDivergenceTrainer(Trainer):
 
         for group in unique_groups:
             group_indices = torch.where(group_ids == group)[0]
-            
+
             # Skip groups that are too small
             if len(group_indices) < 2:
                 continue
-                
+
             loss = self._process_group(model, inputs, weights, group_indices)
-            
+
             # Check if loss is valid
             if not torch.isnan(loss) and not torch.isinf(loss):
                 total_loss += loss
@@ -116,7 +109,7 @@ class KLDivergenceTrainer(Trainer):
 
         # Compute average loss only over valid groups
         avg_loss = total_loss / max(num_valid_groups, 1)
-        
+
         if return_outputs:
             return avg_loss, None
         return avg_loss
@@ -125,7 +118,7 @@ class KLDivergenceTrainer(Trainer):
         """Compute predictions and losses for evaluation."""
         weights = inputs.pop('weights')
         group_ids = inputs.pop('group_ids')
-        
+
         # Move to correct device
         weights = weights.to(model.device)
         group_ids = group_ids.to(model.device)
@@ -137,15 +130,15 @@ class KLDivergenceTrainer(Trainer):
         unique_groups = torch.unique(group_ids)
         for group in unique_groups:
             group_indices = torch.where(group_ids == group)[0]
-            
+
             # Skip small groups
             if len(group_indices) < 2:
                 continue
-                
+
             loss, q_dist, p_dist = self._process_group(
                 model, inputs, weights, group_indices, is_prediction=True
             )
-            
+
             if not torch.isnan(loss) and not torch.isinf(loss):
                 all_losses.append(loss.unsqueeze(0))
                 all_preds.append(q_dist)
@@ -159,7 +152,6 @@ class KLDivergenceTrainer(Trainer):
         final_labels = torch.stack(all_labels)
 
         return (final_loss, final_preds, final_labels)
-
 
 
 class BasicPriorReasoner:
@@ -188,6 +180,7 @@ class BasicPriorReasoner:
         Similar structure to your existing code, except we do not rely on a single 'labels'
         for MSE but on 'weights' for the distribution.
         """
+
         def collate_fn(batch):
             # 'batch' is a list of items, each item has shape [num_items, seq_len] for input_ids, etc.
             # We'll gather them into big tensors. We track group_ids so the Trainer can separate them later.
@@ -222,7 +215,9 @@ class BasicPriorReasoner:
                     value=self.tokenizer.pad_token_id,
                 )
                 # shape [num_items, max_len]
-                attention_masks = (input_ids_padded != self.tokenizer.pad_token_id).long()
+                attention_masks = (
+                    input_ids_padded != self.tokenizer.pad_token_id
+                ).long()
 
                 # We'll store them in a list to cat later
                 all_input_ids.append(input_ids_padded)
@@ -234,9 +229,7 @@ class BasicPriorReasoner:
                 # We'll keep the same 'group_idx' for all items in this group
                 # so the trainer code knows which items belong together
                 group_id_tensor = torch.full(
-                    (item['p_dist'].size(0),),
-                    group_idx,
-                    dtype=torch.long
+                    (item['p_dist'].size(0),), group_idx, dtype=torch.long
                 )
                 all_group_ids.append(group_id_tensor)
 
@@ -254,7 +247,7 @@ class BasicPriorReasoner:
             return {
                 'input_ids': input_ids,
                 'attention_mask': attention_mask,
-                'weights': weights,       # Our p-dist
+                'weights': weights,  # Our p-dist
                 'group_ids': group_ids,
                 'market_ids': all_market_ids,
                 'event_ids': all_event_ids,
@@ -302,12 +295,11 @@ class BasicPriorReasoner:
                 'kl_div': float(
                     np.mean(
                         np.sum(
-                            p.label_ids * np.log(p.label_ids / (p.predictions)),
-                            axis=1
+                            p.label_ids * np.log(p.label_ids / (p.predictions)), axis=1
                         )
                     )
                 )
-            }
+            },
         )
 
         trainer.train()

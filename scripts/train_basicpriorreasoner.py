@@ -8,6 +8,7 @@ from swm.reasoner import BasicPriorReasoner
 from swm.utils.posterior_reasoner import BasicPosteriorReasoner
 from swm.utils.utils import load_dailynews_data, load_polymarket_data, set_seed
 
+
 def parse_args():
     parser = argparse.ArgumentParser(description='Train the Basic Prior Reasoner')
 
@@ -41,6 +42,7 @@ def parse_args():
 
     return parser.parse_args()
 
+
 def train(args):
     # Set random seed for reproducibility
     set_seed(args.seed)
@@ -59,7 +61,7 @@ def train(args):
     lora_config = LoraConfig(
         r=args.r,
         lora_alpha=args.lora_alpha,
-        target_modules=['q_proj', 'v_proj'],   # adapt for your model
+        target_modules=['q_proj', 'v_proj'],  # adapt for your model
         lora_dropout=args.lora_dropout,
         bias='none',
         task_type='CAUSAL_LM',
@@ -109,11 +111,12 @@ def train(args):
         train_data=train_data,
         valid_data=valid_data,
         training_args=training_args,
-        posterior_reasoner=posterior_reasoner
+        posterior_reasoner=posterior_reasoner,
     )
 
     # Save the final or best model
     prior_reasoner.save(best_model_checkpoint)
+
 
 if __name__ == '__main__':
     args = parse_args()

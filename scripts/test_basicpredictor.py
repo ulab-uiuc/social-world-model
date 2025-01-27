@@ -5,8 +5,8 @@ import pandas as pd
 from peft import LoraConfig
 
 from swm.predictor import BasicPredictor
-from swm.utils.posterior_reasoner import BasicPosteriorReasoner
 from swm.utils.metric import calculate_metric
+from swm.utils.posterior_reasoner import BasicPosteriorReasoner
 from swm.utils.utils import load_dailynews_data, load_polymarket_data, set_seed
 
 

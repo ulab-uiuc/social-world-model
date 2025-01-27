@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 import jsonlines
-from transformers import TrainingArguments, AutoTokenizer
 
 from ..data import DailyNewsData, PolyMarketData
 from .error_handler import (
@@ -16,15 +15,6 @@ from .error_handler import (
 from .filter import TimeBasedDailyNewsFilter
 from .prompter import model_prompting
 from .utils import convert_to_date
-import torch
-from transformers import Trainer
-import torch.nn.functional as F
-from .regressor import LLMRegressor, LLMRegressorConfig
-from peft import LoraConfig
-from ..dataset import BasicPolyMarketDatasetWithEventForReasoner
-from torch.utils.data import DataLoader
-
-
 
 PROMPT_TEMPLATE = """Analyze market price change causation for {date}:
 
@@ -85,7 +75,13 @@ class BasicPosteriorReasoner:
             if results is not None and results != []:
                 print(results)
                 serialized_results = [
-                    {'news': r['news'].model_dump(), 'score': r['score'], 'time': time, 'market': market.market_id} for r in results
+                    {
+                        'news': r['news'].model_dump(),
+                        'score': r['score'],
+                        'time': time,
+                        'market': market.market_id,
+                    }
+                    for r in results
                 ]
                 with jsonlines.open(cache_path, mode='w') as writer:
                     writer.write_all(serialized_results)
@@ -108,7 +104,7 @@ class BasicPosteriorReasoner:
             return [{'news': news_item, 'score': 0.01} for news_item in news][
                 : self.max_news_items
             ]
-            #return []
+            # return []
 
         news = self._get_filtered_news(date)
         if not news:
@@ -117,7 +113,6 @@ class BasicPosteriorReasoner:
         prompt = self._create_prompt(change, date, news)
         response = self._get_model_response(prompt)
         return self._parse_scores(response, news)
-
 
     def _get_next_day_change(self, date: str, market: PolyMarketData) -> Optional[Dict]:
         if not market.daily_time_series or 'Yes' not in market.daily_time_series:
@@ -218,4 +213,3 @@ class BasicPosteriorReasoner:
         ]
         scored_news.sort(key=lambda x: x['score'], reverse=True)
         return scored_news[: self.max_news_items]
-
