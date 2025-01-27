@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Union
 
 import torch
+from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import Dataset
 from tqdm import tqdm
 from transformers import PreTrainedTokenizer
@@ -13,7 +14,7 @@ from .data import PolyMarketData
 from .reasoner import BasicPosteriorReasoner, BasicPriorReasoner
 from .utils.filter import TimeBasedPolyMarketFilter
 from .utils.utils import unix_to_date
-from torch.nn.utils.rnn import pad_sequence
+
 
 class BaseDataset(Dataset):
     def __init__(self, cache_dir: str = './cache', use_cache: bool = True):
@@ -327,25 +328,37 @@ class BasicPolyMarketDatasetWithEvent(BaseDataset):
                         grouped_points[key]['t'] = target['t']
 
                     # Add tokenized data to group
-                    grouped_points[key]['input_ids'].append(encoding['input_ids'].squeeze(0))
-                    grouped_points[key]['attention_mask'].append(encoding['attention_mask'].squeeze(0))
+                    grouped_points[key]['input_ids'].append(
+                        encoding['input_ids'].squeeze(0)
+                    )
+                    grouped_points[key]['attention_mask'].append(
+                        encoding['attention_mask'].squeeze(0)
+                    )
                     grouped_points[key]['weights'].append(event['score'])
 
         # Convert to final format
         final_datapoints = []
         for key, group in grouped_points.items():
             weights_tensor = torch.tensor(group['weights'], dtype=torch.float)
-            input_ids_tensor = pad_sequence(group['input_ids'], batch_first=True, padding_value=self.tokenizer.pad_token_id)
-            attn_mask_tensor = pad_sequence(group['attention_mask'], batch_first=True, padding_value=0)
+            input_ids_tensor = pad_sequence(
+                group['input_ids'],
+                batch_first=True,
+                padding_value=self.tokenizer.pad_token_id,
+            )
+            attn_mask_tensor = pad_sequence(
+                group['attention_mask'], batch_first=True, padding_value=0
+            )
 
-            final_datapoints.append({
-                'input_ids': input_ids_tensor,
-                'attention_mask': attn_mask_tensor,
-                'label': group['label'],
-                'weights': weights_tensor,
-                'market_id': group['market_id'],
-                't': group['t'],
-            })
+            final_datapoints.append(
+                {
+                    'input_ids': input_ids_tensor,
+                    'attention_mask': attn_mask_tensor,
+                    'label': group['label'],
+                    'weights': weights_tensor,
+                    'market_id': group['market_id'],
+                    't': group['t'],
+                }
+            )
 
         return final_datapoints
 

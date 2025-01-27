@@ -1,8 +1,11 @@
+import hashlib
 import json
 import re
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
+import jsonlines
 from transformers import TrainingArguments
 
 from .data import DailyNewsData, PolyMarketData
@@ -13,9 +16,6 @@ from .utils.error_handler import (
 from .utils.filter import TimeBasedDailyNewsFilter
 from .utils.prompter import model_prompting
 from .utils.utils import convert_to_date
-from pathlib import Path
-import hashlib
-import jsonlines
 
 PROMPT_TEMPLATE = """Analyze market price change causation for {date}:
 
@@ -30,7 +30,6 @@ Format: Return JSON array of objects with "news_id" and "score" fields. Example:
 [{{"news_id": 0, "score": 85}}, {{"news_id": 1, "score": 15}}]"""
 
 
-
 class BasicPosteriorReasoner:
     def __init__(
         self,
@@ -38,7 +37,7 @@ class BasicPosteriorReasoner:
         model_name: str = 'gpt-4',
         max_news_items: int = 10,
         change_threshold: float = 0.25,
-        cache_dir: str = './reasoning_cache'
+        cache_dir: str = './reasoning_cache',
     ):
         self.news_filter = TimeBasedDailyNewsFilter(corpus_news)
         self.model_name = model_name
@@ -48,32 +47,37 @@ class BasicPosteriorReasoner:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
     def _get_cache_key(self, time: Union[str, int], market_id: str) -> str:
-        key = f"{market_id}_{time}"
+        key = f'{market_id}_{time}'
         return hashlib.md5(key.encode()).hexdigest()
 
     def reason(
         self, time: Union[str, int], market: PolyMarketData
     ) -> List[Dict[str, Any]]:
         cache_key = self._get_cache_key(time, market.market_id)
-        cache_path = self.cache_dir / f"{cache_key}.json"
-        
+        cache_path = self.cache_dir / f'{cache_key}.json'
+
         if cache_path.exists():
             try:
                 with jsonlines.open(cache_path, mode='r') as reader:
                     serialized_results = list(reader)
-                results = [{'news': DailyNewsData.from_dict(r['news']), 'score': r['score']} for r in serialized_results]
+                results = [
+                    {'news': DailyNewsData.from_dict(r['news']), 'score': r['score']}
+                    for r in serialized_results
+                ]
             except (json.JSONDecodeError, IOError):
                 pass
 
         results = self._compute_reasoning(time, market)
-        
+
         try:
-            serialized_results = [{'news': r['news'].model_dump(), 'score': r['score']} for r in results]
+            serialized_results = [
+                {'news': r['news'].model_dump(), 'score': r['score']} for r in results
+            ]
             with jsonlines.open(cache_path, mode='w') as writer:
                 writer.write_all(serialized_results)
         except IOError:
             pass
-            
+
         return results
 
     def _compute_reasoning(
@@ -98,7 +102,6 @@ class BasicPosteriorReasoner:
         prompt = self._create_prompt(change, date, news)
         response = self._get_model_response(prompt)
         return self._parse_scores(response, news)
-
 
     def _get_next_day_change(self, date: str, market: PolyMarketData) -> Optional[Dict]:
         if not market.daily_time_series or 'Yes' not in market.daily_time_series:
