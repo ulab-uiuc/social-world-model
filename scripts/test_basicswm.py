@@ -4,7 +4,7 @@ from pathlib import Path
 import pandas as pd
 
 from swm.swm import BasicSocialWM
-from swm.utils.metric import calculate_metric
+from swm.utils.metric import calculate_reg_metric
 from swm.utils.utils import load_polymarket_data, set_seed
 
 
@@ -45,7 +45,7 @@ def predict(args):
     preds = [result['prediction'] for result in results]
     gths = [result['ground_truth'] for result in results]
 
-    metrics = calculate_metric(preds, gths)
+    metrics = calculate_reg_metric(preds, gths)
     print(metrics)
 
     metrics_df = pd.DataFrame([metrics])

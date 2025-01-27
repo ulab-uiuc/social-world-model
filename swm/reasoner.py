@@ -309,17 +309,16 @@ class BasicPriorReasoner:
     def predict(
         self,
         markets: List[PolyMarketData],
-        reasoner: BasicPosteriorReasoner,
+        posterior_reasoner: BasicPosteriorReasoner,
         batch_size: int = 8,
     ) -> List[Dict[str, Any]]:
         """
         Use the trained model to produce a distribution q (softmax of logits) for each group.
         """
-        # Build dataset with reasoner
         dataset = BasicPolyMarketDatasetWithEventForReasoner(
             markets=markets,
             tokenizer=self.tokenizer,
-            reasoner=reasoner,
+            reasoner=posterior_reasoner,
             cache_dir=self.cache_dir,
         )
         dataloader = DataLoader(
@@ -336,10 +335,9 @@ class BasicPriorReasoner:
                 input_ids = batch['input_ids'].to(self.model.llm.device)
                 attention_mask = batch['attention_mask'].to(self.model.llm.device)
                 group_ids = batch['group_ids'].to(self.model.llm.device)
+                weights = batch['weights'].to(self.model.llm.device)
 
-                # We'll replicate the chunk logic if needed,
-                # or do a simpler approach if the batch is small enough.
-                # For each group in the batch, collect logits.
+                # Process each group in the batch
                 unique_groups = torch.unique(group_ids)
                 group_logits_map = {}
 
@@ -350,28 +348,31 @@ class BasicPriorReasoner:
                         'attention_mask': attention_mask[group_indices],
                     }
                     logits = self.model(**chunk_inputs)
-                    # shape [num_items_in_group]
                     if logits.dim() == 2 and logits.size(-1) == 1:
                         logits = logits.squeeze(-1)
                     group_logits_map[group.item()] = logits
 
-                # Then interpret them as a distribution
-                for i, group_idx in enumerate(unique_groups):
-                    # Convert to distribution
-                    logits = group_logits_map[group_idx.item()]
+                # Process results for each group
+                for group_idx in unique_groups:
+                    group_idx = group_idx.item()
+                    group_indices = torch.where(group_ids == group_idx)[0]
+                    
+                    # Get logits and convert to distribution
+                    logits = group_logits_map[group_idx]
                     q_dist = F.softmax(logits, dim=0)
 
-                    # We can store or do something with it
-                    # If the dataset stored metadata in the batch (like market_id, event_id),
-                    # we can match them by the group index.
-                    results.append(
-                        {
-                            'event_id': batch['event_ids'][group_idx],
-                            'market_id': batch['market_ids'][group_idx],
-                            't': batch['ts'][group_idx],
-                            'q_dist': q_dist.cpu().numpy().tolist(),
-                        }
-                    )
+                    # Get corresponding weights (p_dist) for this group
+                    group_weights = weights[group_indices]
+
+                    # Store results with proper weight handling
+                    results.append({
+                        'event_id': batch['event_ids'][group_idx],
+                        'market_id': batch['market_ids'][group_idx],
+                        't': batch['ts'][group_idx],
+                        'q_dist': q_dist.cpu().numpy().tolist(),
+                        'p_dist': group_weights.cpu().numpy().tolist(),
+                    })
+        
         return results
 
     def save(self, path: str) -> None:

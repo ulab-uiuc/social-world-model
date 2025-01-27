@@ -356,7 +356,7 @@ class BasicPolyMarketDatasetWithEventForPredictor(BaseDataset):
                     'label': group['label'],
                     'weights': weights_tensor,
                     'market_id': group['market_id'],
-                    'event_id': market.event_id,
+                    'event_id': group['event_id'],
                     't': group['t'],
                 }
             )

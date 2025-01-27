@@ -1,5 +1,5 @@
 # for sanity check
-CUDA_VISIBLE_DEVICES=4 python train_basicpriorreasoner.py \
+CUDA_VISIBLE_DEVICES=3 python train_basicpriorreasoner.py \
 --train-data-path ../data/splitted_polymarket/polymarket_data_processed_Crypto_test.jsonl \
 --valid-data-path ../data/splitted_polymarket/polymarket_data_processed_Crypto_test.jsonl \
 --corpus-news-path ../data/processed_dailynews/dailynews_data_processed.jsonl \

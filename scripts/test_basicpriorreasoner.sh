@@ -1,5 +1,5 @@
 # sanity check
-CUDA_VISIBLE_DEVICES=4 python test_basicpriorreasoner.py \
+CUDA_VISIBLE_DEVICES=3 python test_basicpriorreasoner.py \
 --test-data-path ../data/splitted_polymarket/polymarket_data_processed_Crypto_test.jsonl \
 --corpus-news-path ../data/processed_dailynews/dailynews_data_processed.jsonl \
 --model-checkpoint ../saves/saves_crypto_basicpriorreasoner_sanitycheck/checkpoint-best \

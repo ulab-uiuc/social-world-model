@@ -6,7 +6,7 @@ from peft import LoraConfig
 
 # Adapt import paths to your actual code structure
 from swm.reasoner import BasicPriorReasoner
-from swm.utils.metric import calculate_metric
+from swm.utils.metric import calculate_kl_divergence
 from swm.utils.posterior_reasoner import BasicPosteriorReasoner
 from swm.utils.utils import load_dailynews_data, load_polymarket_data, set_seed
 
@@ -95,11 +95,14 @@ def test_prior_reasoner(args):
     )
 
     # Extract predictions & ground truths
-    predictions = [r['prediction'] for r in results]
-    ground_truth = [r['ground_truth'] for r in results]
+    predictions = [r['q_dist'] for r in results]
+    ground_truth = [r['p_dist'] for r in results]
 
-    # Calculate metrics (e.g. MSE, MAE, R^2, etc.)
-    metrics = calculate_metric(predictions, ground_truth)
+    kl_divs = []
+    for pred, gth in zip(predictions, ground_truth):
+        kl_div = calculate_kl_divergence(pred, gth)['kl_div']
+        kl_divs.append(kl_div)
+    metrics = {'kl_div': sum(kl_divs) / len(kl_divs)}
 
     # Save results
     output_dir = Path(args.output_dir)

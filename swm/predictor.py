@@ -20,7 +20,7 @@ class WeightedTrainer(Trainer):
         self, model, inputs, weights, group_indices, labels, is_prediction=False
     ):
         group_size = len(group_indices)
-        chunk_size = 4
+        chunk_size = 8
         acc_pred = 0
 
         group_weights = weights[group_indices]

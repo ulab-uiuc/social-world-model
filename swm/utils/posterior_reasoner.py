@@ -66,6 +66,8 @@ class BasicPosteriorReasoner:
                 return results
             except (json.JSONDecodeError, IOError):
                 pass
+        #else:
+        #    return []
 
         results = self._compute_reasoning(time, market)
         if results is None:
@@ -100,11 +102,11 @@ class BasicPosteriorReasoner:
             return []
 
         if abs(change['change']) < self.change_threshold:
-            news = self._get_filtered_news(date)
-            return [{'news': news_item, 'score': 0.01} for news_item in news][
-                : self.max_news_items
-            ]
-            # return []
+            #news = self._get_filtered_news(date)
+            #return [{'news': news_item, 'score': 0.01} for news_item in news][
+            #    : self.max_news_items
+            #]
+            return []
 
         news = self._get_filtered_news(date)
         if not news:
