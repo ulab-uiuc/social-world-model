@@ -205,7 +205,6 @@ class BasicPriorReasoner:
             max_len = min(max_len, self.max_seq_length)
 
             # Build final Tensors
-            current_group_idx = 0
             for group_idx, item in enumerate(batch):
                 # item['input_ids'] => shape [num_items, seq_len]
                 # We'll pad up to max_len
@@ -336,7 +335,6 @@ class BasicPriorReasoner:
             for batch in tqdm(dataloader, desc='Predicting Batches'):
                 input_ids = batch['input_ids'].to(self.model.llm.device)
                 attention_mask = batch['attention_mask'].to(self.model.llm.device)
-                weights = batch['weights'].to(self.model.llm.device)
                 group_ids = batch['group_ids'].to(self.model.llm.device)
 
                 # We'll replicate the chunk logic if needed,
