@@ -273,7 +273,7 @@ class RAGSocialWM(BasicSocialWM):
         self.model.to('cuda' if torch.cuda.is_available() else 'cpu')
 
 
-'''
+"""
 class BasicSocialWMWithEvent:
     def __init__(
         self,
@@ -323,4 +323,4 @@ class BasicSocialWMWithEvent:
             }
 
         return combined_results
-'''
+"""

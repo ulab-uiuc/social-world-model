@@ -1,19 +1,20 @@
 import json
-from datetime import datetime
-from typing import Dict, List, Optional, Any, Union
+import re
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional, Union
 
-from datetime import timedelta
+from transformers import TrainingArguments
 
 from .data import DailyNewsData, PolyMarketData
+from .utils.error_handler import (
+    api_calling_error_exponential_backoff,
+    parsing_error_exponential_backoff,
+)
 from .utils.filter import TimeBasedDailyNewsFilter
 from .utils.prompter import model_prompting
-from transformers import TrainingArguments
-import re
-from .utils.error_handler import api_calling_error_exponential_backoff, parsing_error_exponential_backoff
 from .utils.utils import convert_to_date
 
-
-PROMPT_TEMPLATE = '''Analyze market price change causation for {date}:
+PROMPT_TEMPLATE = """Analyze market price change causation for {date}:
 
 Market: {question}
 Price Change: {direction} from {current_price:.3f} ({current_date}) to {next_price:.3f} ({next_date}) ({change_pct:.1f}%)
@@ -23,7 +24,7 @@ News:
 
 Task: Rate each news item's likelihood (0-100) of causing this price change.
 Format: Return JSON array of objects with "news_id" and "score" fields. Example:
-[{{"news_id": 0, "score": 85}}, {{"news_id": 1, "score": 15}}]'''
+[{{"news_id": 0, "score": 85}}, {{"news_id": 1, "score": 15}}]"""
 
 
 class BasicPosteriorReasoner:
@@ -39,7 +40,9 @@ class BasicPosteriorReasoner:
         self.max_news_items = max_news_items
         self.change_threshold = change_threshold
 
-    def reason(self, time: Union[str, int], market: PolyMarketData) -> List[Dict[str, Any]]:
+    def reason(
+        self, time: Union[str, int], market: PolyMarketData
+    ) -> List[Dict[str, Any]]:
         date = convert_to_date(time)
         change = self._get_next_day_change(date, market)
         if not change:
@@ -47,7 +50,9 @@ class BasicPosteriorReasoner:
 
         if abs(change['change']) < self.change_threshold:
             news = self._get_filtered_news(date)
-            return [{'news': news_item, 'score': 0.01} for news_item in news][: self.max_news_items]
+            return [{'news': news_item, 'score': 0.01} for news_item in news][
+                : self.max_news_items
+            ]
 
         news = self._get_filtered_news(date)
         if not news:
@@ -66,12 +71,20 @@ class BasicPosteriorReasoner:
         series = market.daily_time_series['Yes']
 
         current_point = next(
-            (p for p in series if datetime.fromtimestamp(p['t']).date() == current_date.date()),
-            None
+            (
+                p
+                for p in series
+                if datetime.fromtimestamp(p['t']).date() == current_date.date()
+            ),
+            None,
         )
         next_point = next(
-            (p for p in series if datetime.fromtimestamp(p['t']).date() == next_date.date()),
-            None
+            (
+                p
+                for p in series
+                if datetime.fromtimestamp(p['t']).date() == next_date.date()
+            ),
+            None,
         )
 
         if not (current_point and next_point):
@@ -84,16 +97,16 @@ class BasicPosteriorReasoner:
             'current_point': current_point,
             'next_point': next_point,
             'change': change,
-            'direction': 'increased' if next_point['p'] > current_point['p'] else 'decreased'
+            'direction': 'increased'
+            if next_point['p'] > current_point['p']
+            else 'decreased',
         }
 
     def _get_filtered_news(self, date: str) -> List[DailyNewsData]:
         news = self.news_filter.filter(date)
         return news
 
-    def _create_prompt(
-        self, change: Dict, date: str, news: List[DailyNewsData]
-    ) -> str:
+    def _create_prompt(self, change: Dict, date: str, news: List[DailyNewsData]) -> str:
         return PROMPT_TEMPLATE.format(
             date=date,
             question=change['market'].question,
@@ -102,8 +115,8 @@ class BasicPosteriorReasoner:
             next_price=change['next_point']['p'],
             current_date=change['current_point']['t'],
             next_date=change['next_point']['t'],
-            change_pct=abs(change['change'])*100,
-            news_items=self._format_news_items(news)
+            change_pct=abs(change['change']) * 100,
+            news_items=self._format_news_items(news),
         )
 
     def _format_news_items(self, news: List[DailyNewsData]) -> str:
@@ -115,8 +128,11 @@ class BasicPosteriorReasoner:
     @api_calling_error_exponential_backoff()
     def _get_model_response(self, prompt: str) -> str:
         messages = [
-            {'role': 'system', 'content': 'You analyze news impact on prediction markets.'},
-            {'role': 'user', 'content': prompt}
+            {
+                'role': 'system',
+                'content': 'You analyze news impact on prediction markets.',
+            },
+            {'role': 'user', 'content': prompt},
         ]
         return model_prompting(
             llm_model=self.model_name,
@@ -136,9 +152,15 @@ class BasicPosteriorReasoner:
             return []
 
         # Normalize scores and select top-k news items
-        scored_news = [{'news': news[r['news_id']], 'score': r['score'] / 100 if r['score'] > 0 else 0.01} for r in results]
+        scored_news = [
+            {
+                'news': news[r['news_id']],
+                'score': r['score'] / 100 if r['score'] > 0 else 0.01,
+            }
+            for r in results
+        ]
         scored_news.sort(key=lambda x: x['score'], reverse=True)
-        return scored_news[:self.max_news_items]
+        return scored_news[: self.max_news_items]
 
 
 class BasicPriorReasoner:
@@ -176,10 +198,12 @@ class BasicPriorReasoner:
 
         results = []
         for news, score in zip(news_data, scores):
-            results.append({
-                'news': news,
-                'score': score,
-            })
+            results.append(
+                {
+                    'news': news,
+                    'score': score,
+                }
+            )
         return results
 
     def train(

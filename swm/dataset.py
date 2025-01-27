@@ -1,5 +1,6 @@
 import hashlib
 import pickle
+from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, List, Union
 
@@ -7,12 +8,11 @@ import torch
 from torch.utils.data import Dataset
 from tqdm import tqdm
 from transformers import PreTrainedTokenizer
-from collections import defaultdict
 
 from .data import PolyMarketData
+from .reasoner import BasicPosteriorReasoner, BasicPriorReasoner
 from .utils.filter import TimeBasedPolyMarketFilter
 from .utils.utils import unix_to_date
-from .reasoner import BasicPosteriorReasoner, BasicPriorReasoner
 
 
 class BaseDataset(Dataset):
@@ -283,9 +283,9 @@ class BasicPolyMarketDatasetWithEvent(BaseDataset):
                 'input_ids': [],
                 'attention_mask': [],
                 'weights': [],
-                'label': None,   # we will set the label eventually
+                'label': None,  # we will set the label eventually
                 'market_id': None,
-                't': None
+                't': None,
             }
         )
         all_prompts = []
@@ -304,26 +304,26 @@ class BasicPolyMarketDatasetWithEvent(BaseDataset):
                 window = series[start_idx : start_idx + self.window_size]
                 target = series[start_idx + self.window_size]
                 current_ts = window[-1]['t']
-                
+
                 events = self.reasoner.reason(current_ts, market)
                 for event in events:
                     prompt = self._build_prompt(market, window, target, event['news'])
                     all_prompts.append(prompt)
-                    
+
                     key = (market.market_id, target['t'])
                     prompt_to_meta[len(all_prompts) - 1] = {
                         'key': key,
                         'score': event['score'],
                         'label': target['p'],
                         'market_id': market.market_id,
-                        't': target['t']
+                        't': target['t'],
                     }
 
         # 2) Batch tokenization (collect both input_ids and attention_mask)
         batch_size = 1000
         for i in tqdm(range(0, len(all_prompts), batch_size), desc='Tokenizing'):
             batch_prompts = all_prompts[i : i + batch_size]
-            
+
             encodings = self.tokenizer(
                 batch_prompts,
                 padding=True,
@@ -331,7 +331,7 @@ class BasicPolyMarketDatasetWithEvent(BaseDataset):
                 return_tensors='pt',
                 return_attention_mask=True,
             )
-            
+
             # encodings['input_ids'].shape = [batch_size, seq_len]
             # encodings['attention_mask'].shape = [batch_size, seq_len]
 
@@ -349,7 +349,9 @@ class BasicPolyMarketDatasetWithEvent(BaseDataset):
                     grouped_points[key]['t'] = meta['t']
 
                 grouped_points[key]['input_ids'].append(encodings['input_ids'][j])
-                grouped_points[key]['attention_mask'].append(encodings['attention_mask'][j])
+                grouped_points[key]['attention_mask'].append(
+                    encodings['attention_mask'][j]
+                )
                 grouped_points[key]['weights'].append(meta['score'])
 
         # 3) Convert weights to tensor and stack/pad the input_ids/attention_mask
@@ -367,36 +369,48 @@ class BasicPolyMarketDatasetWithEvent(BaseDataset):
             #   input_ids_tensor = pad_sequence(group['input_ids'], batch_first=True, padding_value=self.tokenizer.pad_token_id)
             #   attn_mask_tensor = pad_sequence(group['attention_mask'], batch_first=True, padding_value=0)
             #
-            # However, if the above single-batch tokenization is consistent, 
+            # However, if the above single-batch tokenization is consistent,
             # you can simply do torch.stack:
             input_ids_tensor = torch.stack(group['input_ids'], dim=0)
             attn_mask_tensor = torch.stack(group['attention_mask'], dim=0)
 
-            final_datapoints.append({
-                'input_ids': input_ids_tensor,  # shape [num_events, seq_len]
-                'attention_mask': attn_mask_tensor,  # shape [num_events, seq_len]
-                'label': group['label'],  # shape [], we can repeat or expand in __getitem__
-                'weights': weights_tensor,  # shape [num_events]
-                'market_id': group['market_id'],
-                't': group['t']
-            })
+            final_datapoints.append(
+                {
+                    'input_ids': input_ids_tensor,  # shape [num_events, seq_len]
+                    'attention_mask': attn_mask_tensor,  # shape [num_events, seq_len]
+                    'label': group[
+                        'label'
+                    ],  # shape [], we can repeat or expand in __getitem__
+                    'weights': weights_tensor,  # shape [num_events]
+                    'market_id': group['market_id'],
+                    't': group['t'],
+                }
+            )
 
         return final_datapoints
 
-    def _build_prompt(self, market: 'PolyMarketData', window_data: List[Dict], target_data: Dict, news: Dict) -> str:
+    def _build_prompt(
+        self,
+        market: 'PolyMarketData',
+        window_data: List[Dict],
+        target_data: Dict,
+        news: Dict,
+    ) -> str:
         lines = [f'You are given an event: {market.question}']
         if market.description:
             lines.append(market.description)
 
         for day in window_data:
             date = unix_to_date(day['t'])
-            lines.append(f"At date {date}, its possibility to be 'Yes' to the event is {day['p']:.3f}")
+            lines.append(
+                f"At date {date}, its possibility to be 'Yes' to the event is {day['p']:.3f}"
+            )
 
         target_date = unix_to_date(target_data['t'])
         news_content = (
-            f"The date of the news is {news.date}.\n"
-            f"The title is {news.title}.\n"
-            f"{news.description}"
+            f'The date of the news is {news.date}.\n'
+            f'The title is {news.title}.\n'
+            f'{news.description}'
         )
         lines.append(
             f'\nPlease predict the possibility to happen at date {target_date} based on the following news:\n{news_content}'
@@ -410,10 +424,10 @@ class BasicPolyMarketDatasetWithEvent(BaseDataset):
         label_tensor = item['label'].expand(num_events)
 
         return {
-            'input_ids': item['input_ids'],           # (num_events, seq_len)
-            'attention_mask': item['attention_mask'], # (num_events, seq_len)
-            'label': label_tensor,                    # (num_events,)
-            'weights': item['weights'],               # (num_events,)
+            'input_ids': item['input_ids'],  # (num_events, seq_len)
+            'attention_mask': item['attention_mask'],  # (num_events, seq_len)
+            'label': label_tensor,  # (num_events,)
+            'weights': item['weights'],  # (num_events,)
             'market_key': torch.tensor(
                 [hash(item['market_id']), item['t']], dtype=torch.long
             ),

@@ -1,65 +1,74 @@
 from pathlib import Path
 from typing import Dict, List, Optional
-from collections import defaultdict
 
 import torch
+from peft import LoraConfig
 from sklearn.metrics import mean_squared_error
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from transformers import AutoTokenizer, Trainer, TrainingArguments
-from peft import LoraConfig
 
 from .data import PolyMarketData
-from .utils.regressor import LLMRegressor, LLMRegressorConfig
-from .reasoner import BasicPosteriorReasoner, BasicPriorReasoner
 from .dataset import BasicPolyMarketDatasetWithEvent
+from .reasoner import BasicPosteriorReasoner, BasicPriorReasoner
+from .utils.regressor import LLMRegressor, LLMRegressorConfig
 
 
 class WeightedTrainer(Trainer):
-    def _process_group(self, model, inputs, weights, group_indices, labels, is_prediction=False):
+    def _process_group(
+        self, model, inputs, weights, group_indices, labels, is_prediction=False
+    ):
         group_size = len(group_indices)
         chunk_size = 4
         acc_pred = 0
-        
+
         group_weights = weights[group_indices]
         normalized_weights = group_weights / group_weights.sum()
-        
+
         for i in range(0, group_size, chunk_size):
-            chunk_indices = group_indices[i:i+chunk_size]
+            chunk_indices = group_indices[i : i + chunk_size]
             chunk_inputs = {
                 'input_ids': inputs['input_ids'][chunk_indices],
-                'attention_mask': inputs['attention_mask'][chunk_indices]
+                'attention_mask': inputs['attention_mask'][chunk_indices],
             }
-            chunk_weights = normalized_weights[i:i+chunk_size]
-            
-            with torch.amp.autocast('cuda', enabled=self.args.fp16) if not is_prediction else torch.no_grad():
+            chunk_weights = normalized_weights[i : i + chunk_size]
+
+            with (
+                torch.amp.autocast('cuda', enabled=self.args.fp16)
+                if not is_prediction
+                else torch.no_grad()
+            ):
                 chunk_preds = model(**chunk_inputs)
                 chunk_preds = chunk_preds.view(-1)
                 acc_pred += (chunk_preds * chunk_weights).sum()
-        
+
         group_label = labels[group_indices[0]]
         loss = torch.nn.functional.mse_loss(acc_pred, group_label)
-        
+
         return loss, acc_pred, group_label
 
-    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
-        labels = inputs.pop("labels")
-        weights = inputs.pop("weights")
-        group_ids = inputs.pop("group_ids")
-        
+    def compute_loss(
+        self, model, inputs, return_outputs=False, num_items_in_batch=None
+    ):
+        labels = inputs.pop('labels')
+        weights = inputs.pop('weights')
+        group_ids = inputs.pop('group_ids')
+
         total_loss = 0
         for group in torch.unique(group_ids):
             group_indices = torch.where(group_ids == group)[0]
-            loss, _, _ = self._process_group(model, inputs, weights, group_indices, labels)
+            loss, _, _ = self._process_group(
+                model, inputs, weights, group_indices, labels
+            )
             total_loss += loss
-            
+
         return total_loss / len(torch.unique(group_ids))
-    
+
     def prediction_step(self, model, inputs, prediction_loss_only, ignore_keys=None):
-        labels = inputs.pop("labels")
-        weights = inputs.pop("weights")
-        group_ids = inputs.pop("group_ids")
-        
+        labels = inputs.pop('labels')
+        weights = inputs.pop('weights')
+        group_ids = inputs.pop('group_ids')
+
         all_losses, all_preds, all_labels = [], [], []
         for group in torch.unique(group_ids):
             group_indices = torch.where(group_ids == group)[0]
@@ -69,11 +78,11 @@ class WeightedTrainer(Trainer):
             all_losses.append(loss)
             all_preds.append(pred)
             all_labels.append(label)
-            
+
         return (
             torch.stack(all_losses).mean(),
             torch.stack(all_preds),
-            torch.stack(all_labels)
+            torch.stack(all_labels),
         )
 
 
@@ -100,8 +109,10 @@ class BasicPredictor:
 
     def _create_collate_fn(self):
         def collate_fn(batch):
-            max_len = max(max(x['input_ids'].size(-1) for x in batch), self.max_seq_length)
-            
+            max_len = max(
+                max(x['input_ids'].size(-1) for x in batch), self.max_seq_length
+            )
+
             all_input_ids = []
             all_attention_masks = []
             all_labels = []
@@ -110,12 +121,12 @@ class BasicPredictor:
             all_market_ids = []
             all_event_ids = []
             all_ts = []
-            
+
             for group_idx, item in enumerate(batch):
                 padded_inputs = torch.nn.functional.pad(
                     item['input_ids'],
                     (0, max_len - item['input_ids'].size(-1)),
-                    value=self.tokenizer.pad_token_id
+                    value=self.tokenizer.pad_token_id,
                 )
                 all_input_ids.append(padded_inputs)
                 mask = (padded_inputs != self.tokenizer.pad_token_id).long()
@@ -126,7 +137,7 @@ class BasicPredictor:
                 all_market_ids.append(item['market_id'])
                 all_event_ids.append(item['event_id'])
                 all_ts.append(item['t'])
-                
+
             return {
                 'input_ids': torch.cat(all_input_ids),
                 'attention_mask': torch.cat(all_attention_masks),
@@ -135,8 +146,9 @@ class BasicPredictor:
                 'group_ids': torch.cat(all_group_ids),
                 'market_ids': all_market_ids,
                 'event_ids': all_event_ids,
-                'ts': all_ts
+                'ts': all_ts,
             }
+
         return collate_fn
 
     def train(
@@ -168,7 +180,9 @@ class BasicPredictor:
             train_dataset=train_dataset,
             eval_dataset=valid_dataset,
             data_collator=self._create_collate_fn(),
-            compute_metrics=lambda p: {'mse': mean_squared_error(p.label_ids, p.predictions)}
+            compute_metrics=lambda p: {
+                'mse': mean_squared_error(p.label_ids, p.predictions)
+            },
         )
 
         trainer.train()
@@ -177,16 +191,16 @@ class BasicPredictor:
         return str(best_model_dir)
 
     def predict(
-        self, 
-        markets: List[PolyMarketData], 
+        self,
+        markets: List[PolyMarketData],
         reasoner: BasicPriorReasoner,
-        batch_size: int = 8
+        batch_size: int = 8,
     ) -> Dict[str, Dict[str, float]]:
         dataset = BasicPolyMarketDatasetWithEvent(
-            markets=markets, 
+            markets=markets,
             tokenizer=self.tokenizer,
-            reasoner=reasoner, 
-            cache_dir=self.cache_dir
+            reasoner=reasoner,
+            cache_dir=self.cache_dir,
         )
         dataloader = DataLoader(
             dataset,
@@ -203,28 +217,32 @@ class BasicPredictor:
                 labels = batch['labels'].to(self.model.llm.device)
                 weights = batch['weights'].to(self.model.llm.device)
                 group_ids = batch['group_ids'].to(self.model.llm.device)
-                
-                for group_idx in range(len(batch['event_ids'])):  # Iterate over actual groups
+
+                for group_idx in range(
+                    len(batch['event_ids'])
+                ):  # Iterate over actual groups
                     group_mask = group_ids == group_idx
                     group_inputs = {
                         'input_ids': input_ids[group_mask],
                         'attention_mask': attention_mask[group_mask],
                     }
-                    
+
                     group_preds = self.model(**group_inputs).view(-1)
-                    
+
                     group_weights = weights[group_mask]
                     group_weights = group_weights / group_weights.sum()
-                    
+
                     weighted_pred = (group_preds * group_weights).sum()
-                    
-                    results.append({
-                        'event_id': batch['event_ids'][group_idx],
-                        'market_id': batch['market_ids'][group_idx],
-                        't': batch['ts'][group_idx],
-                        'prediction': weighted_pred.item(),
-                        'ground_truth': labels[group_mask][0].item(),
-                    })
+
+                    results.append(
+                        {
+                            'event_id': batch['event_ids'][group_idx],
+                            'market_id': batch['market_ids'][group_idx],
+                            't': batch['ts'][group_idx],
+                            'prediction': weighted_pred.item(),
+                            'ground_truth': labels[group_mask][0].item(),
+                        }
+                    )
         return results
 
     def save(self, path: str) -> None:

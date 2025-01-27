@@ -5,7 +5,7 @@ from transformers import TrainingArguments
 
 from swm.predictor import BasicPredictor
 from swm.reasoner import BasicPosteriorReasoner
-from swm.utils.utils import load_polymarket_data, set_seed, load_dailynews_data
+from swm.utils.utils import load_dailynews_data, load_polymarket_data, set_seed
 
 
 def parse_args():

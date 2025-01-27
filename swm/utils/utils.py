@@ -1,11 +1,10 @@
 import random
 from datetime import datetime
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Union
 
 import jsonlines
 import numpy as np
 import torch
-
 
 from ..data import DailyNewsData, PolyMarketData
 
@@ -49,6 +48,7 @@ def load_dailynews_data(data_path):
     with jsonlines.open(data_path, 'r') as reader:
         metadata = list(reader)
         return [DailyNewsData.from_dict(d) for d in metadata]
+
 
 def convert_to_date(time: Union[float, int, str]) -> str:
     if isinstance(time, int) or isinstance(time, float):

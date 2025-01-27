@@ -17,7 +17,9 @@ def calculate_mse(predictions: List[float], labels: List[float]) -> float:
 
 
 def calculate_mape(predictions: List[float], labels: List[float]) -> float:
-    return np.mean(np.abs((np.array(labels) - np.array(predictions)) / np.array(labels)))
+    return np.mean(
+        np.abs((np.array(labels) - np.array(predictions)) / np.array(labels))
+    )
 
 
 def calculate_metric(predictions: List[float], labels: List[float]) -> dict:
