@@ -416,5 +416,8 @@ class BasicPolyMarketDatasetWithEvent(BaseDataset):
             'weights': item['weights'],               # (num_events,)
             'market_key': torch.tensor(
                 [hash(item['market_id']), item['t']], dtype=torch.long
-            )
+            ),
+            'market_id': item['market_id'],
+            'event_id': item['market_id'],
+            't': item['t'],
         }

@@ -31,7 +31,7 @@ class BasicPosteriorReasoner:
         self,
         corpus_news: List[DailyNewsData],
         model_name: str = 'gpt-4o',
-        max_news_items: int = 30,
+        max_news_items: int = 10,
         change_threshold: float = 0.2,
     ):
         self.news_filter = TimeBasedDailyNewsFilter(corpus_news)
@@ -47,7 +47,7 @@ class BasicPosteriorReasoner:
 
         if abs(change['change']) < self.change_threshold:
             news = self._get_filtered_news(date)
-            return [{'news': news_item, 'score': 0.01} for news_item in news]
+            return [{'news': news_item, 'score': 0.01} for news_item in news][: self.max_news_items]
 
         news = self._get_filtered_news(date)
         if not news:
@@ -89,7 +89,6 @@ class BasicPosteriorReasoner:
 
     def _get_filtered_news(self, date: str) -> List[DailyNewsData]:
         news = self.news_filter.filter(date)
-        news = news[:self.max_news_items]
         return news
 
     def _create_prompt(
@@ -136,7 +135,10 @@ class BasicPosteriorReasoner:
         if not results:
             return []
 
-        return [{'news': news[r['news_id']], 'score': r['score'] / 100} for r in results]
+        # Normalize scores and select top-k news items
+        scored_news = [{'news': news[r['news_id']], 'score': r['score'] / 100 if r['score'] > 0 else 0.01} for r in results]
+        scored_news.sort(key=lambda x: x['score'], reverse=True)
+        return scored_news[:self.max_news_items]
 
 
 class BasicPriorReasoner:
@@ -174,13 +176,10 @@ class BasicPriorReasoner:
 
         results = []
         for news, score in zip(news_data, scores):
-            results.append(
-                {
-                    'news': news,
-                    'score': score,
-                }
-            )
-
+            results.append({
+                'news': news,
+                'score': score,
+            })
         return results
 
     def train(

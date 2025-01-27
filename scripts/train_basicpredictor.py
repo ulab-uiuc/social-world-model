@@ -35,6 +35,7 @@ def parse_args():
     parser.add_argument('--lora-dropout', type=float, default=0.1)
     parser.add_argument('--r', type=int, default=16)
     parser.add_argument('--reasoner-name', type=str, default='gpt-4o')
+    parser.add_argument('--reasoner-max-news-items', type=int, default=10)
     parser.add_argument('--sanity-check', action='store_true')
     return parser.parse_args()
 
@@ -42,8 +43,8 @@ def parse_args():
 def train(args):
     set_seed(args.seed)
     if args.sanity_check:
-        train_data = load_polymarket_data(args.train_data_path)[:1]
-        valid_data = load_polymarket_data(args.valid_data_path)[:1]
+        train_data = load_polymarket_data(args.train_data_path)[:2]
+        valid_data = load_polymarket_data(args.valid_data_path)[:2]
         corpus_news = load_dailynews_data(args.corpus_news_path)
     else:
         train_data = load_polymarket_data(args.train_data_path)
@@ -89,6 +90,7 @@ def train(args):
 
     reasoner = BasicPosteriorReasoner(
         model_name=args.reasoner_name,
+        max_news_items=args.reasoner_max_news_items,
         corpus_news=corpus_news,
     )
 
