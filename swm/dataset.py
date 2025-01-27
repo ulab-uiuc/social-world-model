@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Union
 
 import torch
+from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import Dataset
 from tqdm import tqdm
 from transformers import PreTrainedTokenizer
@@ -283,16 +284,14 @@ class BasicPolyMarketDatasetWithEvent(BaseDataset):
                 'input_ids': [],
                 'attention_mask': [],
                 'weights': [],
-                'label': None,  # we will set the label eventually
+                'label': None,
                 'market_id': None,
                 't': None,
             }
         )
-        all_prompts = []
-        prompt_to_meta = {}
 
-        # 1) Build all prompts
-        for market in tqdm(self.markets, desc='Creating prompts'):
+        # Generate prompts and process one at a time
+        for market in tqdm(self.markets, desc='Processing markets'):
             if not market.daily_time_series or 'Yes' not in market.daily_time_series:
                 continue
 
@@ -307,81 +306,55 @@ class BasicPolyMarketDatasetWithEvent(BaseDataset):
 
                 events = self.reasoner.reason(current_ts, market)
                 for event in events:
+                    # Generate prompt and tokenize immediately
                     prompt = self._build_prompt(market, window, target, event['news'])
-                    all_prompts.append(prompt)
-
-                    key = (market.market_id, target['t'])
-                    prompt_to_meta[len(all_prompts) - 1] = {
-                        'key': key,
-                        'score': event['score'],
-                        'label': target['p'],
-                        'market_id': market.market_id,
-                        't': target['t'],
-                    }
-
-        # 2) Batch tokenization (collect both input_ids and attention_mask)
-        batch_size = 1000
-        for i in tqdm(range(0, len(all_prompts), batch_size), desc='Tokenizing'):
-            batch_prompts = all_prompts[i : i + batch_size]
-
-            encodings = self.tokenizer(
-                batch_prompts,
-                padding=True,
-                truncation=True,
-                return_tensors='pt',
-                return_attention_mask=True,
-            )
-
-            # encodings['input_ids'].shape = [batch_size, seq_len]
-            # encodings['attention_mask'].shape = [batch_size, seq_len]
-
-            for j in range(encodings['input_ids'].size(0)):
-                global_idx = i + j  # index in the entire list of prompts
-                meta = prompt_to_meta[global_idx]
-                key = meta['key']
-
-                # Initialize if not present
-                if grouped_points[key]['label'] is None:
-                    grouped_points[key]['label'] = torch.tensor(
-                        meta['label'], dtype=torch.float
+                    encoding = self.tokenizer(
+                        prompt,
+                        padding=True,
+                        truncation=True,
+                        return_tensors='pt',
+                        return_attention_mask=True,
                     )
-                    grouped_points[key]['market_id'] = meta['market_id']
-                    grouped_points[key]['t'] = meta['t']
 
-                grouped_points[key]['input_ids'].append(encodings['input_ids'][j])
-                grouped_points[key]['attention_mask'].append(
-                    encodings['attention_mask'][j]
-                )
-                grouped_points[key]['weights'].append(meta['score'])
+                    # Get the key for grouping
+                    key = (market.market_id, target['t'])
 
-        # 3) Convert weights to tensor and stack/pad the input_ids/attention_mask
+                    # Initialize group if needed
+                    if grouped_points[key]['label'] is None:
+                        grouped_points[key]['label'] = torch.tensor(
+                            target['p'], dtype=torch.float
+                        )
+                        grouped_points[key]['market_id'] = market.market_id
+                        grouped_points[key]['t'] = target['t']
+
+                    # Add tokenized data to group
+                    grouped_points[key]['input_ids'].append(
+                        encoding['input_ids'].squeeze(0)
+                    )
+                    grouped_points[key]['attention_mask'].append(
+                        encoding['attention_mask'].squeeze(0)
+                    )
+                    grouped_points[key]['weights'].append(event['score'])
+
+        # Convert to final format
         final_datapoints = []
         for key, group in grouped_points.items():
-            # (a) Convert weights to tensor
             weights_tensor = torch.tensor(group['weights'], dtype=torch.float)
-
-            # (b) Stack input_ids and attention_masks
-            # If you use 'pad_sequence', note that each prompt can have different seq lengths
-            # Here we rely on the *same* truncation/padding from the single batch tokenizer step,
-            # so they should all have the same length if we used `padding=True` + `truncation=True`.
-            # If for some reason they differ in length, you can use pad_sequence on each list:
-            #
-            #   input_ids_tensor = pad_sequence(group['input_ids'], batch_first=True, padding_value=self.tokenizer.pad_token_id)
-            #   attn_mask_tensor = pad_sequence(group['attention_mask'], batch_first=True, padding_value=0)
-            #
-            # However, if the above single-batch tokenization is consistent,
-            # you can simply do torch.stack:
-            input_ids_tensor = torch.stack(group['input_ids'], dim=0)
-            attn_mask_tensor = torch.stack(group['attention_mask'], dim=0)
+            input_ids_tensor = pad_sequence(
+                group['input_ids'],
+                batch_first=True,
+                padding_value=self.tokenizer.pad_token_id,
+            )
+            attn_mask_tensor = pad_sequence(
+                group['attention_mask'], batch_first=True, padding_value=0
+            )
 
             final_datapoints.append(
                 {
-                    'input_ids': input_ids_tensor,  # shape [num_events, seq_len]
-                    'attention_mask': attn_mask_tensor,  # shape [num_events, seq_len]
-                    'label': group[
-                        'label'
-                    ],  # shape [], we can repeat or expand in __getitem__
-                    'weights': weights_tensor,  # shape [num_events]
+                    'input_ids': input_ids_tensor,
+                    'attention_mask': attn_mask_tensor,
+                    'label': group['label'],
+                    'weights': weights_tensor,
                     'market_id': group['market_id'],
                     't': group['t'],
                 }
@@ -424,10 +397,10 @@ class BasicPolyMarketDatasetWithEvent(BaseDataset):
         label_tensor = item['label'].expand(num_events)
 
         return {
-            'input_ids': item['input_ids'],  # (num_events, seq_len)
-            'attention_mask': item['attention_mask'],  # (num_events, seq_len)
-            'label': label_tensor,  # (num_events,)
-            'weights': item['weights'],  # (num_events,)
+            'input_ids': item['input_ids'],
+            'attention_mask': item['attention_mask'],
+            'label': label_tensor,
+            'weights': item['weights'],
             'market_key': torch.tensor(
                 [hash(item['market_id']), item['t']], dtype=torch.long
             ),
