@@ -37,6 +37,7 @@ def parse_args():
     parser.add_argument('--reasoner-name', type=str, default='gpt-4o')
     parser.add_argument('--reasoner-max-news-items', type=int, default=10)
     parser.add_argument('--sanity-check', action='store_true')
+    parser.add_argument('--reasoner-cache-dir', type=str, default='./cache')
     return parser.parse_args()
 
 
@@ -92,6 +93,7 @@ def train(args):
         model_name=args.reasoner_name,
         max_news_items=args.reasoner_max_news_items,
         corpus_news=corpus_news,
+        cache_dir=args.reasoner_cache_dir,
     )
 
     best_model_checkpoint = basic_predictor.train(
