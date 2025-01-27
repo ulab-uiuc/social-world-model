@@ -33,7 +33,12 @@ def calculate_reg_metric(predictions: List[float], labels: List[float]) -> dict:
         * 100,
     }
 
+
 def calculate_kl_divergence(p: List[float], q: List[float]) -> float:
     return {
-        'kl_div': np.sum(np.where(np.array(p) != 0, np.array(p) * np.log(np.array(p) / np.array(q)), 0))
+        'kl_div': np.sum(
+            np.where(
+                np.array(p) != 0, np.array(p) * np.log(np.array(p) / np.array(q)), 0
+            )
+        )
     }

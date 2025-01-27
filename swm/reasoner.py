@@ -356,7 +356,7 @@ class BasicPriorReasoner:
                 for group_idx in unique_groups:
                     group_idx = group_idx.item()
                     group_indices = torch.where(group_ids == group_idx)[0]
-                    
+
                     # Get logits and convert to distribution
                     logits = group_logits_map[group_idx]
                     q_dist = F.softmax(logits, dim=0)
@@ -365,14 +365,16 @@ class BasicPriorReasoner:
                     group_weights = weights[group_indices]
 
                     # Store results with proper weight handling
-                    results.append({
-                        'event_id': batch['event_ids'][group_idx],
-                        'market_id': batch['market_ids'][group_idx],
-                        't': batch['ts'][group_idx],
-                        'q_dist': q_dist.cpu().numpy().tolist(),
-                        'p_dist': group_weights.cpu().numpy().tolist(),
-                    })
-        
+                    results.append(
+                        {
+                            'event_id': batch['event_ids'][group_idx],
+                            'market_id': batch['market_ids'][group_idx],
+                            't': batch['ts'][group_idx],
+                            'q_dist': q_dist.cpu().numpy().tolist(),
+                            'p_dist': group_weights.cpu().numpy().tolist(),
+                        }
+                    )
+
         return results
 
     def save(self, path: str) -> None:
