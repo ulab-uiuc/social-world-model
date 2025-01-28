@@ -35,7 +35,7 @@ def parse_args():
     parser.add_argument('--lora-alpha', type=float, default=32)
     parser.add_argument('--lora-dropout', type=float, default=0.1)
     parser.add_argument('--r', type=int, default=16)
-    parser.add_argument('--reasoner-name', type=str, default='gpt-4')
+    parser.add_argument('--reasoner-name', type=str, default='gpt-4o')
     parser.add_argument('--reasoner-max-news-items', type=int, default=10)
     parser.add_argument('--sanity-check', action='store_true')
     parser.add_argument('--reasoner-cache-dir', type=str, default='./cache')

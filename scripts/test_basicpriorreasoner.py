@@ -36,7 +36,7 @@ def parse_args():
     parser.add_argument('--r', type=int, default=16)
 
     # Reasoner configs
-    parser.add_argument('--reasoner-name', type=str, default='gpt-4')
+    parser.add_argument('--reasoner-name', type=str, default='gpt-4o')
     parser.add_argument('--reasoner-max-news-items', type=int, default=10)
 
     # Debug
