@@ -1,13 +1,13 @@
 import argparse
+import os
 from pathlib import Path
 
+import jsonlines
 import pandas as pd
 from peft import LoraConfig
 
-import jsonlines
-import os
-from swm.reasoner import BasicPriorReasoner
 from swm.predictor import BasicPredictor
+from swm.reasoner import BasicPriorReasoner
 from swm.utils.metric import calculate_reg_metric
 from swm.utils.posterior_reasoner import BasicPosteriorReasoner
 from swm.utils.utils import load_dailynews_data, load_polymarket_data, set_seed
@@ -108,12 +108,11 @@ def test_pipeline(args):
             news_importance.append({'news': n.model_dump(), 'score': s})
         t = r['t']
         market_id = r['market_id']
-        with jsonlines.open(os.path.join(args.output_dir, f'{market_id}_{t}_basicpredictor.json'), 'w') as writer:
+        with jsonlines.open(
+            os.path.join(args.output_dir, f'{market_id}_{t}_basicpredictor.json'), 'w'
+        ) as writer:
             for item in news_importance:
                 writer.write(item)
-
-
-
 
     # Initialize predictor
     predictor = BasicPredictor(
