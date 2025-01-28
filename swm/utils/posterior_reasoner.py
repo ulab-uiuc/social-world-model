@@ -163,7 +163,8 @@ class BasicPosteriorReasoner:
                     serialized_results = list(reader)
                 results = [
                     {'news': DailyNewsData.from_dict(r['news']), 'score': r['score']}
-                    for r in serialized_results if r['score'] > 0
+                    for r in serialized_results
+                    if r['score'] > 0
                 ]
                 if results == []:
                     return []
@@ -350,7 +351,9 @@ class BasicPosteriorReasoner:
 
         # Normalize scores and sort by score
         scored_news = [
-            {'news': news[r['news_id']], 'score': r['score'] / 100} for r in results if r['score'] > 0
+            {'news': news[r['news_id']], 'score': r['score'] / 100}
+            for r in results
+            if r['score'] > 0
         ]
         if len(scored_news) == 0:
             no_event = DailyNewsData(
