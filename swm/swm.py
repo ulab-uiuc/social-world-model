@@ -1,7 +1,7 @@
 # swm.py
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union
 
 import torch
 from peft import LoraConfig
@@ -11,10 +11,9 @@ from tqdm import tqdm
 from transformers import AutoTokenizer, Trainer, TrainingArguments
 
 from .data import PolyMarketData
-from .dataset import BasicPolyMarketDataset, RAGPolyMarketDataset
+from .dataset import BasicPolyMarketDataset, RAGPolyMarketDataset, BasicPolyMarketDatasetWithEventForPredictor
 from .predictor import BasicPredictor
 from .reasoner import BasicPriorReasoner
-from .utils.posterior_reasoner import BasicPosteriorReasoner
 from .utils.regressor import LLMRegressor, LLMRegressorConfig
 from .utils.retriever import SimilarityBasedPolyMarketRetriever
 
@@ -281,70 +280,63 @@ class BasicSocialWMWithEvent:
         self,
         predictor: BasicPredictor,
         prior_reasoner: BasicPriorReasoner,
-        posterior_reasoner: BasicPosteriorReasoner,
     ):
         self.predictor = predictor
         self.prior_reasoner = prior_reasoner
-        self.posterior_reasoner = posterior_reasoner
 
-    def infer(
+    def predict(
         self,
         markets: List[PolyMarketData],
         batch_size: int = 8,
-    ) -> Dict[str, Dict[str, Any]]:
-        # Get prior distributions using the prior reasoner
-        prior_results = self.prior_reasoner.predict(
+    ) -> Dict[str, Dict[str, float]]:
+        dataset = BasicPolyMarketDatasetWithEventForPredictor(
             markets=markets,
-            posterior_reasoner=self.posterior_reasoner,
+            tokenizer=self.tokenizer,
+            reasoner=self.reasoner,
+            cache_dir=self.cache_dir,
+        )
+        dataloader = DataLoader(
+            dataset,
             batch_size=batch_size,
+            shuffle=False,
+            collate_fn=self._create_collate_fn(),
         )
+        self.model.eval()
+        results = []
+        with torch.no_grad():
+            for batch in tqdm(dataloader, desc='Predicting Batches'):
+                input_ids = batch['input_ids'].to(self.model.llm.device)
+                attention_mask = batch['attention_mask'].to(self.model.llm.device)
+                labels = batch['labels'].to(self.model.llm.device)
+                weights = batch['weights'].to(self.model.llm.device)
+                group_ids = batch['group_ids'].to(self.model.llm.device)
 
-        # Get final predictions using the predictor
-        predictor_results = self.predictor.predict(
-            markets=markets, reasoner=self.prior_reasoner, batch_size=batch_size
-        )
-
-        # Combine results
-        combined_results = {}
-
-        # Process prior reasoner results
-        for result in prior_results:
-            market_id = result['market_id']
-            if market_id not in combined_results:
-                combined_results[market_id] = {
-                    'prior_distributions': [],
-                    'predictions': [],
-                    'timestamps': [],
-                }
-
-            combined_results[market_id]['prior_distributions'].append(
-                {
-                    'q_dist': result['q_dist'],
-                    'p_dist': result['p_dist'],
-                    'timestamp': result['t'],
-                }
-            )
-            combined_results[market_id]['timestamps'].append(result['t'])
-
-        # Process predictor results
-        for result in predictor_results:
-            market_id = result['market_id']
-            if market_id in combined_results:
-                combined_results[market_id]['predictions'].append(
-                    {
-                        'predicted_value': result['prediction'],
-                        'ground_truth': result.get('ground_truth'),
-                        'timestamp': result['t'],
+                for group_idx in range(
+                    len(batch['event_ids'])
+                ):  # Iterate over actual groups
+                    group_mask = group_ids == group_idx
+                    group_inputs = {
+                        'input_ids': input_ids[group_mask],
+                        'attention_mask': attention_mask[group_mask],
                     }
-                )
 
-        # Sort results by timestamp
-        for market_id in combined_results:
-            for key in ['prior_distributions', 'predictions']:
-                combined_results[market_id][key].sort(key=lambda x: x['timestamp'])
-            combined_results[market_id]['timestamps'].sort()
+                    group_preds = self.model(**group_inputs).view(-1)
 
-        return combined_results
+                    group_weights = weights[group_mask]
+                    group_weights = group_weights / group_weights.sum()
+
+                    weighted_pred = (group_preds * group_weights).sum()
+
+                    results.append(
+                        {
+                            'event_id': batch['event_ids'][group_idx],
+                            'market_id': batch['market_ids'][group_idx],
+                            't': batch['ts'][group_idx],
+                            'prediction': weighted_pred.item(),
+                            'ground_truth': labels[group_mask][0].item(),
+                        }
+                    )
+        return results
 
     def save_models(self, path: str) -> None:
         """Save all models to the specified path."""
