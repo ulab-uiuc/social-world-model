@@ -11,13 +11,7 @@ from tqdm import tqdm
 from transformers import AutoTokenizer, Trainer, TrainingArguments
 
 from .data import PolyMarketData
-from .dataset import (
-    BasicPolyMarketDataset,
-    BasicPolyMarketDatasetWithEventForPredictor,
-    RAGPolyMarketDataset,
-)
-from .predictor import BasicPredictor
-from .reasoner import BasicPriorReasoner
+from .dataset import BasicPolyMarketDataset, RAGPolyMarketDataset
 from .utils.regressor import LLMRegressor, LLMRegressorConfig
 from .utils.retriever import SimilarityBasedPolyMarketRetriever
 
@@ -277,77 +271,3 @@ class RAGSocialWM(BasicSocialWM):
     def load(self, path: str) -> None:
         self.model = LLMRegressor.from_pretrained(path)
         self.model.to('cuda' if torch.cuda.is_available() else 'cpu')
-
-
-class BasicSocialWMWithEvent:
-    def __init__(
-        self,
-        predictor: BasicPredictor,
-        prior_reasoner: BasicPriorReasoner,
-    ):
-        self.predictor = predictor
-        self.prior_reasoner = prior_reasoner
-
-    def predict(
-        self,
-        markets: List[PolyMarketData],
-        batch_size: int = 8,
-    ) -> Dict[str, Dict[str, float]]:
-        dataset = BasicPolyMarketDatasetWithEventForPredictor(
-            markets=markets,
-            tokenizer=self.tokenizer,
-            reasoner=self.reasoner,
-            cache_dir=self.cache_dir,
-        )
-        dataloader = DataLoader(
-            dataset,
-            batch_size=batch_size,
-            shuffle=False,
-            collate_fn=self._create_collate_fn(),
-        )
-        self.model.eval()
-        results = []
-        with torch.no_grad():
-            for batch in tqdm(dataloader, desc='Predicting Batches'):
-                input_ids = batch['input_ids'].to(self.model.llm.device)
-                attention_mask = batch['attention_mask'].to(self.model.llm.device)
-                labels = batch['labels'].to(self.model.llm.device)
-                weights = batch['weights'].to(self.model.llm.device)
-                group_ids = batch['group_ids'].to(self.model.llm.device)
-
-                for group_idx in range(
-                    len(batch['event_ids'])
-                ):  # Iterate over actual groups
-                    group_mask = group_ids == group_idx
-                    group_inputs = {
-                        'input_ids': input_ids[group_mask],
-                        'attention_mask': attention_mask[group_mask],
-                    }
-
-                    group_preds = self.model(**group_inputs).view(-1)
-
-                    group_weights = weights[group_mask]
-                    group_weights = group_weights / group_weights.sum()
-
-                    weighted_pred = (group_preds * group_weights).sum()
-
-                    results.append(
-                        {
-                            'event_id': batch['event_ids'][group_idx],
-                            'market_id': batch['market_ids'][group_idx],
-                            't': batch['ts'][group_idx],
-                            'prediction': weighted_pred.item(),
-                            'ground_truth': labels[group_mask][0].item(),
-                        }
-                    )
-        return results
-
-    def save_models(self, path: str) -> None:
-        """Save all models to the specified path."""
-        self.predictor.save(f'{path}/predictor')
-        self.prior_reasoner.save(f'{path}/prior_reasoner')
-
-    def load_models(self, path: str) -> None:
-        """Load all models from the specified path."""
-        self.predictor.load(f'{path}/predictor')
-        self.prior_reasoner.load(f'{path}/prior_reasoner')
