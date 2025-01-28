@@ -441,6 +441,7 @@ class BasicPolyMarketDatasetWithEventForReasoner(BaseDataset):
                 'input_ids': [],
                 'attention_mask': [],
                 'p_scores': [],
+                'news': [],
                 'label': None,
                 'market_id': None,
                 'event_id': None,
@@ -496,6 +497,7 @@ class BasicPolyMarketDatasetWithEventForReasoner(BaseDataset):
                         encoding['attention_mask'].squeeze(0)
                     )
                     grouped_points[key]['p_scores'].append(event['score'])
+                    grouped_points[key]['news'].append(event['news'])
 
         return [self._process_group(group) for group in grouped_points.values()]
 
@@ -506,6 +508,7 @@ class BasicPolyMarketDatasetWithEventForReasoner(BaseDataset):
             if scores_tensor.sum() > 1e-12
             else torch.ones_like(scores_tensor) / len(scores_tensor)
         )
+
 
         input_ids_tensor = pad_sequence(
             group['input_ids'],
@@ -526,6 +529,7 @@ class BasicPolyMarketDatasetWithEventForReasoner(BaseDataset):
             'market_id': group['market_id'],
             'event_id': group['event_id'],
             't': group['t'],
+            'news': group['news'],
         }
 
     def _build_prompt(
