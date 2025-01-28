@@ -160,8 +160,6 @@ class BasicPosteriorReasoner:
         cached_results = self._load_from_cache(cache_path)
         if cached_results is not None:
             return self._filter_for_return(cached_results)
-        else:
-            return []
 
         # Compute new results
         results = self._compute_reasoning(time, market)
