@@ -157,66 +157,75 @@ class BasicPosteriorReasoner:
         cache_path = self.cache_dir / f'{cache_key}.json'
 
         # Try to load from cache
-        if cache_path.exists():
-            try:
-                with jsonlines.open(cache_path, mode='r') as reader:
-                    serialized_results = list(reader)
-                results = [
-                    {'news': DailyNewsData.from_dict(r['news']), 'score': r['score']}
-                    for r in serialized_results
-                    if r['score'] > 0
-                ]
-                if results == []:
-                    return []
-                results = sorted(results, key=lambda x: x['score'], reverse=True)
-                max_score = results[0]['score'] if results else 0
-                date = datetime.strptime(convert_to_date(time), '%Y-%m-%d')
-                if max_score == 0:
-                    no_event = DailyNewsData(
-                        title='No significant news events found',
-                        description='No significant news events found',
-                        date=date,
-                    )
-                    results = [{'news': no_event, 'score': 1}]
-                    return results
-                else:
-                    return results[: self.max_news_items]
-            except (json.JSONDecodeError, IOError):
-                pass
+        cached_results = self._load_from_cache(cache_path)
+        if cached_results is not None:
+            return self._filter_for_return(cached_results)
 
         # Compute new results
         results = self._compute_reasoning(time, market)
-        if not results:
-            return []
+        if results is None:  # No price change or news found
+            results = []
 
-        # Cache the results
+        # Cache all results, including zero scores
+        self._save_to_cache(cache_path, results, time, market.market_id)
+
+        # Filter zero scores for return
+        return self._filter_for_return(results)
+
+    def _load_from_cache(
+        self, cache_path: Path
+    ) -> Optional[List[Dict[str, Any]]]:
+        """Load and deserialize cached results."""
+        if not cache_path.exists():
+            return None
+
+        try:
+            with jsonlines.open(cache_path, mode='r') as reader:
+                serialized_results = list(reader)
+                results = [
+                    {
+                        'news': DailyNewsData.from_dict(r['news']),
+                        'score': r['score']
+                    }
+                    for r in serialized_results
+                ]
+                return results
+        except (json.JSONDecodeError, IOError) as e:
+            print(f'Error loading cache from {cache_path}: {e}')
+            return None
+
+    def _save_to_cache(
+        self,
+        cache_path: Path,
+        results: List[Dict[str, Any]],
+        time: Union[str, int],
+        market_id: str
+    ) -> None:
+        """Save results to cache, including zero scores."""
         try:
             serialized_results = [
                 {
                     'news': r['news'].model_dump(),
                     'score': r['score'],
                     'time': time,
-                    'market': market.market_id,
+                    'market': market_id,
                 }
                 for r in results
             ]
+            if len(serialized_results) == 0:
+                return
             with jsonlines.open(cache_path, mode='w') as writer:
                 writer.write_all(serialized_results)
-        except IOError:
-            print(f'Error writing cache for {cache_key}')
+        except IOError as e:
+            print(f'Error writing cache to {cache_path}: {e}')
 
-        max_score = results[0]['score']
-        date = datetime.strptime(convert_to_date(time), '%Y-%m-%d')
-        if max_score == 0:
-            no_event = DailyNewsData(
-                title='No significant news events found',
-                description='No significant news events found',
-                date=date,
-            )
-            results = [{'news': no_event, 'score': 1}]
-            return results
-        else:
-            return results[: self.max_news_items]
+    def _filter_for_return(
+        self, results: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """Filter and limit results for return to caller."""
+        # Filter out zero scores and apply max_news_items limit
+        filtered_results = [r for r in results if r['score'] > 0]
+        return filtered_results[:self.max_news_items]
 
     def _compute_reasoning(
         self, time: Union[str, int], market: PolyMarketData
@@ -353,14 +362,5 @@ class BasicPosteriorReasoner:
         scored_news = [
             {'news': news[r['news_id']], 'score': r['score'] / 100}
             for r in results
-            if r['score'] > 0
         ]
-        if len(scored_news) == 0:
-            no_event = DailyNewsData(
-                title='No significant news events found',
-                description='No significant news events found',
-                date=convert_to_date(results[0]['time']),
-            )
-            scored_news = [{'news': no_event, 'score': 1}]
-        else:
-            return sorted(scored_news, key=lambda x: x['score'], reverse=True)
+        return sorted(scored_news, key=lambda x: x['score'], reverse=True)
