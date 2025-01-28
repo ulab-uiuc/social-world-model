@@ -1,5 +1,16 @@
+CUDA_VISIBLE_DEVICES=8 python test_basicpriorreasoner.py \
+--test-data-path ../data/splitted_polymarket/polymarket_data_processed_Crypto_test.jsonl \
+--corpus-news-path ../data/processed_dailynews/dailynews_data_processed.jsonl \
+--model-checkpoint ../saves/saves_crypto_basicpriorreasoner/checkpoint-best \
+--output-dir ../saves/saves_crypto_basicpriorreasoner \
+--cache-dir ../cache/cache_crypto_basicpriorreasoner \
+--test-batch-size 1 \
+--reasoner-max-news-items 10
+
+
+
 # sanity check
-CUDA_VISIBLE_DEVICES=3 python test_basicpriorreasoner.py \
+CUDA_VISIBLE_DEVICES=8 python test_basicpriorreasoner.py \
 --test-data-path ../data/splitted_polymarket/polymarket_data_processed_Crypto_test.jsonl \
 --corpus-news-path ../data/processed_dailynews/dailynews_data_processed.jsonl \
 --model-checkpoint ../saves/saves_crypto_basicpriorreasoner_sanitycheck/checkpoint-best \
