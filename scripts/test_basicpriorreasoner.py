@@ -36,7 +36,7 @@ def parse_args():
     parser.add_argument('--r', type=int, default=16)
 
     # Reasoner configs
-    parser.add_argument('--reasoner-name', type=str, default='gpt-4')
+    parser.add_argument('--reasoner-name', type=str, default='gpt-4o')
     parser.add_argument('--reasoner-max-news-items', type=int, default=10)
 
     # Debug
@@ -83,6 +83,7 @@ def test_prior_reasoner(args):
         model_name=args.reasoner_name,
         max_news_items=args.reasoner_max_news_items,
         corpus_news=corpus_news,
+        cache_dir=args.cache_dir,
     )
 
     # Run predictions
@@ -117,7 +118,7 @@ def test_prior_reasoner(args):
     # Print metrics to console
     print('Test Metrics:')
     for metric, value in metrics.items():
-        print(f'{metric}: {value:.4f}')
+        print(f'{metric}: {value}')
 
 
 if __name__ == '__main__':

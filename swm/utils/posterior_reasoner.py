@@ -161,10 +161,26 @@ class BasicPosteriorReasoner:
             try:
                 with jsonlines.open(cache_path, mode='r') as reader:
                     serialized_results = list(reader)
-                return [
+                results = [
                     {'news': DailyNewsData.from_dict(r['news']), 'score': r['score']}
                     for r in serialized_results
+                    if r['score'] > 0
                 ]
+                if results == []:
+                    return []
+                results = sorted(results, key=lambda x: x['score'], reverse=True)
+                max_score = results[0]['score'] if results else 0
+                date = datetime.strptime(convert_to_date(time), '%Y-%m-%d')
+                if max_score == 0:
+                    no_event = DailyNewsData(
+                        title='No significant news events found',
+                        description='No significant news events found',
+                        date=date,
+                    )
+                    results = [{'news': no_event, 'score': 1}]
+                    return results
+                else:
+                    return results[: self.max_news_items]
             except (json.JSONDecodeError, IOError):
                 pass
 
@@ -187,9 +203,20 @@ class BasicPosteriorReasoner:
             with jsonlines.open(cache_path, mode='w') as writer:
                 writer.write_all(serialized_results)
         except IOError:
-            pass
+            print(f'Error writing cache for {cache_key}')
 
-        return results[: self.max_news_items]
+        max_score = results[0]['score']
+        date = datetime.strptime(convert_to_date(time), '%Y-%m-%d')
+        if max_score == 0:
+            no_event = DailyNewsData(
+                title='No significant news events found',
+                description='No significant news events found',
+                date=date,
+            )
+            results = [{'news': no_event, 'score': 1}]
+            return results
+        else:
+            return results[: self.max_news_items]
 
     def _compute_reasoning(
         self, time: Union[str, int], market: PolyMarketData
@@ -324,6 +351,16 @@ class BasicPosteriorReasoner:
 
         # Normalize scores and sort by score
         scored_news = [
-            {'news': news[r['news_id']], 'score': r['score'] / 100} for r in results
+            {'news': news[r['news_id']], 'score': r['score'] / 100}
+            for r in results
+            if r['score'] > 0
         ]
-        return sorted(scored_news, key=lambda x: x['score'], reverse=True)
+        if len(scored_news) == 0:
+            no_event = DailyNewsData(
+                title='No significant news events found',
+                description='No significant news events found',
+                date=convert_to_date(results[0]['time']),
+            )
+            scored_news = [{'news': no_event, 'score': 1}]
+        else:
+            return sorted(scored_news, key=lambda x: x['score'], reverse=True)
