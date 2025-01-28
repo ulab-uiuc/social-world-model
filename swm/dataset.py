@@ -256,7 +256,7 @@ class BasicPolyMarketDatasetWithEventForPredictor(BaseDataset):
         reasoner: Any,
         cache_dir: str = './cache',
         window_size: int = 5,
-        use_cache: bool = True,
+        use_cache: bool = False,
     ):
         super().__init__(cache_dir=cache_dir, use_cache=use_cache)
         self.reasoner = reasoner
@@ -305,7 +305,6 @@ class BasicPolyMarketDatasetWithEventForPredictor(BaseDataset):
 
                 events = self.reasoner.reason(current_ts, market)
                 for event in events:
-                    # Generate prompt and tokenize immediately
                     prompt = self._build_prompt(market, window, target, event['news'])
                     encoding = self.tokenizer(
                         prompt,
@@ -382,9 +381,7 @@ class BasicPolyMarketDatasetWithEventForPredictor(BaseDataset):
 
         target_date = unix_to_date(target_data['t'])
         news_content = (
-            f'The date of the news is {news.date}.\n'
-            f'The title is {news.title}.\n'
-            f'{news.description}'
+            f'The news description: {news.description}'
         )
         lines.append(
             f'\nPlease predict the possibility to happen at date {target_date} based on the following news:\n{news_content}'
@@ -419,7 +416,7 @@ class BasicPolyMarketDatasetWithEventForReasoner(BaseDataset):
         reasoner: Any,
         cache_dir: str = './cache',
         window_size: int = 5,
-        use_cache: bool = True,
+        use_cache: bool = False,
     ):
         super().__init__(cache_dir=cache_dir, use_cache=use_cache)
         self.reasoner = reasoner
@@ -467,19 +464,9 @@ class BasicPolyMarketDatasetWithEventForReasoner(BaseDataset):
                 current_ts = window[-1]['t']
 
                 events = self.reasoner.reason(current_ts, market)
-                if not events:
-                    continue
 
-                key = (market.market_id, target['t'])
-                if grouped_points[key]['label'] is None:
-                    grouped_points[key].update(
-                        {
-                            'label': torch.tensor(target['p'], dtype=torch.float),
-                            'market_id': market.market_id,
-                            'event_id': market.event_id,
-                            't': target['t'],
-                        }
-                    )
+                if len(events) <= 1: # for KL loss, the distribution should at least have 2 elements
+                    continue
 
                 for event in events:
                     prompt = self._build_prompt(market, window, target, event['news'])
@@ -490,6 +477,17 @@ class BasicPolyMarketDatasetWithEventForReasoner(BaseDataset):
                         return_tensors='pt',
                         return_attention_mask=True,
                     )
+
+                    key = (market.market_id, target['t'])
+                    if grouped_points[key]['label'] is None:
+                        grouped_points[key].update(
+                            {
+                                'label': torch.tensor(target['p'], dtype=torch.float),
+                                'market_id': market.market_id,
+                                'event_id': market.event_id,
+                                't': target['t'],
+                            }
+                        )
 
                     grouped_points[key]['input_ids'].append(
                         encoding['input_ids'].squeeze(0)

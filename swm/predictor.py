@@ -56,14 +56,17 @@ class WeightedTrainer(Trainer):
         group_ids = inputs.pop('group_ids')
 
         total_loss = 0
+        num_valid_groups = 0
         for group in torch.unique(group_ids):
             group_indices = torch.where(group_ids == group)[0]
             loss, _, _ = self._process_group(
                 model, inputs, weights, group_indices, labels
             )
-            total_loss += loss
+            if not torch.isnan(loss) and not torch.isinf(loss):
+                total_loss += loss
+                num_valid_groups += 1
 
-        return total_loss / len(torch.unique(group_ids))
+        return total_loss / max(num_valid_groups, 1)
 
     def prediction_step(self, model, inputs, prediction_loss_only, ignore_keys=None):
         labels = inputs.pop('labels')
@@ -76,9 +79,11 @@ class WeightedTrainer(Trainer):
             loss, pred, label = self._process_group(
                 model, inputs, weights, group_indices, labels, is_prediction=True
             )
-            all_losses.append(loss)
-            all_preds.append(pred)
-            all_labels.append(label)
+
+            if not torch.isnan(loss) and not torch.isinf(loss):
+                all_losses.append(loss)
+                all_preds.append(pred)
+                all_labels.append(label)
 
         return (
             torch.stack(all_losses).mean(),

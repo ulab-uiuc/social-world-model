@@ -273,54 +273,80 @@ class RAGSocialWM(BasicSocialWM):
         self.model.to('cuda' if torch.cuda.is_available() else 'cpu')
 
 
-"""
 class BasicSocialWMWithEvent:
     def __init__(
         self,
         predictor: BasicPredictor,
-        reasoner: BasicPriorReasoner,
+        prior_reasoner: BasicPriorReasoner,
+        posterior_reasoner: BasicPosteriorReasoner,
     ):
         self.predictor = predictor
-        self.reasoner = reasoner
+        self.prior_reasoner = prior_reasoner
+        self.posterior_reasoner = posterior_reasoner
 
-    def analyze_and_predict(
+    def infer(
         self,
         markets: List[PolyMarketData],
-        news_data: List[DailyNewsData],
-        date: str,
+        batch_size: int = 8,
     ) -> Dict[str, Dict[str, Any]]:
-        # Get market changes for reasoning
-        market_changes = []
-        for market in markets:
-            if not market.daily_time_series or 'Yes' not in market.daily_time_series:
-                continue
-            series = market.daily_time_series['Yes']
-            for i, point in enumerate(series):
-                if datetime.fromtimestamp(point['t']).strftime('%Y-%m-%d') == date:
-                    if i > 0:
-                        change = {
-                            'market': market,
-                            'prev_point': series[i - 1],
-                            'current_point': point,
-                        }
-                        market_changes.append(change)
-                    break
+        # Get prior distributions using the prior reasoner
+        prior_results = self.prior_reasoner.predict(
+            markets=markets,
+            posterior_reasoner=self.posterior_reasoner,
+            batch_size=batch_size
+        )
 
-        # Get news importance weights
-        reasoning_results = self.reasoner.analyze(news_data, market_changes, date)
-
-        # Use predictor with weighted news
-        prediction_results = self.predictor.predict(markets, reasoning_results)
+        # Get final predictions using the predictor
+        predictor_results = self.predictor.predict(
+            markets=markets,
+            reasoner=self.prior_reasoner,
+            batch_size=batch_size
+        )
 
         # Combine results
         combined_results = {}
-        for market_id, predictions in prediction_results.items():
-            combined_results[market_id] = {
-                'predictions': predictions,
-                'news_weights': {
-                    result['news'].id: result['score'] for result in reasoning_results
-                },
-            }
+        
+        # Process prior reasoner results
+        for result in prior_results:
+            market_id = result['market_id']
+            if market_id not in combined_results:
+                combined_results[market_id] = {
+                    'prior_distributions': [],
+                    'predictions': [],
+                    'timestamps': []
+                }
+            
+            combined_results[market_id]['prior_distributions'].append({
+                'q_dist': result['q_dist'],
+                'p_dist': result['p_dist'],
+                'timestamp': result['t']
+            })
+            combined_results[market_id]['timestamps'].append(result['t'])
+
+        # Process predictor results
+        for result in predictor_results:
+            market_id = result['market_id']
+            if market_id in combined_results:
+                combined_results[market_id]['predictions'].append({
+                    'predicted_value': result['prediction'],
+                    'ground_truth': result.get('ground_truth'),
+                    'timestamp': result['t']
+                })
+
+        # Sort results by timestamp
+        for market_id in combined_results:
+            for key in ['prior_distributions', 'predictions']:
+                combined_results[market_id][key].sort(key=lambda x: x['timestamp'])
+            combined_results[market_id]['timestamps'].sort()
 
         return combined_results
-"""
+
+    def save_models(self, path: str) -> None:
+        """Save all models to the specified path."""
+        self.predictor.save(f"{path}/predictor")
+        self.prior_reasoner.save(f"{path}/prior_reasoner")
+        
+    def load_models(self, path: str) -> None:
+        """Load all models from the specified path."""
+        self.predictor.load(f"{path}/predictor")
+        self.prior_reasoner.load(f"{path}/prior_reasoner")
