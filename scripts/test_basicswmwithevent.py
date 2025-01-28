@@ -139,7 +139,6 @@ def test_pipeline(args):
         markets=test_data, reasoner=posterior_reasoner, batch_size=args.test_batch_size
     )
 
-    import pdb; pdb.set_trace()
     # Calculate metrics
     predictions = [r['prediction'] for r in results]
     ground_truth = [r['ground_truth'] for r in results]
