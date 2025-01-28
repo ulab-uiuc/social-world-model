@@ -545,8 +545,6 @@ class BasicPolyMarketDatasetWithEventForReasoner(BaseDataset):
                 for day in window_data
             ],
             f'\nWe want to predict the possibility on {unix_to_date(target_data["t"])} based on this news:',
-            f'News date: {news.date}',
-            f'Title: {news.title}',
             f'Description: {news.description}',
             "\nRate how relevant this news is (0-100) to the next day's price.\n",
         ]
