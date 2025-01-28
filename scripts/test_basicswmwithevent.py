@@ -4,6 +4,9 @@ from pathlib import Path
 import pandas as pd
 from peft import LoraConfig
 
+import jsonlines
+import os
+from swm.reasoner import BasicPriorReasoner
 from swm.predictor import BasicPredictor
 from swm.utils.metric import calculate_reg_metric
 from swm.utils.posterior_reasoner import BasicPosteriorReasoner
@@ -68,7 +71,6 @@ def test_pipeline(args):
         task_type='CAUSAL_LM',
     )
 
-    """
     # Initialize prior reasoner
     prior_reasoner = BasicPriorReasoner(
         model_name=args.model_name,
@@ -106,10 +108,12 @@ def test_pipeline(args):
             news_importance.append({'news': n.model_dump(), 'score': s})
         t = r['t']
         market_id = r['market_id']
-        with jsonlines.open(os.path.join(args.output_dir, f'{market_id}_{t}_basicpredictor.jsonl'), 'w') as writer:
+        with jsonlines.open(os.path.join(args.output_dir, f'{market_id}_{t}_basicpredictor.json'), 'w') as writer:
             for item in news_importance:
                 writer.write(item)
-    """
+
+
+
 
     # Initialize predictor
     predictor = BasicPredictor(
@@ -124,7 +128,7 @@ def test_pipeline(args):
 
     # Setup reasoner
     posterior_reasoner = BasicPosteriorReasoner(
-        model_name=args.reasoner_name,
+        model_name='basicpredictor',
         max_news_items=args.reasoner_max_news_items,
         corpus_news=corpus_news,
         cache_dir=args.output_dir,

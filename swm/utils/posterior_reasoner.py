@@ -50,7 +50,7 @@ class BasicPosteriorReasoner:
 
     def _get_cache_key(self, time: str, market_id: str) -> str:
         """Generate a unique cache key for the given time and market."""
-        key = f'{market_id}_{time}_basicpredictor'
+        key = f'{market_id}_{time}_{self.model_name}'
         return key
 
     def _get_historical_data(
@@ -154,7 +154,7 @@ class BasicPosteriorReasoner:
     ) -> List[Dict[str, Any]]:
         """Main reasoning method with caching."""
         cache_key = self._get_cache_key(str(time), market.market_id)
-        cache_path = self.cache_dir / f'{cache_key}.jsonl'
+        cache_path = self.cache_dir / f'{cache_key}.json'
 
         # Try to load from cache
         cached_results = self._load_from_cache(cache_path)
