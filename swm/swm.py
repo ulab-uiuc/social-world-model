@@ -1,7 +1,7 @@
 # swm.py
 
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union, Any
 
 import torch
 from peft import LoraConfig
@@ -12,6 +12,9 @@ from transformers import AutoTokenizer, Trainer, TrainingArguments
 
 from .data import PolyMarketData
 from .dataset import BasicPolyMarketDataset, RAGPolyMarketDataset
+from .predictor import BasicPredictor
+from .reasoner import BasicPriorReasoner
+from .utils.posterior_reasoner import BasicPosteriorReasoner
 from .utils.regressor import LLMRegressor, LLMRegressorConfig
 from .utils.retriever import SimilarityBasedPolyMarketRetriever
 
@@ -293,19 +296,17 @@ class BasicSocialWMWithEvent:
         prior_results = self.prior_reasoner.predict(
             markets=markets,
             posterior_reasoner=self.posterior_reasoner,
-            batch_size=batch_size
+            batch_size=batch_size,
         )
 
         # Get final predictions using the predictor
         predictor_results = self.predictor.predict(
-            markets=markets,
-            reasoner=self.prior_reasoner,
-            batch_size=batch_size
+            markets=markets, reasoner=self.prior_reasoner, batch_size=batch_size
         )
 
         # Combine results
         combined_results = {}
-        
+
         # Process prior reasoner results
         for result in prior_results:
             market_id = result['market_id']
@@ -313,25 +314,29 @@ class BasicSocialWMWithEvent:
                 combined_results[market_id] = {
                     'prior_distributions': [],
                     'predictions': [],
-                    'timestamps': []
+                    'timestamps': [],
                 }
-            
-            combined_results[market_id]['prior_distributions'].append({
-                'q_dist': result['q_dist'],
-                'p_dist': result['p_dist'],
-                'timestamp': result['t']
-            })
+
+            combined_results[market_id]['prior_distributions'].append(
+                {
+                    'q_dist': result['q_dist'],
+                    'p_dist': result['p_dist'],
+                    'timestamp': result['t'],
+                }
+            )
             combined_results[market_id]['timestamps'].append(result['t'])
 
         # Process predictor results
         for result in predictor_results:
             market_id = result['market_id']
             if market_id in combined_results:
-                combined_results[market_id]['predictions'].append({
-                    'predicted_value': result['prediction'],
-                    'ground_truth': result.get('ground_truth'),
-                    'timestamp': result['t']
-                })
+                combined_results[market_id]['predictions'].append(
+                    {
+                        'predicted_value': result['prediction'],
+                        'ground_truth': result.get('ground_truth'),
+                        'timestamp': result['t'],
+                    }
+                )
 
         # Sort results by timestamp
         for market_id in combined_results:
@@ -343,10 +348,10 @@ class BasicSocialWMWithEvent:
 
     def save_models(self, path: str) -> None:
         """Save all models to the specified path."""
-        self.predictor.save(f"{path}/predictor")
-        self.prior_reasoner.save(f"{path}/prior_reasoner")
-        
+        self.predictor.save(f'{path}/predictor')
+        self.prior_reasoner.save(f'{path}/prior_reasoner')
+
     def load_models(self, path: str) -> None:
         """Load all models from the specified path."""
-        self.predictor.load(f"{path}/predictor")
-        self.prior_reasoner.load(f"{path}/prior_reasoner")
+        self.predictor.load(f'{path}/predictor')
+        self.prior_reasoner.load(f'{path}/prior_reasoner')

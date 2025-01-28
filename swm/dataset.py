@@ -380,9 +380,7 @@ class BasicPolyMarketDatasetWithEventForPredictor(BaseDataset):
             )
 
         target_date = unix_to_date(target_data['t'])
-        news_content = (
-            f'The news description: {news.description}'
-        )
+        news_content = f'The news description: {news.description}'
         lines.append(
             f'\nPlease predict the possibility to happen at date {target_date} based on the following news:\n{news_content}'
         )
@@ -465,7 +463,9 @@ class BasicPolyMarketDatasetWithEventForReasoner(BaseDataset):
 
                 events = self.reasoner.reason(current_ts, market)
 
-                if len(events) <= 1: # for KL loss, the distribution should at least have 2 elements
+                if (
+                    len(events) <= 1
+                ):  # for KL loss, the distribution should at least have 2 elements
                     continue
 
                 for event in events:
