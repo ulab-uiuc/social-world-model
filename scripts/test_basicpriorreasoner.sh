@@ -4,7 +4,7 @@ CUDA_VISIBLE_DEVICES=8 python test_basicpriorreasoner.py \
 --model-checkpoint ../saves/saves_crypto_basicpriorreasoner/checkpoint-best \
 --output-dir ../saves/saves_crypto_basicpriorreasoner \
 --cache-dir ../cache/cache_crypto_basicpriorreasoner \
---test-batch-size 1 \
+--test-batch-size 2 \
 --reasoner-max-news-items 10
 
 
