@@ -34,10 +34,10 @@ class BasicPosteriorReasoner:
     def __init__(
         self,
         corpus_news: List[DailyNewsData],
-        model_name: str = 'gpt-4o-mini',
-        max_news_items: int = 10,
+        model_name: str,
+        max_news_items: int,
+        cache_dir: str,
         change_threshold: float = 0.25,
-        cache_dir: str = './reasoning_cache',
         history_days: int = 5,
     ):
         self.news_filter = TimeBasedDailyNewsFilter(corpus_news)

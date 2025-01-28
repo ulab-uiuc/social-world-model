@@ -82,6 +82,7 @@ def test_predictor(args):
         model_name=args.reasoner_name,
         max_news_items=args.reasoner_max_news_items,
         corpus_news=corpus_news,
+        cache_dir=args.cache_dir,
     )
 
     # Run predictions

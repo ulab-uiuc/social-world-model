@@ -16,7 +16,7 @@ from .utils.utils import unix_to_date
 
 
 class BaseDataset(Dataset):
-    def __init__(self, cache_dir: str = './cache', use_cache: bool = True):
+    def __init__(self, cache_dir: str, use_cache: bool = True):
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(exist_ok=True)
         self.use_cache = use_cache
@@ -60,7 +60,7 @@ class BasicPolyMarketDataset(BaseDataset):
         self,
         markets: List['PolyMarketData'],
         tokenizer: PreTrainedTokenizer,
-        cache_dir: str = './cache',
+        cache_dir: str,
         window_size: int = 5,
         use_cache: bool = True,
     ):
@@ -144,7 +144,7 @@ class RAGPolyMarketDataset(BasicPolyMarketDataset):
         markets: List['PolyMarketData'],
         similar_markets: Dict[str, List['PolyMarketData']],
         tokenizer: PreTrainedTokenizer,
-        cache_dir: str = './cache',
+        cache_dir: str,
         window_size: int = 5,
         max_sim_markets: int = 3,
         use_cache: bool = True,
@@ -254,7 +254,7 @@ class BasicPolyMarketDatasetWithEventForPredictor(BaseDataset):
         markets: List['PolyMarketData'],
         tokenizer: PreTrainedTokenizer,
         reasoner: Any,
-        cache_dir: str = './cache',
+        cache_dir: str,
         window_size: int = 5,
         use_cache: bool = False,
     ):
@@ -412,7 +412,7 @@ class BasicPolyMarketDatasetWithEventForReasoner(BaseDataset):
         markets: List[PolyMarketData],
         tokenizer: PreTrainedTokenizer,
         reasoner: Any,
-        cache_dir: str = './cache',
+        cache_dir: str,
         window_size: int = 5,
         use_cache: bool = False,
     ):
