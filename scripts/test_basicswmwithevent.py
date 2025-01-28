@@ -1,14 +1,11 @@
 import argparse
 from pathlib import Path
 
-import os
 import pandas as pd
 from peft import LoraConfig
-import jsonlines
 
-from swm.reasoner import BasicPriorReasoner
 from swm.predictor import BasicPredictor
-from swm.utils.metric import calculate_kl_divergence, calculate_reg_metric
+from swm.utils.metric import calculate_reg_metric
 from swm.utils.posterior_reasoner import BasicPosteriorReasoner
 from swm.utils.utils import load_dailynews_data, load_polymarket_data, set_seed
 
@@ -71,7 +68,7 @@ def test_pipeline(args):
         task_type='CAUSAL_LM',
     )
 
-    '''
+    """
     # Initialize prior reasoner
     prior_reasoner = BasicPriorReasoner(
         model_name=args.model_name,
@@ -112,7 +109,7 @@ def test_pipeline(args):
         with jsonlines.open(os.path.join(args.output_dir, f'{market_id}_{t}_basicpredictor.jsonl'), 'w') as writer:
             for item in news_importance:
                 writer.write(item)
-    '''
+    """
 
     # Initialize predictor
     predictor = BasicPredictor(
@@ -153,6 +150,7 @@ def test_pipeline(args):
     print('Test Metrics:')
     for metric, value in metrics.items():
         print(f'{metric}: {value:.4f}')
+
 
 if __name__ == '__main__':
     args = parse_args()

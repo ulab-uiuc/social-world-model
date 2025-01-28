@@ -509,7 +509,6 @@ class BasicPolyMarketDatasetWithEventForReasoner(BaseDataset):
             else torch.ones_like(scores_tensor) / len(scores_tensor)
         )
 
-
         input_ids_tensor = pad_sequence(
             group['input_ids'],
             batch_first=True,
