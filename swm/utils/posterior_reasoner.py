@@ -172,9 +172,7 @@ class BasicPosteriorReasoner:
         # Filter zero scores for return
         return self._filter_for_return(results)
 
-    def _load_from_cache(
-        self, cache_path: Path
-    ) -> Optional[List[Dict[str, Any]]]:
+    def _load_from_cache(self, cache_path: Path) -> Optional[List[Dict[str, Any]]]:
         """Load and deserialize cached results."""
         if not cache_path.exists():
             return None
@@ -183,10 +181,7 @@ class BasicPosteriorReasoner:
             with jsonlines.open(cache_path, mode='r') as reader:
                 serialized_results = list(reader)
                 results = [
-                    {
-                        'news': DailyNewsData.from_dict(r['news']),
-                        'score': r['score']
-                    }
+                    {'news': DailyNewsData.from_dict(r['news']), 'score': r['score']}
                     for r in serialized_results
                 ]
                 return results
@@ -199,7 +194,7 @@ class BasicPosteriorReasoner:
         cache_path: Path,
         results: List[Dict[str, Any]],
         time: Union[str, int],
-        market_id: str
+        market_id: str,
     ) -> None:
         """Save results to cache, including zero scores."""
         try:
@@ -219,13 +214,11 @@ class BasicPosteriorReasoner:
         except IOError as e:
             print(f'Error writing cache to {cache_path}: {e}')
 
-    def _filter_for_return(
-        self, results: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+    def _filter_for_return(self, results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Filter and limit results for return to caller."""
         # Filter out zero scores and apply max_news_items limit
         filtered_results = [r for r in results if r['score'] > 0]
-        return filtered_results[:self.max_news_items]
+        return filtered_results[: self.max_news_items]
 
     def _compute_reasoning(
         self, time: Union[str, int], market: PolyMarketData
@@ -360,7 +353,6 @@ class BasicPosteriorReasoner:
 
         # Normalize scores and sort by score
         scored_news = [
-            {'news': news[r['news_id']], 'score': r['score'] / 100}
-            for r in results
+            {'news': news[r['news_id']], 'score': r['score'] / 100} for r in results
         ]
         return sorted(scored_news, key=lambda x: x['score'], reverse=True)
