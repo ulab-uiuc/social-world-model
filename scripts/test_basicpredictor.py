@@ -93,6 +93,8 @@ def test_predictor(args):
     # Calculate metrics
     predictions = [r['prediction'] for r in results]
     ground_truth = [r['ground_truth'] for r in results]
+
+    import pdb; pdb.set_trace()
     metrics = calculate_reg_metric(predictions, ground_truth)
 
     # Save results

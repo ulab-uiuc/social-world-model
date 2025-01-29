@@ -217,7 +217,7 @@ class BasicPosteriorReasoner:
     def _filter_for_return(self, results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Filter and limit results for return to caller."""
         # Filter out zero scores and apply max_news_items limit
-        filtered_results = [r for r in results if r['score'] > 0]
+        filtered_results = results
         return filtered_results[: self.max_news_items]
 
     def _compute_reasoning(
@@ -353,6 +353,6 @@ class BasicPosteriorReasoner:
 
         # Normalize scores and sort by score
         scored_news = [
-            {'news': news[r['news_id']], 'score': r['score'] / 100} for r in results
+            {'news': news[r['news_id']], 'score': r['score'] / 100 + 1e-6} for r in results
         ]
         return sorted(scored_news, key=lambda x: x['score'], reverse=True)

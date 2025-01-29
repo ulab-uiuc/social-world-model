@@ -40,6 +40,7 @@ class BaseDataset(Dataset):
                     pickle.dump(datapoints, f)
             except Exception as e:
                 print(f'Cache saving failed: {e}')
+        print(f'Created {len(datapoints)} datapoints')
         return datapoints
 
     def _compute_hash(self) -> str:
