@@ -22,6 +22,7 @@ class BasicSocialWM:
         model_name: str,
         cache_dir: str,
         max_seq_length: int = 512,
+        window_size: int = 5,
         lora_config: Optional[LoraConfig] = None,
     ):
         self.model_name = model_name
@@ -154,6 +155,7 @@ class RAGSocialWM(BasicSocialWM):
         model_name: str,
         retriever_name: str,
         cache_dir: str,
+        window_size: int,
         lora_config: Optional[LoraConfig] = None,
         corpus_markets: Optional[List[PolyMarketData]] = None,
         max_seq_length: int = 512,
@@ -165,6 +167,7 @@ class RAGSocialWM(BasicSocialWM):
             cache_dir=cache_dir,
             max_seq_length=max_seq_length,
             lora_config=lora_config,
+            window_size=window_size,
         )
         self.retriever_name = retriever_name
         self.retriever_top_k = retriever_top_k

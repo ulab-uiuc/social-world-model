@@ -38,6 +38,7 @@ def parse_args():
     parser.add_argument('--reasoner-max-news-items', type=int, default=10)
     parser.add_argument('--sanity-check', action='store_true')
     parser.add_argument('--reasoner-cache-dir', type=str, default='./cache')
+    parser.add_argument('--window-size', type=int, default=5)
     return parser.parse_args()
 
 
@@ -66,6 +67,7 @@ def train(args):
         cache_dir=args.cache_dir,
         max_seq_length=args.max_seq_length,
         lora_config=lora_config,
+        window_size=args.window_size,
     )
 
     training_args = TrainingArguments(
