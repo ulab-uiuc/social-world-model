@@ -93,6 +93,7 @@ def test_pipeline(args):
     # Run predictions
     # Depending on your prior reasoner’s `predict` signature,
     # you might do something like:
+
     results = prior_reasoner.predict(
         markets=test_data,
         posterior_reasoner=posterior_reasoner,

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 import torch
+import os
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import Dataset
 from tqdm import tqdm
@@ -303,8 +304,11 @@ class BasicPolyMarketDatasetWithEventForPredictor(BaseDataset):
                 window = series[start_idx : start_idx + self.window_size]
                 target = series[start_idx + self.window_size]
                 current_ts = window[-1]['t']
+                target_ts = target['t']
 
-                events = self.reasoner.reason(current_ts, market)
+
+                # TODO: temporary fix for the reasoner for pipeline building
+                events = self.reasoner.reason(target_ts, market)
                 for event in events:
                     prompt = self._build_prompt(market, window, target, event['news'])
                     encoding = self.tokenizer(
@@ -465,10 +469,10 @@ class BasicPolyMarketDatasetWithEventForReasoner(BaseDataset):
 
                 events = self.reasoner.reason(current_ts, market)
 
-                if (
-                    len(events) <= 1
-                ):  # for KL loss, the distribution should at least have 2 elements
-                    continue
+                #if (
+                #    len(events) <= 1
+                #):  # for KL loss, the distribution should at least have 2 elements
+                #    continue
 
                 for event in events:
                     prompt = self._build_prompt(market, window, target, event['news'])
