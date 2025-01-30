@@ -34,7 +34,10 @@ def main():
     markets = load_polymarket_data(args.market_path)
 
     reasoner = BasicPosteriorReasoner(
-        corpus_news=news, model_name=args.model_name, max_news_items=args.max_news, cache_dir=args.cache_dir
+        corpus_news=news,
+        model_name=args.model_name,
+        max_news_items=args.max_news,
+        cache_dir=args.cache_dir,
     )
 
     results = []

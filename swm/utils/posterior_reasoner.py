@@ -353,6 +353,7 @@ class BasicPosteriorReasoner:
 
         # Normalize scores and sort by score
         scored_news = [
-            {'news': news[r['news_id']], 'score': r['score'] / 100 + 1e-6} for r in results
+            {'news': news[r['news_id']], 'score': r['score'] / 100 + 1e-6}
+            for r in results
         ]
         return sorted(scored_news, key=lambda x: x['score'], reverse=True)
