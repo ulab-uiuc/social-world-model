@@ -112,6 +112,10 @@ class BasicSocialWM:
             collate_fn=self._create_collate_fn(),
         )
 
+        if self.model is None:
+            self.setup_model()
+            self.model.to('cuda' if torch.cuda.is_available() else 'cpu')
+
         results = []
         self.model.eval()
         with torch.no_grad():
