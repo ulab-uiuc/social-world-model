@@ -2,16 +2,32 @@ CUDA_VISIBLE_DEVICES=8 python train_basicpredictor.py \
 --train-data-path ../data/splitted_polymarket/polymarket_data_processed_Crypto_train.jsonl \
 --valid-data-path ../data/splitted_polymarket/polymarket_data_processed_Crypto_dev.jsonl \
 --corpus-news-path ../data/processed_dailynews/dailynews_data_processed.jsonl \
---output-dir ../saves/saves_crypto_basicpredictor_window_size_10 \
---cache-dir ../cache/cache_crypto_basicpredictor_window_size_10 \
---reasoner-cache-dir ../cache/cache_crypto_basicpredictor_window_size_10 \
+--output-dir ../saves/saves_crypto_basicpredictor_without_event_description \
+--cache-dir ../cache/cache_crypto_basicpredictor_without_event_description \
+--reasoner-cache-dir ../cache/cache_crypto_basicpredictor_without_event_description \
 --train-batch-size 1 \
 --eval-batch-size 1 \
 --reasoner-max-news-items 10 \
---window-size 10 \
+--window-size 5 \
 --save-steps 200 \
 --eval-steps 200 \
---reasoner-cache-dir ../cache/cache_crypto_basicpredictor_window_size_10 \
+--reasoner-cache-dir ../cache/cache_crypto_basicpredictor_without_event_description \
+--epochs 10
+
+CUDA_VISIBLE_DEVICES=9 python train_basicpredictor.py \
+--train-data-path ../data/splitted_polymarket/polymarket_data_processed_Crypto_train.jsonl \
+--valid-data-path ../data/splitted_polymarket/polymarket_data_processed_Crypto_dev.jsonl \
+--corpus-news-path ../data/processed_dailynews/dailynews_data_processed.jsonl \
+--output-dir ../saves/saves_crypto_basicpredictor_without_all_event_info \
+--cache-dir ../cache/cache_crypto_basicpredictor_without_all_event_info \
+--reasoner-cache-dir ../cache/cache_crypto_basicpredictor_without_all_event_info \
+--train-batch-size 1 \
+--eval-batch-size 1 \
+--reasoner-max-news-items 10 \
+--window-size 5 \
+--save-steps 200 \
+--eval-steps 200 \
+--reasoner-cache-dir ../cache/cache_crypto_basicpredictor_without_all_event_info \
 --epochs 10
 
 CUDA_VISIBLE_DEVICES=7 python train_basicpredictor.py \

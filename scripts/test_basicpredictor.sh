@@ -1,4 +1,4 @@
-CUDA_VISIBLE_DEVICES=8 python test_basicpredictor.py \
+CUDA_VISIBLE_DEVICES=5 python test_basicpredictor.py \
 --test-data-path ../data/splitted_polymarket/polymarket_data_processed_Crypto_test.jsonl \
 --corpus-news-path ../data/processed_dailynews/dailynews_data_processed.jsonl \
 --model-checkpoint ../saves/saves_crypto_basicpredictor/checkpoint-best \
