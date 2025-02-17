@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Helmet } from 'react-helmet';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useParams } from 'react-router-dom';
 import TimeSeriesChart from "./TimeSeriesChart";
 import './App.css';
@@ -31,7 +32,6 @@ function App() {
   const [tags, setTags] = useState([]);
   const [selectedTag, setSelectedTag] = useState("");
 
-
   useEffect(() => {
     let url = "http://127.0.0.1:5000/api/cards";
     if (selectedTag) {
@@ -45,7 +45,6 @@ function App() {
       .catch((error) => console.error("Error fetching cards:", error));
   }, [selectedTag]);
 
-
   useEffect(() => {
     axios.get("http://127.0.0.1:5000/api/tags")
       .then((response) => {
@@ -55,33 +54,38 @@ function App() {
   }, []);
 
   return (
-    <Router>
-      <div className="app-container">
-        <header className="app-header">
-          <h1 className="app-title">Openmarket</h1>
-          <div className="horizontal-bar"></div>
-          <div className="tag-filter">
-            <label htmlFor="tag-select">Filter by Tag: </label>
-            <select
-              id="tag-select"
-              value={selectedTag}
-              onChange={(e) => setSelectedTag(e.target.value)}
-            >
-              <option value="">All</option>
-              {tags.map((tag) => (
-                <option key={tag} value={tag}>
-                  {tag}
-                </option>
-              ))}
-            </select>
-          </div>
-        </header>
-        <Routes>
-          <Route path="/" element={<CardList cards={cards} />} />
-          <Route path="/details/:card_id" element={<CardDetails cards={cards} />} />
-        </Routes>
-      </div>
-    </Router>
+    <>
+      <Helmet>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      </Helmet>
+      <Router>
+        <div className="app-container">
+          <header className="app-header">
+            <h1 className="app-title">Openmarket</h1>
+            <div className="horizontal-bar"></div>
+            <div className="tag-filter">
+              <label htmlFor="tag-select">Filter by Tag: </label>
+              <select
+                id="tag-select"
+                value={selectedTag}
+                onChange={(e) => setSelectedTag(e.target.value)}
+              >
+                <option value="">All</option>
+                {tags.map((tag) => (
+                  <option key={tag} value={tag}>
+                    {tag}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </header>
+          <Routes>
+            <Route path="/" element={<CardList cards={cards} />} />
+            <Route path="/details/:card_id" element={<CardDetails cards={cards} />} />
+          </Routes>
+        </div>
+      </Router>
+    </>
   );
 }
 
