@@ -405,3 +405,55 @@ body {
   border-color: #6c63ff;
   box-shadow: 0 0 4px #6c63ff;
 }
+
+@media (max-width: 768px) {
+  body {
+    padding: 10px;
+    flex-direction: column;
+  }
+
+  .card-container {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    padding: 10px;
+  }
+
+
+  .card {
+    width: 90%;
+    height: auto;
+    padding: 12px;
+  }
+
+
+  .details-page {
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 10px;
+  }
+
+
+  .left-card, .right-card {
+    width: 100%;
+  }
+
+  .app-header {
+    align-items: center;
+    text-align: center;
+    padding: 10px;
+  }
+
+  .tag-filter label {
+    font-size: 14px;
+  }
+
+  #tag-select {
+    font-size: 14px;
+    padding: 5px 8px;
+  }
+
+  .vote-button {
+    font-size: 14px;
+    padding: 8px 16px;
+  }
+}
