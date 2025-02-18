@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "react-helmet": "^6.1.0",
+    "recharts": "^2.15.1"
+  }
+}
