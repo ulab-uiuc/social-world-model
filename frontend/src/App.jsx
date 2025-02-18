@@ -11,7 +11,7 @@ export const HistoryChart = ({ cardId }) => {
   useEffect(() => {
     const fetchHistory = async () => {
       try {
-        const response = await axios.get(`http://127.0.0.1:5000/api/vote_history/${cardId}`);
+        const response = await axios.get(`http://3.144.113.70:8000/api/vote_history/${cardId}`);
         const formattedData = response.data.map(entry => ({
           timestamp: entry.timestamp,
           ...entry.votes,
@@ -33,7 +33,7 @@ function App() {
   const [selectedTag, setSelectedTag] = useState("");
 
   useEffect(() => {
-    let url = "http://127.0.0.1:5000/api/cards";
+    let url = "http://3.144.113.70:8000/api/cards";
     if (selectedTag) {
       url += `?tag=${selectedTag}`;
     }
@@ -46,7 +46,7 @@ function App() {
   }, [selectedTag]);
 
   useEffect(() => {
-    axios.get("http://127.0.0.1:5000/api/tags")
+    axios.get("http://3.144.113.70:8000/api/tags")
       .then((response) => {
         setTags(response.data);
       })
@@ -124,7 +124,7 @@ function CardDetails({ cards }) {
   const handleVote = () => {
     if (!selectedOption) return;
 
-    axios.post("http://127.0.0.1:5000/api/vote", {
+    axios.post("http://3.144.113.70:8000/api/vote", {
       card_id: card.card_id,
       option: selectedOption.option,
     })
