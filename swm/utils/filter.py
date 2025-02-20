@@ -14,8 +14,15 @@ class TimeBasedDailyNewsFilter:
     def _index_news(
         self, corpus_news: List[DailyNewsData]
     ) -> Dict[str, List[DailyNewsData]]:
-        news_dict = {}
+        non_duplicate_news = []
+        uuids = set()
         for item in corpus_news:
+            if item.uuid not in uuids:
+                non_duplicate_news.append(item)
+                uuids.add(item.uuid)
+
+        news_dict = {}
+        for item in non_duplicate_news:
             date = self._extract_date(item)
             if date:
                 news_dict.setdefault(date, []).append(item)

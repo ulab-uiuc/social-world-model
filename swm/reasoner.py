@@ -1,207 +1,114 @@
-import hashlib
-import json
-import re
-from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
-import jsonlines
-from transformers import TrainingArguments
+import numpy as np
+import torch
+import torch.nn.functional as F
+from peft import LoraConfig
+from torch.utils.data import DataLoader
+from tqdm import tqdm
+from transformers import AutoTokenizer, Trainer, TrainingArguments
 
-from .data import DailyNewsData, PolyMarketData
-from .utils.error_handler import (
-    api_calling_error_exponential_backoff,
-    parsing_error_exponential_backoff,
-)
-from .utils.filter import TimeBasedDailyNewsFilter
-from .utils.prompter import model_prompting
-from .utils.utils import convert_to_date
-
-PROMPT_TEMPLATE = """Analyze market price change causation for {date}:
-
-Market: {question}
-Price Change: {direction} from {current_price:.3f} ({current_date}) to {next_price:.3f} ({next_date}) ({change_pct:.1f}%)
-
-News:
-{news_items}
-
-Task: Rate each news item's likelihood (0-100) of causing this price change.
-Format: Return JSON array of objects with "news_id" and "score" fields. Example:
-[{{"news_id": 0, "score": 85}}, {{"news_id": 1, "score": 15}}]"""
+from .data import PolyMarketData
+from .dataset import BasicPolyMarketDatasetWithEventForReasoner
+from .utils.posterior_reasoner import BasicPosteriorReasoner
+from .utils.regressor import LLMRegressor, LLMRegressorConfig
 
 
-class BasicPosteriorReasoner:
-    def __init__(
-        self,
-        corpus_news: List[DailyNewsData],
-        model_name: str = 'gpt-4',
-        max_news_items: int = 10,
-        change_threshold: float = 0.25,
-        cache_dir: str = './reasoning_cache',
+class KLDivergenceTrainer(Trainer):
+    def _process_group(
+        self, model, inputs, weights, group_indices, is_prediction=False
     ):
-        self.news_filter = TimeBasedDailyNewsFilter(corpus_news)
-        self.model_name = model_name
-        self.max_news_items = max_news_items
-        self.change_threshold = change_threshold
-        self.cache_dir = Path(cache_dir)
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        group_size = len(group_indices)
+        chunk_size = 4
+        collected_logits = []
 
-    def _get_cache_key(self, time: Union[str, int], market_id: str) -> str:
-        key = f'{market_id}_{time}'
-        return hashlib.md5(key.encode()).hexdigest()
+        group_weights = weights[group_indices]
+        p_dist = group_weights / (group_weights.sum() + 1e-8)
+        p_dist = p_dist.to(model.device)
 
-    def reason(
-        self, time: Union[str, int], market: PolyMarketData
-    ) -> List[Dict[str, Any]]:
-        cache_key = self._get_cache_key(time, market.market_id)
-        cache_path = self.cache_dir / f'{cache_key}.json'
-
-        if cache_path.exists():
-            try:
-                with jsonlines.open(cache_path, mode='r') as reader:
-                    serialized_results = list(reader)
-                results = [
-                    {'news': DailyNewsData.from_dict(r['news']), 'score': r['score']}
-                    for r in serialized_results
-                ]
-            except (json.JSONDecodeError, IOError):
-                pass
-
-        results = self._compute_reasoning(time, market)
-
-        try:
-            serialized_results = [
-                {'news': r['news'].model_dump(), 'score': r['score']} for r in results
-            ]
-            with jsonlines.open(cache_path, mode='w') as writer:
-                writer.write_all(serialized_results)
-        except IOError:
-            pass
-
-        return results
-
-    def _compute_reasoning(
-        self, time: Union[str, int], market: PolyMarketData
-    ) -> List[Dict[str, Any]]:
-        """Actual reasoning computation."""
-        date = convert_to_date(time)
-        change = self._get_next_day_change(date, market)
-        if not change:
-            return []
-
-        if abs(change['change']) < self.change_threshold:
-            news = self._get_filtered_news(date)
-            return [{'news': news_item, 'score': 0.01} for news_item in news][
-                : self.max_news_items
-            ]
-
-        news = self._get_filtered_news(date)
-        if not news:
-            return []
-
-        prompt = self._create_prompt(change, date, news)
-        response = self._get_model_response(prompt)
-        return self._parse_scores(response, news)
-
-    def _get_next_day_change(self, date: str, market: PolyMarketData) -> Optional[Dict]:
-        if not market.daily_time_series or 'Yes' not in market.daily_time_series:
-            return None
-
-        current_date = datetime.strptime(date, '%Y-%m-%d')
-        next_date = current_date + timedelta(days=1)
-        series = market.daily_time_series['Yes']
-
-        current_point = next(
-            (
-                p
-                for p in series
-                if datetime.fromtimestamp(p['t']).date() == current_date.date()
-            ),
-            None,
-        )
-        next_point = next(
-            (
-                p
-                for p in series
-                if datetime.fromtimestamp(p['t']).date() == next_date.date()
-            ),
-            None,
-        )
-
-        if not (current_point and next_point):
-            return None
-
-        change = abs(current_point['p'] - next_point['p'])
-
-        return {
-            'market': market,
-            'current_point': current_point,
-            'next_point': next_point,
-            'change': change,
-            'direction': 'increased'
-            if next_point['p'] > current_point['p']
-            else 'decreased',
-        }
-
-    def _get_filtered_news(self, date: str) -> List[DailyNewsData]:
-        news = self.news_filter.filter(date)
-        return news
-
-    def _create_prompt(self, change: Dict, date: str, news: List[DailyNewsData]) -> str:
-        return PROMPT_TEMPLATE.format(
-            date=date,
-            question=change['market'].question,
-            direction=change['direction'],
-            current_price=change['current_point']['p'],
-            next_price=change['next_point']['p'],
-            current_date=change['current_point']['t'],
-            next_date=change['next_point']['t'],
-            change_pct=abs(change['change']) * 100,
-            news_items=self._format_news_items(news),
-        )
-
-    def _format_news_items(self, news: List[DailyNewsData]) -> str:
-        return '\n'.join(
-            f'[news_id{i}] {item.title}: {item.description}'
-            for i, item in enumerate(news)
-        )
-
-    @api_calling_error_exponential_backoff()
-    def _get_model_response(self, prompt: str) -> str:
-        messages = [
-            {
-                'role': 'system',
-                'content': 'You analyze news impact on prediction markets.',
-            },
-            {'role': 'user', 'content': prompt},
-        ]
-        return model_prompting(
-            llm_model=self.model_name,
-            messages=messages,
-            temperature=0.0,
-            max_token_num=2048,
-        )[0]
-
-    @parsing_error_exponential_backoff()
-    def _parse_scores(self, model_output: str, news: List[DailyNewsData]) -> List[Dict]:
-        json_match = re.search(r'\[.*\]', model_output, re.DOTALL)
-        if not json_match:
-            return []
-
-        results = json.loads(json_match.group())
-        if not results:
-            return []
-
-        # Normalize scores and select top-k news items
-        scored_news = [
-            {
-                'news': news[r['news_id']],
-                'score': r['score'] / 100 if r['score'] > 0 else 0.01,
+        for i in range(0, group_size, chunk_size):
+            chunk_indices = group_indices[i : i + chunk_size]
+            chunk_inputs = {
+                'input_ids': inputs['input_ids'][chunk_indices],
+                'attention_mask': inputs['attention_mask'][chunk_indices],
             }
-            for r in results
-        ]
-        scored_news.sort(key=lambda x: x['score'], reverse=True)
-        return scored_news[: self.max_news_items]
+
+            with torch.set_grad_enabled(not is_prediction):
+                chunk_outputs = model(**chunk_inputs)
+                chunk_logits = (
+                    chunk_outputs
+                    if isinstance(chunk_outputs, torch.Tensor)
+                    else chunk_outputs.logits
+                    if hasattr(chunk_outputs, 'logits')
+                    else chunk_outputs[0]
+                )
+
+                if chunk_logits.dim() == 2 and chunk_logits.size(-1) == 1:
+                    chunk_logits = chunk_logits.squeeze(-1)
+                collected_logits.append(chunk_logits)
+
+        all_logits = torch.cat(collected_logits, dim=0)
+        q_dist = F.softmax(all_logits / 1.0, dim=0)
+
+        epsilon = 1e-8
+        q_dist = q_dist + epsilon
+        q_dist = q_dist / q_dist.sum()
+
+        kl_loss = torch.sum(p_dist * torch.log(p_dist / q_dist))
+
+        return (kl_loss, q_dist, p_dist) if is_prediction else kl_loss
+
+    def compute_loss(
+        self, model, inputs, return_outputs=False, num_items_in_batch=None
+    ):
+        weights = inputs.pop('weights').to(model.device)
+        group_ids = inputs.pop('group_ids').to(model.device)
+
+        total_loss = 0.0
+        num_valid_groups = 0
+
+        for group in torch.unique(group_ids):
+            group_indices = torch.where(group_ids == group)[0]
+            if len(group_indices) < 2:
+                continue
+
+            loss = self._process_group(model, inputs, weights, group_indices)
+            if not torch.isnan(loss) and not torch.isinf(loss):
+                total_loss += loss
+                num_valid_groups += 1
+
+        avg_loss = total_loss / max(num_valid_groups, 1)
+        return (avg_loss, None) if return_outputs else avg_loss
+
+    def prediction_step(self, model, inputs, prediction_loss_only, ignore_keys=None):
+        weights = inputs.pop('weights').to(model.device)
+        group_ids = inputs.pop('group_ids').to(model.device)
+
+        all_losses, all_preds, all_labels = [], [], []
+
+        for group in torch.unique(group_ids):
+            group_indices = torch.where(group_ids == group)[0]
+            if len(group_indices) < 2:
+                continue
+
+            loss, q_dist, p_dist = self._process_group(
+                model, inputs, weights, group_indices, is_prediction=True
+            )
+
+            if not torch.isnan(loss) and not torch.isinf(loss):
+                all_losses.append(loss.unsqueeze(0))
+                all_preds.append(q_dist)
+                all_labels.append(p_dist)
+
+        if not all_losses:
+            return (torch.tensor(0.0), None, None)
+
+        return (
+            torch.stack(all_losses).mean(),
+            torch.stack(all_preds),
+            torch.stack(all_labels),
+        )
 
 
 class BasicPriorReasoner:
@@ -210,104 +117,175 @@ class BasicPriorReasoner:
         model_name: str,
         cache_dir: str,
         max_seq_length: int = 512,
+        lora_config: Optional[LoraConfig] = None,
     ):
-        return
+        self.model_name = model_name
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.max_seq_length = max_seq_length
+        self.model = None
+        self.cache_dir = Path(cache_dir)
+        self.lora_config = lora_config
 
-    def analyze(
-        self, news_data: List[DailyNewsData], market_changes: List[Dict], date: str
-    ) -> List[Dict]:
-        news_texts = [f'{n.title}: {n.description}' for n in news_data]
+    def setup_model(self) -> None:
+        config = LLMRegressorConfig(
+            base_model_name_or_path=self.model_name, max_length=self.max_seq_length
+        )
+        self.model = LLMRegressor(config, lora_config=self.lora_config)
 
-        market_change_texts = []
-        for change in market_changes:
-            market = change['market']
-            direction = (
-                'increased'
-                if change['current_point']['p'] > change['prev_point']['p']
-                else 'decreased'
+    def _create_collate_fn(self):
+        def collate_fn(batch):
+            all_input_ids, all_attention_masks = [], []
+            all_weights, all_group_ids = [], []
+            all_market_ids, all_event_ids, all_ts, all_news = [], [], [], []
+
+            max_len = min(
+                max(item['input_ids'].size(-1) for item in batch), self.max_seq_length
             )
-            change_text = (
-                f"{market.question}: {direction} from "
-                f"{change['prev_point']['p']:.3f} to {change['current_point']['p']:.3f}"
-            )
-            market_change_texts.append(change_text)
 
-        prompt = self._create_prompt(market_change_texts, date, news_texts)
-        scores = self.model.predict([prompt])[0]
+            for group_idx, item in enumerate(batch):
+                input_ids_padded = torch.nn.functional.pad(
+                    item['input_ids'][:, :max_len],
+                    (0, max_len - min(item['input_ids'].size(-1), max_len)),
+                    value=self.tokenizer.pad_token_id,
+                )
+                attention_masks = (
+                    input_ids_padded != self.tokenizer.pad_token_id
+                ).long()
 
-        results = []
-        for news, score in zip(news_data, scores):
-            results.append(
-                {
-                    'news': news,
-                    'score': score,
-                }
-            )
-        return results
+                all_input_ids.append(input_ids_padded)
+                all_attention_masks.append(attention_masks)
+                all_weights.append(item['p_dist'])
+                all_group_ids.append(
+                    torch.full((item['p_dist'].size(0),), group_idx, dtype=torch.long)
+                )
+                all_market_ids.append(item['market_id'])
+                all_event_ids.append(item['event_id'])
+                all_ts.append(item['t'])
+                all_news.append(item['news'])
+
+            return {
+                'input_ids': torch.cat(all_input_ids, dim=0),
+                'attention_mask': torch.cat(all_attention_masks, dim=0),
+                'weights': torch.cat(all_weights, dim=0),
+                'group_ids': torch.cat(all_group_ids, dim=0),
+                'market_ids': all_market_ids,
+                'event_ids': all_event_ids,
+                'ts': all_ts,
+                'news': all_news,
+            }
+
+        return collate_fn
 
     def train(
         self,
-        train_dates: List[str],
-        valid_dates: List[str],
-        posterior_reasoner: BasicPosteriorReasoner,
+        train_data: List[PolyMarketData],
+        valid_data: List[PolyMarketData],
         training_args: TrainingArguments,
+        posterior_reasoner: BasicPosteriorReasoner,
     ) -> str:
-        train_data = []
-        valid_data = []
+        if self.model is None:
+            self.setup_model()
 
-        for date in train_dates:
-            parsed_results, top_changes = posterior_reasoner.analyze(date)
-            if not parsed_results:
-                continue
-
-            posterior_scores = [r['score'] for r in parsed_results]
-            news_data = [r['news'] for r in parsed_results]
-            news_texts = [f'{n.title}: {n.description}' for n in news_data]
-
-            market_changes = []
-            for change in top_changes:
-                market = change['market']
-                direction = (
-                    'increased'
-                    if change['current_point']['p'] > change['prev_point']['p']
-                    else 'decreased'
-                )
-                change_text = (
-                    f"{market.question}: {direction} from "
-                    f"{change['prev_point']['p']:.3f} to {change['current_point']['p']:.3f}"
-                )
-                market_changes.append(change_text)
-
-            prompt = self._create_prompt(market_changes, date, news_texts)
-            train_data.append({'prompt': prompt, 'scores': posterior_scores})
-
-        # Do the same for validation data
-        for date in valid_dates:
-            parsed_results, top_changes = posterior_reasoner.analyze(date)
-            if parsed_results:
-                prompt = self._process_results(parsed_results, top_changes, date)
-                valid_data.append(
-                    {'prompt': prompt, 'scores': [r['score'] for r in parsed_results]}
-                )
-
-        return self.model.train(
-            train_data=train_data, valid_data=valid_data, training_args=training_args
+        train_dataset = BasicPolyMarketDatasetWithEventForReasoner(
+            markets=train_data,
+            tokenizer=self.tokenizer,
+            reasoner=posterior_reasoner,
+            cache_dir=self.cache_dir,
+        )
+        valid_dataset = BasicPolyMarketDatasetWithEventForReasoner(
+            markets=valid_data,
+            tokenizer=self.tokenizer,
+            reasoner=posterior_reasoner,
+            cache_dir=self.cache_dir,
         )
 
-    def _create_prompt(
-        self, market_changes: List[str], date: str, news: List[str]
-    ) -> str:
-        prompt = (
-            f'Analyze which news caused these significant market changes on {date}:\n\n'
+        trainer = KLDivergenceTrainer(
+            model=self.model,
+            args=training_args,
+            train_dataset=train_dataset,
+            eval_dataset=valid_dataset,
+            data_collator=self._create_collate_fn(),
+            compute_metrics=lambda p: {
+                'kl_div': float(
+                    np.mean(
+                        np.sum(
+                            p.label_ids * np.log(p.label_ids / p.predictions), axis=1
+                        )
+                    )
+                )
+            },
         )
-        prompt += '\n'.join(f'- {change}' for change in market_changes)
-        prompt += '\n\nNews:\n'
-        prompt += '\n'.join(f'- {news_item}' for news_item in news)
-        prompt += "\nRate each news item's likelihood (0-100) of causing these market changes."
-        return prompt
+
+        trainer.train()
+        best_model_dir = Path(training_args.output_dir) / 'checkpoint-best'
+        trainer.save_model(best_model_dir)
+        return str(best_model_dir)
+
+    def predict(
+        self,
+        markets: List[PolyMarketData],
+        posterior_reasoner: BasicPosteriorReasoner,
+        batch_size: int = 8,
+    ) -> List[Dict[str, Any]]:
+        dataset = BasicPolyMarketDatasetWithEventForReasoner(
+            markets=markets,
+            tokenizer=self.tokenizer,
+            reasoner=posterior_reasoner,
+            cache_dir=self.cache_dir,
+        )
+        dataloader = DataLoader(
+            dataset,
+            batch_size=batch_size,
+            shuffle=False,
+            collate_fn=self._create_collate_fn(),
+        )
+
+        self.model.eval()
+        results = []
+
+        with torch.no_grad():
+            for batch in tqdm(dataloader, desc='Predicting'):
+                input_ids = batch['input_ids'].to(self.model.llm.device)
+                attention_mask = batch['attention_mask'].to(self.model.llm.device)
+                group_ids = batch['group_ids'].to(self.model.llm.device)
+                weights = batch['weights'].to(self.model.llm.device)
+
+                group_logits_map = {}
+                for group in torch.unique(group_ids):
+                    group_indices = torch.where(group_ids == group)[0]
+                    logits = self.model(
+                        input_ids=input_ids[group_indices],
+                        attention_mask=attention_mask[group_indices],
+                    )
+                    if logits.dim() == 2 and logits.size(-1) == 1:
+                        logits = logits.squeeze(-1)
+                    group_logits_map[group.item()] = logits
+
+                for group_idx in torch.unique(group_ids):
+                    group_idx = group_idx.item()
+                    group_indices = torch.where(group_ids == group_idx)[0]
+
+                    logits = group_logits_map[group_idx]
+                    q_dist = F.softmax(logits, dim=0)
+                    group_weights = weights[group_indices]
+
+                    results.append(
+                        {
+                            'event_id': batch['event_ids'][group_idx],
+                            'market_id': batch['market_ids'][group_idx],
+                            't': batch['ts'][group_idx],
+                            'news': batch['news'][group_idx],
+                            'q_dist': q_dist.cpu().numpy().tolist(),
+                            'p_dist': group_weights.cpu().numpy().tolist(),
+                        }
+                    )
+
+        return results
 
     def save(self, path: str) -> None:
-        self.model.save(path)
+        if self.model:
+            self.model.save_pretrained(path)
 
     def load(self, path: str) -> None:
-        self.model.load(path)
+        self.model = LLMRegressor.from_pretrained(path)
+        self.model.to('cuda' if torch.cuda.is_available() else 'cpu')
