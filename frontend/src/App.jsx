@@ -1,9 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { Helmet } from 'react-helmet';
-import { BrowserRouter as Router, Routes, Route, useNavigate, useParams } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, useParams } from 'react-router-dom';
+import axios from "axios";
+import NewsPage from "./NewsPage";
 import TimeSeriesChart from "./TimeSeriesChart";
 import './App.css';
-import axios from "axios";
+
+const API_BASE_URL = window.location.hostname === "localhost"
+  ? "http://localhost:5000"
+  : `http://${window.location.hostname}:8000`;
+
+const API_CARDS_URL = `${API_BASE_URL}/api/cards`;
+const API_TAGS_URL = `${API_BASE_URL}/api/tags`;
+const API_VOTE_HISTORY_URL = `${API_BASE_URL}/api/vote_history`;
 
 export const HistoryChart = ({ cardId }) => {
   const [data, setData] = useState([]);
@@ -11,7 +20,7 @@ export const HistoryChart = ({ cardId }) => {
   useEffect(() => {
     const fetchHistory = async () => {
       try {
-        const response = await axios.get(`http://3.144.113.70:8000/api/vote_history/${cardId}`);
+        const response = await axios.get(`${API_VOTE_HISTORY_URL}/${cardId}`);
         const formattedData = response.data.map(entry => ({
           timestamp: entry.timestamp,
           ...entry.votes,
@@ -28,12 +37,48 @@ export const HistoryChart = ({ cardId }) => {
 };
 
 function App() {
+  return (
+    <>
+      <Helmet>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      </Helmet>
+      <Router>
+        <div className="app-container">
+          <Header />
+          <MainContent />
+        </div>
+      </Router>
+    </>
+  );
+}
+
+function Header() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  return (
+    <header className="app-header">
+      <div className="header-left">
+        <h1 className="app-title">Openmarket</h1>
+        {location.pathname !== "/news" && (
+          <button className="news-button" onClick={() => navigate('/news')}>
+            News
+          </button>
+        )}
+      </div>
+      <div className="horizontal-bar"></div>
+    </header>
+  );
+}
+
+function MainContent() {
+  const location = useLocation();
   const [cards, setCards] = useState([]);
   const [tags, setTags] = useState([]);
   const [selectedTag, setSelectedTag] = useState("");
 
   useEffect(() => {
-    let url = "http://3.144.113.70:8000/api/cards";
+    let url = API_CARDS_URL;
     if (selectedTag) {
       url += `?tag=${selectedTag}`;
     }
@@ -46,7 +91,7 @@ function App() {
   }, [selectedTag]);
 
   useEffect(() => {
-    axios.get("http://3.144.113.70:8000/api/tags")
+    axios.get(API_TAGS_URL)
       .then((response) => {
         setTags(response.data);
       })
@@ -55,36 +100,28 @@ function App() {
 
   return (
     <>
-      <Helmet>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-      </Helmet>
-      <Router>
-        <div className="app-container">
-          <header className="app-header">
-            <h1 className="app-title">Openmarket</h1>
-            <div className="horizontal-bar"></div>
-            <div className="tag-filter">
-              <label htmlFor="tag-select">Filter by Tag: </label>
-              <select
-                id="tag-select"
-                value={selectedTag}
-                onChange={(e) => setSelectedTag(e.target.value)}
-              >
-                <option value="">All</option>
-                {tags.map((tag) => (
-                  <option key={tag} value={tag}>
-                    {tag}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </header>
-          <Routes>
-            <Route path="/" element={<CardList cards={cards} />} />
-            <Route path="/details/:card_id" element={<CardDetails cards={cards} />} />
-          </Routes>
+      {location.pathname === "/" && (
+        <div className="tag-filter">
+          <label htmlFor="tag-select">Filter by Tag: </label>
+          <select
+            id="tag-select"
+            value={selectedTag}
+            onChange={(e) => setSelectedTag(e.target.value)}
+          >
+            <option value="">All</option>
+            {tags.map((tag) => (
+              <option key={tag} value={tag}>
+                {tag}
+              </option>
+            ))}
+          </select>
         </div>
-      </Router>
+      )}
+      <Routes>
+        <Route path="/" element={<CardList cards={cards} />} />
+        <Route path="/details/:card_id" element={<CardDetails cards={cards} />} />
+        <Route path="/news" element={<NewsPage />} />
+      </Routes>
     </>
   );
 }
@@ -124,7 +161,7 @@ function CardDetails({ cards }) {
   const handleVote = () => {
     if (!selectedOption) return;
 
-    axios.post("http://3.144.113.70:8000/api/vote", {
+    axios.post(`${API_BASE_URL}/api/vote`, {
       card_id: card.card_id,
       option: selectedOption.option,
     })
