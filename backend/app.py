@@ -29,9 +29,8 @@ def record_hourly_data():
                 'votes': votes,
             }
             history_collection.insert_one(history)
-        print('Hourly data recorded successfully.')
-    except Exception as e:
-        print(f'Error recording hourly data: {e}')
+    except Exception:
+        pass
 
 
 scheduler = BackgroundScheduler()
@@ -43,32 +42,23 @@ scheduler.start()
 def get_cards() -> Response:
     try:
         tag_filter = request.args.get('tag')
-        query = {}
-
-        if tag_filter:
-            query = {'tags': tag_filter}
+        query = {'tags': {'$in': [tag_filter]}} if tag_filter else {}
 
         cards = list(cards_collection.find(query, {'_id': 0}))
 
         for card in cards:
             options = card.get('options', [])
             total_bets = sum(option.get('bets', 0) for option in options)
-
             for option in options:
-                if total_bets > 0:
-                    option['percentage'] = round(
-                        (option.get('bets', 0) / total_bets) * 100, 2
-                    )
-                else:
-                    option['percentage'] = 0
+                option['percentage'] = (
+                    round((option.get('bets', 0) / total_bets) * 100, 2)
+                    if total_bets > 0
+                    else 0
+                )
 
-        response = jsonify(cards)
-        response.status_code = 200
-        return response
-    except Exception as e:
-        error_response = jsonify({'error': str(e)})
-        error_response.status_code = 500
-        return error_response
+        return jsonify(cards), 200
+    except Exception:
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @app.route('/api/tags', methods=['GET'])
@@ -77,20 +67,21 @@ def get_tags():
         tags_cursor = cards_collection.aggregate(
             [{'$unwind': '$tags'}, {'$group': {'_id': '$tags'}}]
         )
-
         tags = [tag['_id'] for tag in tags_cursor]
-
         return jsonify(tags), 200
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception:
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @app.route('/api/vote', methods=['POST'])
 def vote():
     try:
         data = request.json
-        card_id = data['card_id']
-        option = data['option']
+        card_id = data.get('card_id')
+        option = data.get('option')
+
+        if not card_id or not option:
+            return jsonify({'error': 'Missing card_id or option'}), 400
 
         result = cards_collection.update_one(
             {'card_id': card_id, 'options.option': option},
@@ -101,10 +92,8 @@ def vote():
             return jsonify({'error': 'Card or option not found'}), 404
 
         return jsonify({'message': 'Vote recorded successfully'}), 200
-    except Exception as e:
-        error_response = jsonify({'error': str(e)})
-        error_response.status_code = 500
-        return error_response
+    except Exception:
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 @app.route('/api/vote_history/<card_id>', methods=['GET'])
@@ -112,12 +101,12 @@ def get_vote_history(card_id):
     try:
         history = list(history_collection.find({'card_id': card_id}, {'_id': 0}))
         return jsonify(history), 200
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception:
+        return jsonify({'error': 'Internal server error'}), 500
 
 
 if __name__ == '__main__':
     try:
-        app.run(debug=True)
+        app.run(host='0.0.0.0', port=5000, debug=True)
     finally:
         scheduler.shutdown()

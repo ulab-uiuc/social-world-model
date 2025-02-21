@@ -30,7 +30,7 @@ const TimeSeriesChart = ({ data }) => {
               key={key}
               type="monotone"
               dataKey={key}
-              stroke={["#8884d8", "#82ca9d", "#ffc658", "#ff7300", "#8e44ad"][index % 5]} // 自动选择颜色
+              stroke={["#8884d8", "#82ca9d", "#ffc658", "#ff7300", "#8e44ad"][index % 5]}
               name={`${key}`}
             />
           ))}
