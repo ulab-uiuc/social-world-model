@@ -40,3 +40,14 @@
 .read-the-docs {
   color: #888;
 }
+
+.app-title {
+  font-size: 24px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: opacity 0.3s ease;
+}
+
+.app-title:hover {
+  opacity: 0.7;
+}
