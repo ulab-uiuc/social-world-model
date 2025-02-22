@@ -5,7 +5,7 @@ import "./NewsPage.css";
 const API_BASE_URL =
   window.location.hostname === "localhost"
     ? "http://localhost:5001"
-    : `http://${window.location.hostname}:8000`;
+    : `http://${window.location.hostname}`;
 
 const API_NEWS_URL = `${API_BASE_URL}/api/news`;
 
