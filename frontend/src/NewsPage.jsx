@@ -7,6 +7,7 @@ const API_BASE_URL =
     ? "http://localhost:5001"
     : `http://${window.location.hostname}`;
 
+
 const API_NEWS_URL = `${API_BASE_URL}/api/news`;
 
 const NewsPage = () => {

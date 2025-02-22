@@ -11,17 +11,19 @@ from swm.utils.utils import load_dailynews_data, load_polymarket_data, set_seed
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='Test BasicPredictor')
+    parser = argparse.ArgumentParser(description='Test BasicPriorReasoner')
 
     # Data paths
     parser.add_argument('--test-data-path', type=str, required=True)
     parser.add_argument('--corpus-news-path', type=str, required=True)
-    parser.add_argument('--model-checkpoint', type=str, required=True)
+    parser.add_argument('--prior-reasoner-checkpoint', type=str, required=True)
+    parser.add_argument('--predictor-checkpoint', type=str, required=True)
 
     # Model configs
     parser.add_argument('--model-name', type=str, default='Qwen/Qwen2.5-0.5B-Instruct')
     parser.add_argument('--max-seq-length', type=int, default=1024)
-    parser.add_argument('--cache-dir', type=str, default='./cache')
+    parser.add_argument('--prior-reasoner-cache-dir', type=str, default='./cache')
+    parser.add_argument('--predictor-cache-dir', type=str, default='./cache')
     parser.add_argument('--output-dir', type=str, default='./output')
 
     # Test configs
@@ -44,7 +46,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def test_predictor(args):
+def test_pipeline(args):
     # Set random seed
     set_seed(args.seed)
 
@@ -56,38 +58,81 @@ def test_predictor(args):
         test_data = load_polymarket_data(args.test_data_path)
         corpus_news = load_dailynews_data(args.corpus_news_path)
 
-    # Setup LoRA
+    # Setup LoRA config if your prior reasoner supports it
     lora_config = LoraConfig(
         r=args.r,
         lora_alpha=args.lora_alpha,
-        target_modules=['q_proj', 'v_proj'],
+        target_modules=['q_proj', 'v_proj'],  # adapt for your model
         lora_dropout=args.lora_dropout,
         bias='none',
         task_type='CAUSAL_LM',
     )
 
+    """
+    # Initialize prior reasoner
+    prior_reasoner = BasicPriorReasoner(
+        model_name=args.model_name,
+        cache_dir=args.prior_reasoner_cache_dir,
+        max_seq_length=args.max_seq_length,
+        lora_config=lora_config,
+    )
+
+    # Load trained checkpoint
+    prior_reasoner.load(args.prior_reasoner_checkpoint)
+
+    # If your prior reasoner needs a posterior reasoner at inference:
+    posterior_reasoner = BasicPosteriorReasoner(
+        model_name=args.reasoner_name,
+        max_news_items=args.reasoner_max_news_items,
+        corpus_news=corpus_news,
+        cache_dir=args.prior_reasoner_cache_dir,
+    )
+
+    # Run predictions
+    # Depending on your prior reasoner’s `predict` signature,
+    # you might do something like:
+    results = prior_reasoner.predict(
+        markets=test_data,
+        posterior_reasoner=posterior_reasoner,
+        batch_size=args.test_batch_size,
+    )
+
+    os.makedirs(args.output_dir, exist_ok=True)
+    for r in results:
+        news_importance = []
+        news = r['news']
+        score = r['q_dist']
+        for n, s in zip(news, score):
+            news_importance.append({'news': n.model_dump(), 'score': s})
+        t = r['t']
+        market_id = r['market_id']
+        with jsonlines.open(os.path.join(args.output_dir, f'{market_id}_{t}_basicpredictor.jsonl'), 'w') as writer:
+            for item in news_importance:
+                writer.write(item)
+    """
+
     # Initialize predictor
     predictor = BasicPredictor(
         model_name=args.model_name,
-        cache_dir=args.cache_dir,
+        cache_dir=args.predictor_cache_dir,
         max_seq_length=args.max_seq_length,
         lora_config=lora_config,
     )
 
     # Load checkpoint
-    predictor.load(args.model_checkpoint)
+    predictor.load(args.predictor_checkpoint)
 
     # Setup reasoner
-    reasoner = BasicPosteriorReasoner(
+    posterior_reasoner = BasicPosteriorReasoner(
         model_name=args.reasoner_name,
         max_news_items=args.reasoner_max_news_items,
         corpus_news=corpus_news,
-        cache_dir=args.cache_dir,
+        cache_dir=args.output_dir,
     )
 
     # Run predictions
     results = predictor.predict(
-        markets=test_data, reasoner=reasoner, batch_size=args.test_batch_size
+        markets=test_data, reasoner=posterior_reasoner, batch_size=args.test_batch_size
     )
 
     # Calculate metrics
@@ -109,4 +154,4 @@ def test_predictor(args):
 
 if __name__ == '__main__':
     args = parse_args()
-    test_predictor(args)
+    test_pipeline(args)

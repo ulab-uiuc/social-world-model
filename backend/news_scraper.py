@@ -105,6 +105,7 @@ def get_news():
         query['tags'] = tag_filter
 
     news = list(news_collection.find(query, {'_id': 0}).sort('timestamp', -1))
+
     return jsonify(news)
 
 
