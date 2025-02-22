@@ -54,12 +54,13 @@ function App() {
 
 function Header() {
   const navigate = useNavigate();
-  const location = useLocation();
 
   return (
     <header className="app-header">
       <div className="header-left">
-        <h1 className="app-title">Openmarket</h1>
+        <h1 className="app-title" onClick={() => navigate('/')}>
+          Openmarket
+        </h1>
         {location.pathname !== "/news" && (
           <button className="news-button" onClick={() => navigate('/news')}>
             News
