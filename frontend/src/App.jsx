@@ -5,6 +5,7 @@ import axios from "axios";
 import NewsPage from "./NewsPage";
 import TimeSeriesChart from "./TimeSeriesChart";
 import './App.css';
+import CardDetails from "./CardDetails";
 
 const API_BASE_URL = window.location.hostname === "localhost"
   ? "http://localhost:5000"
@@ -13,28 +14,75 @@ const API_BASE_URL = window.location.hostname === "localhost"
 const API_CARDS_URL = `${API_BASE_URL}/api/cards`;
 const API_TAGS_URL = `${API_BASE_URL}/api/tags`;
 const API_VOTE_HISTORY_URL = `${API_BASE_URL}/api/vote_history`;
+const API_ESTIMATED_VOTE_HISTORY_URL = `${API_BASE_URL}/api/estimated_vote_history`
 
-export const HistoryChart = ({ cardId }) => {
-  const [data, setData] = useState([]);
+
+export const HistoryChart = ({ cardId, mode = 1 }) => {
+  const [actualData, setActualData] = useState([]);
+  const [estimatedData, setEstimatedData] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const fetchHistory = async () => {
+    const fetchData = async () => {
+      setIsLoading(true);
       try {
-        const response = await axios.get(`${API_VOTE_HISTORY_URL}/${cardId}`);
-        const formattedData = response.data.map(entry => ({
+        const actualResponse = await axios.get(`${API_VOTE_HISTORY_URL}/${cardId}`);
+        const formattedActualData = actualResponse.data.map(entry => ({
           timestamp: entry.timestamp,
           ...entry.votes,
         }));
-        setData(formattedData);
+        setActualData(formattedActualData);
+
+        const estimatedResponse = await axios.get(`${API_ESTIMATED_VOTE_HISTORY_URL}/${cardId}`);
+        const formattedEstimatedData = estimatedResponse.data.map(entry => ({
+          timestamp: entry.timestamp,
+          ...entry.votes,
+        }));
+        setEstimatedData(formattedEstimatedData);
       } catch (error) {
-        console.error("Error fetching vote history:", error);
+        console.error("Error fetching chart data:", error);
+      } finally {
+        setIsLoading(false);
       }
     };
-    fetchHistory();
+
+    fetchData();
   }, [cardId]);
 
-  return <TimeSeriesChart data={data} />;
+
+  const getChartProps = () => {
+    switch (mode) {
+      case 1:
+        return {
+          data: actualData,
+          showEstimated: false
+        };
+      case 2:
+      return {
+        data: estimatedData,
+        estimatedData: [],
+      };
+      case 3:
+        return {
+          data: actualData,
+          estimatedData: estimatedData,
+          showBoth: true
+        };
+      default:
+        return {
+          data: actualData,
+          showEstimated: false
+        };
+    }
+  };
+
+  if (isLoading) {
+    return <div>Loading chart data...</div>;
+  }
+
+  return <TimeSeriesChart {...getChartProps()} />;
 };
+
 
 function App() {
   return (
@@ -120,7 +168,7 @@ function MainContent() {
       )}
       <Routes>
         <Route path="/" element={<CardList cards={cards} />} />
-        <Route path="/details/:card_id" element={<CardDetails cards={cards} />} />
+        <Route path="/details/:card_id" element={<CardDetails cards={cards} API_BASE_URL={API_BASE_URL} />} />
         <Route path="/news" element={<NewsPage />} />
       </Routes>
     </>
@@ -149,74 +197,6 @@ function CardList({ cards }) {
           </div>
         </div>
       ))}
-    </div>
-  );
-}
-
-function CardDetails({ cards }) {
-  const { card_id } = useParams();
-  const card = cards.find((c) => c.card_id === card_id);
-
-  const [selectedOption, setSelectedOption] = useState(null);
-
-  const handleVote = () => {
-    if (!selectedOption) return;
-
-    axios.post(`${API_BASE_URL}/api/vote`, {
-      card_id: card.card_id,
-      option: selectedOption.option,
-    })
-      .then(() => {
-        alert("Vote recorded successfully!");
-        window.location.reload();
-      })
-      .catch((error) => {
-        console.error("Error recording vote:", error);
-        alert("Failed to record vote. Please try again.");
-      });
-  };
-
-  if (!card) {
-    return <div>Card not found</div>;
-  }
-
-  const handleOptionClick = (option) => {
-    setSelectedOption(option);
-  };
-
-  return (
-    <div className="details-page">
-      <div className="left-card">
-        <h2>{card.question}</h2>
-        <div className="options-table">
-          {card.options.map((option, idx) => (
-            <div
-              className="option-row clickable-option"
-              key={idx}
-              onClick={() => handleOptionClick(option)}
-            >
-              <span className="option-label">{option.option}</span>
-              <span className="option-percentage">{option.percentage}%</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="right-card">
-        <h2>Vote Option</h2>
-        {selectedOption ? (
-          <div className="vote-module">
-            <p>Selected: <strong>{selectedOption.option}</strong></p>
-            <p>Chance: <strong>{selectedOption.percentage}%</strong></p>
-            <button className="vote-button" onClick={handleVote}>Vote</button>
-          </div>
-        ) : (
-          <p>Please select an option to vote.</p>
-        )}
-        <div className="history-chart">
-          <HistoryChart cardId={card_id} />
-        </div>
-      </div>
     </div>
   );
 }

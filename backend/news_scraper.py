@@ -12,7 +12,11 @@ CORS(app)
 client = pymongo.MongoClient('mongodb://localhost:27017/')
 db = client['electionDB']
 news_collection = db['news']
+counters_collection = db['counters']
 
+
+feedparser.CACHE_DIRECTORY = None
+feedparser._check_cache = lambda *args, **kwargs: None
 
 RSS_FEEDS = {
     'https://feeds.content.dowjones.io/public/rss/RSSOpinion': ['opinion'],
@@ -20,7 +24,6 @@ RSS_FEEDS = {
     'https://feeds.content.dowjones.io/public/rss/WSJcomUSBusiness': ['business'],
     'https://feeds.content.dowjones.io/public/rss/RSSMarketsMain': [
         'finance',
-        'markets',
     ],
     'https://feeds.content.dowjones.io/public/rss/RSSWSJD': ['technology'],
     'https://feeds.content.dowjones.io/public/rss/RSSLifestyle': ['lifestyle'],
@@ -38,6 +41,16 @@ RSS_FEEDS = {
     'https://feeds.content.dowjones.io/public/rss/RSSStyle': ['style'],
     'https://feeds.content.dowjones.io/public/rss/rsssportsfeed': ['sports'],
 }
+
+
+def get_next_news_id():
+    counter = counters_collection.find_one_and_update(
+        {'_id': 'news_id'},
+        {'$inc': {'seq': 1}},
+        upsert=True,
+        return_document=pymongo.ReturnDocument.AFTER,
+    )
+    return counter['seq']
 
 
 def delete_old_news():
@@ -80,8 +93,16 @@ def fetch_news():
                     print(f'Skipped: {title}')
                     continue
 
+                news_id = get_next_news_id()
+
                 news_data.append(
-                    {'title': title, 'timestamp': timestamp, 'link': link, 'tags': tags}
+                    {
+                        'news_id': news_id,
+                        'title': title,
+                        'timestamp': timestamp,
+                        'link': link,
+                        'tags': tags,
+                    }
                 )
 
     if news_data:
