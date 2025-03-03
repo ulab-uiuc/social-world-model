@@ -487,3 +487,146 @@ body {
 .news-button:hover {
   background-color: #0c75d7;
 }
+
+.history-chart-container {
+  position: relative;
+  margin-top: 20px;
+}
+
+.chart-controls {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 10;
+  display: flex;
+  gap: 5px;
+}
+
+.chart-mode-btn {
+  background-color: rgba(37, 39, 77, 0.8);
+  color: #d1d4e5;
+  border: 1px solid #404272;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.chart-mode-btn:hover {
+  background-color: rgba(59, 61, 102, 0.9);
+  color: white;
+}
+
+.chart-mode-btn.active {
+  background-color: #241cc1;
+  color: white;
+  border-color: #241cc1;
+  font-weight: bold;
+}
+
+
+.history-chart {
+  margin-top: 10px;
+  background-color: #25274d;
+  border-radius: 8px;
+  padding: 15px 10px 5px;
+  border: 1px solid #404272;
+}
+
+
+
+
+/* */
+.options-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.option-wrapper {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+
+.selected-option {
+  background-color: #3b3d66 !important;
+  border-color: #6c63ff !important;
+}
+
+
+.reasons-container {
+  margin-top: 8px;
+  margin-bottom: 15px;
+  padding: 10px;
+  background-color: #2a2c4e;
+  border-radius: 6px;
+  border: 1px solid #404272;
+  max-width: 100%;
+}
+
+.reasons-container h4 {
+  margin-top: 0;
+  margin-bottom: 8px;
+  color: #86a1ff;
+  font-size: 0.9em;
+}
+
+.reasons-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.reason-item {
+  background-color: #3b3d66;
+  border: 1px solid #565a88;
+  border-radius: 6px;
+  padding: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.reason-item:hover {
+  background-color: #464980;
+}
+
+.reason-item.selected {
+  background-color: #3d38a8;
+  border-color: #6c63ff;
+  box-shadow: 0 0 5px rgba(108, 99, 255, 0.5);
+}
+
+.reason-item p {
+  margin: 0 0 5px 0;
+  color: #e0e3f5;
+}
+
+.reason-votes {
+  font-size: 0.8em;
+  color: #86a1ff;
+}
+
+
+.vote-button:disabled {
+  background-color: #6c6c6c;
+  cursor: not-allowed;
+}
+
+.vote-button:disabled:hover {
+  background-color: #6c6c6c;
+}
+
+
+@media (max-width: 768px) {
+  .reasons-list {
+    gap: 8px;
+  }
+
+  .reason-item {
+    padding: 8px;
+  }
+}

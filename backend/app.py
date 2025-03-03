@@ -14,6 +14,10 @@ client: MongoClient[Any] = MongoClient('mongodb://localhost:27017/')
 db = client['electionDB']
 cards_collection = db['cards']
 history_collection = db['vote_history']
+relations_collection = db['card_news_relations']
+estimated_history_collection = db['estimated_vote_history']
+
+option_reasons_collection = db['option_reasons']
 
 
 def record_hourly_data():
@@ -73,15 +77,48 @@ def get_tags():
         return jsonify({'error': 'Internal server error'}), 500
 
 
+####
+@app.route('/api/option_reasons/<card_id>/<option>', methods=['GET'])
+def get_option_reasons(card_id, option):
+    try:
+        reason_doc = option_reasons_collection.find_one(
+            {'card_id': card_id, 'option': option}, {'_id': 0}
+        )
+
+        if not reason_doc:
+            return jsonify(
+                {
+                    'card_id': card_id,
+                    'option': option,
+                    'reasons': [
+                        {'reason_id': '1', 'text': 'nothing here', 'votes': 0},
+                        {'reason_id': '2', 'text': 'nothing here', 'votes': 0},
+                    ],
+                }
+            ), 200
+
+        return jsonify(reason_doc), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/vote', methods=['POST'])
 def vote():
     try:
         data = request.json
         card_id = data.get('card_id')
         option = data.get('option')
+        reason_id = data.get('reason_id')
 
         if not card_id or not option:
             return jsonify({'error': 'Missing card_id or option'}), 400
+
+        if reason_id:
+            option_reasons_collection.update_one(
+                {'card_id': card_id, 'option': option, 'reasons.reason_id': reason_id},
+                {'$inc': {'reasons.$.votes': 1}},
+                upsert=False,
+            )
 
         result = cards_collection.update_one(
             {'card_id': card_id, 'options.option': option},
@@ -92,8 +129,11 @@ def vote():
             return jsonify({'error': 'Card or option not found'}), 404
 
         return jsonify({'message': 'Vote recorded successfully'}), 200
-    except Exception:
-        return jsonify({'error': 'Internal server error'}), 500
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+###
 
 
 @app.route('/api/vote_history/<card_id>', methods=['GET'])
@@ -104,6 +144,83 @@ def get_vote_history(card_id):
     except Exception:
         return jsonify({'error': 'Internal server error'}), 500
 
+
+@app.route('/api/estimated_vote_history/<card_id>', methods=['GET'])
+def get_estimated_vote_history(card_id):
+    try:
+        history = list(
+            estimated_history_collection.find({'card_id': card_id}, {'_id': 0})
+        )
+
+        if not history:
+            return jsonify([]), 200
+
+        return jsonify(history), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+### for news <-> cards start
+
+
+@app.route('/api/card_news/<card_id>', methods=['GET'])
+def get_related_news(card_id):
+    try:
+        relation = relations_collection.find_one({'card_id': card_id}, {'_id': 0})
+
+        if not relation:
+            return jsonify([]), 200
+
+        return jsonify(relation), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# news -> cards
+@app.route('/api/news_cards/<news_id>', methods=['GET'])
+def get_related_cards(news_id):
+    try:
+        relations = list(relations_collection.find({'news_ids': news_id}, {'_id': 0}))
+
+        card_ids = [relation['card_id'] for relation in relations]
+
+        cards = list(cards_collection.find({'card_id': {'$in': card_ids}}, {'_id': 0}))
+
+        for card in cards:
+            options = card.get('options', [])
+            total_bets = sum(option.get('bets', 0) for option in options)
+            for option in options:
+                option['percentage'] = (
+                    round((option.get('bets', 0) / total_bets) * 100, 2)
+                    if total_bets > 0
+                    else 0
+                )
+
+        return jsonify(cards), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/card_news_relation', methods=['POST'])
+def create_card_news_relation():
+    try:
+        data = request.json
+        card_id = data.get('card_id')
+        news_ids = data.get('news_ids', [])
+
+        if not card_id:
+            return jsonify({'error': 'Missing card_id'}), 400
+
+        relations_collection.update_one(
+            {'card_id': card_id}, {'$set': {'news_ids': news_ids}}, upsert=True
+        )
+
+        return jsonify({'message': 'Relation updated successfully'}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+### for news <-> cards end
 
 if __name__ == '__main__':
     try:
