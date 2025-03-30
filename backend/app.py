@@ -1,7 +1,6 @@
 from datetime import datetime
 from typing import Any
 
-from apscheduler.schedulers.background import BackgroundScheduler
 from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
 from pymongo import MongoClient
@@ -33,13 +32,8 @@ def record_hourly_data():
                 'votes': votes,
             }
             history_collection.insert_one(history)
-    except Exception:
-        pass
-
-
-scheduler = BackgroundScheduler()
-scheduler.add_job(record_hourly_data, 'interval', hours=1)
-scheduler.start()
+    except Exception as e:
+        print(f'Error in record_hourly_data: {str(e)}')
 
 
 @app.route('/api/cards', methods=['GET'])
@@ -52,16 +46,22 @@ def get_cards() -> Response:
 
         for card in cards:
             options = card.get('options', [])
-            total_bets = sum(option.get('bets', 0) for option in options)
-            for option in options:
-                option['percentage'] = (
-                    round((option.get('bets', 0) / total_bets) * 100, 2)
-                    if total_bets > 0
-                    else 0
-                )
+            if any('percentage' not in opt for opt in options):
+                total_bets = sum(option.get('bets', 0) for option in options)
+                for option in options:
+                    if 'percentage' not in option:
+                        option['percentage'] = (
+                            round((option.get('bets', 0) / total_bets) * 100, 2)
+                            if total_bets > 0
+                            else 0
+                        )
+            else:
+                for option in options:
+                    option['percentage'] = option.get('bets', 0)
 
         return jsonify(cards), 200
-    except Exception:
+    except Exception as e:
+        print(f'Error in get_cards: {str(e)}')
         return jsonify({'error': 'Internal server error'}), 500
 
 
@@ -73,11 +73,11 @@ def get_tags():
         )
         tags = [tag['_id'] for tag in tags_cursor]
         return jsonify(tags), 200
-    except Exception:
+    except Exception as e:
+        print(f'Error in get_tags: {str(e)}')
         return jsonify({'error': 'Internal server error'}), 500
 
 
-####
 @app.route('/api/option_reasons/<card_id>/<option>', methods=['GET'])
 def get_option_reasons(card_id, option):
     try:
@@ -120,28 +120,26 @@ def vote():
                 upsert=False,
             )
 
-        result = cards_collection.update_one(
-            {'card_id': card_id, 'options.option': option},
-            {'$inc': {'options.$.bets': 1}},
-        )
-
-        if result.matched_count == 0:
-            return jsonify({'error': 'Card or option not found'}), 404
-
         return jsonify({'message': 'Vote recorded successfully'}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 
-###
-
-
 @app.route('/api/vote_history/<card_id>', methods=['GET'])
 def get_vote_history(card_id):
     try:
-        history = list(history_collection.find({'card_id': card_id}, {'_id': 0}))
+        time_filter = request.args.get('days')
+        query = {'card_id': card_id}
+
+        if time_filter:
+            days = int(time_filter)
+            cutoff_date = datetime.utcnow() - datetime.timedelta(days=days)
+            query['timestamp'] = {'$gte': cutoff_date.isoformat()}
+
+        history = list(history_collection.find(query, {'_id': 0}).sort('timestamp', 1))
         return jsonify(history), 200
-    except Exception:
+    except Exception as e:
+        print(f'Error in get_vote_history: {str(e)}')
         return jsonify({'error': 'Internal server error'}), 500
 
 
@@ -160,9 +158,6 @@ def get_estimated_vote_history(card_id):
         return jsonify({'error': str(e)}), 500
 
 
-### for news <-> cards start
-
-
 @app.route('/api/card_news/<card_id>', methods=['GET'])
 def get_related_news(card_id):
     try:
@@ -176,7 +171,6 @@ def get_related_news(card_id):
         return jsonify({'error': str(e)}), 500
 
 
-# news -> cards
 @app.route('/api/news_cards/<news_id>', methods=['GET'])
 def get_related_cards(news_id):
     try:
@@ -188,13 +182,18 @@ def get_related_cards(news_id):
 
         for card in cards:
             options = card.get('options', [])
-            total_bets = sum(option.get('bets', 0) for option in options)
-            for option in options:
-                option['percentage'] = (
-                    round((option.get('bets', 0) / total_bets) * 100, 2)
-                    if total_bets > 0
-                    else 0
-                )
+            if any('percentage' not in opt for opt in options):
+                total_bets = sum(option.get('bets', 0) for option in options)
+                for option in options:
+                    if 'percentage' not in option:
+                        option['percentage'] = (
+                            round((option.get('bets', 0) / total_bets) * 100, 2)
+                            if total_bets > 0
+                            else 0
+                        )
+            else:
+                for option in options:
+                    option['percentage'] = option.get('bets', 0)
 
         return jsonify(cards), 200
     except Exception as e:
@@ -220,10 +219,26 @@ def create_card_news_relation():
         return jsonify({'error': str(e)}), 500
 
 
-### for news <-> cards end
+@app.route('/api/polymarket_info/<card_id>', methods=['GET'])
+def get_polymarket_info(card_id):
+    try:
+        card = cards_collection.find_one({'card_id': card_id}, {'_id': 0})
+        if not card:
+            return jsonify({'error': 'Card not found'}), 404
+
+        polymarket_info = {
+            'polymarket_id': card.get('polymarket_id'),
+            'market_id': card.get('market_id'),
+            'last_updated': card.get('last_updated'),
+        }
+
+        return jsonify(polymarket_info), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 
 if __name__ == '__main__':
     try:
         app.run(host='0.0.0.0', port=5000, debug=True)
     finally:
-        scheduler.shutdown()
+        pass
