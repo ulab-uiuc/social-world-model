@@ -9,7 +9,6 @@ import httpx
 import jsonlines
 import requests
 import serpapi
-from py_clob_client.client import ClobClient
 from scholarly import scholarly
 from tqdm import tqdm
 
@@ -52,42 +51,85 @@ class PolyMarketCrawler:
 class PolyMarketEventCrawler(PolyMarketCrawler):
     def __init__(self, output_file: str):
         super().__init__(output_file, cache_size=100)
+        self.total_collected = 0  # 累计活跃事件数量
 
-    def collect(self, start_offset: int, end_offset: int, step: int = 100):
-        """Collect events from PolyMarket API and store them in the output file."""
-        for offset in tqdm(
-            range(start_offset, end_offset, step), desc='Collecting events'
-        ):
-            try:
-                events = self.get_event_from_offset(offset)
-                self.event_buffer.extend(events)
+    def is_market_active(self, market: Dict) -> bool:
+        return (
+            market.get('closed') is False
+            and market.get('acceptingOrders') is True
+            and market.get('umaResolutionStatus') != 'resolved'
+        )
 
-                if len(self.event_buffer) >= self.cache_size:
-                    self._write_buffer()
-                    print(f'Collected and saved events up to offset {offset}')
-
-            except Exception as e:
-                print(f'Error collecting events at offset {offset}: {e}')
-                continue
-
-        # Write any remaining events
-        self._write_buffer()
-        print(f'Completed collecting events from offset {start_offset} to {end_offset}')
+    def is_event_active(self, event: Dict) -> bool:
+        return event.get('closed') is False and any(
+            self.is_market_active(m) for m in event.get('markets', [])
+        )
 
     def get_event_from_offset(self, offset: Union[str, int]) -> List[Dict]:
         response = httpx.get(
             f'https://gamma-api.polymarket.com/events?offset={offset}&limit=100'
         )
-        if response.status_code == 200:
-            return response.json()
-        raise Exception(f'Failed to fetch events: HTTP {response.status_code}')
+        if response.status_code != 200:
+            raise Exception(f'Failed to fetch events: HTTP {response.status_code}')
+
+        return response.json()
+
+    def collect_active_events_forward(self, start_offset: int = 9000, step: int = 100):
+        offset = start_offset
+        start_time = time.time()
+
+        while True:
+            try:
+                events = self.get_event_from_offset(offset)
+                print(f'\n[Offset {offset}] Fetched {len(events)} events from API')
+
+                if not events:
+                    print(f'➡️ No more events at offset {offset}. Stopping.')
+                    break
+
+                active_events = []
+                for event in events:
+                    if self.is_event_active(event):
+                        event['markets'] = [
+                            m for m in event['markets'] if self.is_market_active(m)
+                        ]
+                        active_events.append(event)
+
+                if active_events:
+                    self.event_buffer.extend(active_events)
+                    self.total_collected += len(active_events)
+                    print(
+                        f'✅ {len(active_events)} active events found (total so far: {self.total_collected})'
+                    )
+
+                if len(self.event_buffer) >= self.cache_size:
+                    self._write_buffer()
+                    print(f'📝 Flushed buffer to {self.output_file} at offset {offset}')
+
+                # 每 500 条打印一下进度耗时
+                if self.total_collected > 0 and self.total_collected % 500 == 0:
+                    elapsed = time.time() - start_time
+                    print(
+                        f'⏱️  Collected {self.total_collected} events in {elapsed:.2f}s'
+                    )
+
+                offset += step
+
+            except Exception as e:
+                print(f'❌ Error fetching offset {offset}: {e}')
+                break
+
+        self._write_buffer()
+        print(
+            f'\n🎉 Done collecting {self.total_collected} active events from offset {start_offset} ➡️'
+        )
 
 
 class PolyMarketHistoryCrawler(PolyMarketCrawler):
     def __init__(self, input_file: str, output_file: str):
         super().__init__(output_file, cache_size=5)
         self.input_file = input_file
-        self.processed_events = self._load_processed_events(input_file)
+        self.processed_events = self._load_processed_events(output_file)
 
     def collect(self):
         """Collect market histories based on the events in the input file."""
@@ -153,32 +195,22 @@ class PolyMarketHistoryCrawler(PolyMarketCrawler):
         max_retries: int = 5,
         start_ts: Optional[int] = None,
     ) -> List[Dict[str, Union[int, float]]]:
-        host = 'https://clob.polymarket.com'
-        key = os.getenv('PK')
-        chain_id = 137
-
-        if not key:
-            raise ValueError(
-                'Private key not found. Please set PK in the environment variables.'
-            )
-
-        client = ClobClient(host, key=key, chain_id=chain_id)
+        base_url = 'https://clob.polymarket.com/prices-history'
+        if start_ts is None:
+            start_ts = 1  # fallback to some default if not provided
 
         for attempt in range(max_retries):
             try:
-                if start_ts is None:
-                    price_data = client.get_price_history_for_interval(
-                        token_id=token_id,
-                        fidelity=fidelity,
-                        interval='max',
-                    )
-                else:
-                    price_data = client.get_price_history_with_start_ts_only(
-                        token_id=token_id,
-                        fidelity=str(fidelity),
-                        start_ts=str(start_ts),
-                    )
-                return price_data['history']
+                params = {
+                    'market': token_id,
+                    'fidelity': fidelity,
+                    'startTs': start_ts,
+                }
+                response = requests.get(base_url, params=params)
+                response.raise_for_status()
+
+                data = response.json()
+                return data.get('history', [])
 
             except Exception as e:
                 wait_time = 2**attempt
