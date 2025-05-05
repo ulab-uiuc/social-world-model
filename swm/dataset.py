@@ -539,8 +539,8 @@ class BasicPolyMarketDatasetWithEventForReasoner(BaseDataset):
         news: Any,
     ) -> str:
         lines = [
-            f'You are given an event: {market.question}',
-            market.description if market.description else None,
+            #f'You are given an event: {market.question}',
+            #market.description if market.description else None,
             *[
                 f"On {unix_to_date(day['t'])}, price(Yes) = {day['p']:.3f}"
                 for day in window_data

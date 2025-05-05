@@ -97,12 +97,14 @@ class BasicPredictor:
         self,
         model_name: str,
         cache_dir: str,
+        window_size: int,
         max_seq_length: int = 512,
         lora_config: Optional[LoraConfig] = None,
     ):
         self.model_name = model_name
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.max_seq_length = max_seq_length
+        self.window_size = window_size
         self.model = None
         self.cache_dir = Path(cache_dir)
         self.lora_config = lora_config
@@ -172,12 +174,14 @@ class BasicPredictor:
             tokenizer=self.tokenizer,
             reasoner=reasoner,
             cache_dir=self.cache_dir,
+            window_size=self.window_size,
         )
         valid_dataset = BasicPolyMarketDatasetWithEventForPredictor(
             markets=valid_data,
             tokenizer=self.tokenizer,
             reasoner=reasoner,
             cache_dir=self.cache_dir,
+            window_size=self.window_size,
         )
 
         trainer = WeightedTrainer(
@@ -207,6 +211,7 @@ class BasicPredictor:
             tokenizer=self.tokenizer,
             reasoner=reasoner,
             cache_dir=self.cache_dir,
+            window_size=self.window_size,
         )
         dataloader = DataLoader(
             dataset,
