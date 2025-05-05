@@ -1,3 +1,5 @@
+import os
+import time
 from datetime import datetime, timedelta, timezone
 
 import feedparser
@@ -81,29 +83,42 @@ def fetch_news():
         feed = feedparser.parse(feed_url)
 
         for entry in feed.entries:
-            if is_today(entry.published):
-                title = entry.title
-                timestamp = entry.published
-                link = entry.link
+            # parse published time into a UTC datetime
+            published_struct = entry.get('published_parsed')
+            if not published_struct:
+                continue
+            published_dt = datetime.fromtimestamp(
+                time.mktime(published_struct), tz=timezone.utc
+            )
+            # only process if published today
+            if published_dt.date() != datetime.now(timezone.utc).date():
+                continue
+            title = entry.title
+            link = entry.link
+            timestamp = published_dt.isoformat()
 
-                existing_news = news_collection.find_one(
-                    {'$or': [{'title': title}, {'link': link}]}
+            existing_news = news_collection.find_one(
+                {'$or': [{'title': title}, {'link': link}]}
+            )
+            if existing_news:
+                news_collection.update_one(
+                    {'_id': existing_news['_id']},
+                    {'$addToSet': {'tags': {'$each': tags}}},
                 )
-                if existing_news:
-                    print(f'Skipped: {title}')
-                    continue
+                print(f'Updated tags for existing news: {title}')
+                continue
 
-                news_id = get_next_news_id()
+            news_id = get_next_news_id()
 
-                news_data.append(
-                    {
-                        'news_id': news_id,
-                        'title': title,
-                        'timestamp': timestamp,
-                        'link': link,
-                        'tags': tags,
-                    }
-                )
+            news_data.append(
+                {
+                    'news_id': news_id,
+                    'title': title,
+                    'timestamp': timestamp,
+                    'link': link,
+                    'tags': tags,
+                }
+            )
 
     if news_data:
         news_collection.insert_many(news_data)
@@ -114,7 +129,6 @@ def fetch_news():
 
 scheduler = BackgroundScheduler()
 scheduler.add_job(fetch_news, 'interval', hours=6)
-scheduler.start()
 
 
 @app.route('/api/news', methods=['GET'])
@@ -133,4 +147,6 @@ def get_news():
 if __name__ == '__main__':
     print('Starting news scraper...')
     fetch_news()
+    if not (app.debug and os.environ.get('WERKZEUG_RUN_MAIN') != 'true'):
+        scheduler.start()
     app.run(host='0.0.0.0', port=5001, debug=True)
