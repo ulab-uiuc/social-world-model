@@ -4,140 +4,161 @@ import jsonlines
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import seaborn as sns
 from matplotlib import font_manager
+from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
+
+def read_json_file(file_path):
+    """
+    Reads a single JSON lines file and returns its data.
+    """
+    try:
+        with jsonlines.open(file_path, 'r') as file:
+            return [data for data in file]
+    except (json.JSONDecodeError, Exception) as e:
+        print(f"Error reading file {file_path}: {e}")
+        return []
 
 def read_json_files(directory_path):
     """
-    Reads all JSON lines files in the specified directory and returns a list of lists of scores.
-
-    :param directory_path: Path to the directory containing JSON files.
-    :return: List of lists containing scores.
+    Reads all JSON lines files in parallel using ThreadPoolExecutor.
     """
-    json_data = []
+    directory = Path(directory_path)
+    json_files = list(directory.glob('*.json*'))
     
-    # Iterate over all files in the directory
-    for filename in os.listdir(directory_path):
-        # Check if the file is a JSON lines file
-        if filename.endswith('.json') or filename.endswith('.jsonl'):
-            file_path = os.path.join(directory_path, filename)
-            try:
-                with jsonlines.open(file_path, 'r') as file:
-                    dataset = [data for data in file]
-                    json_data.append(dataset)
-            except json.JSONDecodeError as e:
-                print(f"Error decoding JSON from file {file_path}: {e}")
-            except Exception as e:
-                print(f"Error reading file {file_path}: {e}")
+    with ThreadPoolExecutor() as executor:
+        results = list(executor.map(read_json_file, json_files))
     
-    return json_data
+    return [result for result in results if result]
+
+def process_domain_data(domain):
+    """
+    Process data for a single domain.
+    """
+    directory = f'../cache/cache_{domain}_basicpriorreasoner'
+    return read_json_files(directory)
+
+def create_styled_plot(df, highlight_step=20):
+    """
+    Creates a styled plot with shadow effect and optimized appearance using seaborn.
+    """
+    # Set seaborn style
+    sns.set_style("whitegrid", {'axes.grid': True,
+                               'grid.color': '.8',
+                               'grid.linestyle': '--',
+                               'grid.alpha': 0.5})
+    sns.set_context("poster", font_scale=1.2)
+    
+    # Create figure
+    fig, ax = plt.subplots(figsize=(15, 10), dpi=100)
+    
+    # Create shadow effect
+    x = df.index
+    y = df['Average']
+    
+    # Color palette
+    palette = sns.color_palette("deep")
+    main_color = palette[0]
+    
+    # Add gradient shadow under the curve
+    # Base shadow - only under the actual curve
+    mask = ~np.isnan(y)  # Create mask for non-NaN values
+    ax.fill_between(x[mask], y[mask], 
+                   color=main_color, alpha=0.15,
+                   zorder=2)
+    
+    # Plot main line with seaborn color
+    sns.lineplot(data=df, x=df.index, y='Average', 
+                color=main_color, linewidth=4, 
+                label='Importance Score',  # Shortened label
+                zorder=3, ax=ax)
+    
+    # Highlight points
+    highlight_indices = range(0, len(df), highlight_step)
+    highlight_values = df['Average'].iloc[highlight_indices]
+    
+    # Add scatter points with seaborn styling
+    ax.scatter(highlight_indices, highlight_values, 
+              color=main_color, s=400, zorder=4,
+              alpha=0.7)
+    
+    # Annotations with seaborn font scaling
+    for idx, value in zip(highlight_indices, highlight_values):
+        if np.isfinite(value):
+            ax.text(idx+10, value, f"{value:.3f}", 
+                   fontsize=35, color='#2f2f2f', 
+                   ha='right', va='bottom',
+                   fontweight='bold')
+    
+    # Styling with seaborn parameters
+    ax.set_xlabel('Ranking Index', fontsize=50, labelpad=15)
+    ax.set_ylabel('Importance Score', fontsize=50, labelpad=15)
+    ax.tick_params(axis='both', labelsize=45, colors='#2f2f2f')
+
+    
+    # Set limits with padding
+    y_padding = (df['Average'].max() - df['Average'].min()) * 0.05
+    ax.set_ylim(df['Average'].min() - y_padding, 
+                df['Average'].max() + y_padding)
+    
+    # Legend styling - reduced size
+    ax.legend(loc='upper right', fontsize=35, frameon=True,
+             facecolor='white', framealpha=0.9,
+             edgecolor='none')
+    
+    # Additional seaborn styling
+    sns.despine(left=False, bottom=False)
+    
+    # Refine grid
+    ax.grid(True, linestyle='--', alpha=0.4, zorder=1,
+           color='gray', which='major')
+    
+    return fig, ax
 
 def main():
-    # Define the domains and corresponding directories
     domains = ['crypto', 'other', 'election', 'politics', 'sports']
-    overall_dataset = []
     
-    for domain in domains:
-        directory = f'../cache/cache_{domain}_basicpriorreasoner'
-        data = read_json_files(directory)
-        overall_dataset.extend(data)
-        print(f"Read {len(data)} JSON files for domain '{domain}'.")
+    # Process domains in parallel
+    with ThreadPoolExecutor() as executor:
+        domain_results = list(executor.map(process_domain_data, domains))
     
-    # Filter datasets where the first 'score' > 0 and extract scores
-    filtered_overall_dataset = []
-    for data in overall_dataset:
-        if data and 'score' in data[0] and data[0]['score'] > 0:
-            scores = [d.get('score', 0) for d in data]
-            filtered_overall_dataset.append(scores)
+    # Flatten results
+    overall_dataset = [item for sublist in domain_results for item in sublist]
     
-    print(f"Total filtered distributions: {len(filtered_overall_dataset)}")
+    # Filter and process data
+    filtered_data = [
+        [d.get('score', 0) for d in data]
+        for data in overall_dataset
+        if data and 'score' in data[0] and data[0]['score'] > 0
+    ]
     
-    # Check if there are any distributions to process
-    if not filtered_overall_dataset:
+    print(f"Total filtered distributions: {len(filtered_data)}")
+    
+    if not filtered_data:
         print("No distributions to plot after filtering.")
         return
     
-    # Determine the maximum length of distributions
-    max_length = max(len(d) for d in filtered_overall_dataset)
-    
-    # Pad shorter distributions with NaN for alignment
-    padded_data = [d + [np.nan]*(max_length - len(d)) for d in filtered_overall_dataset]
-    
-    # Create a DataFrame where each column represents a distribution
+    # Create DataFrame
+    max_length = max(len(d) for d in filtered_data)
+    padded_data = [d + [np.nan] * (max_length - len(d)) for d in filtered_data]
     df = pd.DataFrame(padded_data).transpose()
-    
-    # Rename columns for clarity
-    df.columns = [f'Distribution {i+1}' for i in range(len(filtered_overall_dataset))]
-    
-    # Assign index name if applicable
+    df.columns = [f'Distribution {i+1}' for i in range(len(filtered_data))]
     df.index.name = 'Index'
-    
-    # Calculate the average trend across all distributions
     df['Average'] = df.mean(axis=1, skipna=True)
-
-    import pdb; pdb.set_trace()
     
-    # Set font to Times New Roman if available, else use DejaVu Serif
-    available_fonts = [f.name for f in font_manager.fontManager.ttflist]
-    if 'Times New Roman' in available_fonts:
-        plt.rcParams['font.family'] = 'serif'
-        plt.rcParams['font.serif'] = ['Times New Roman']
-    else:
-        print("Times New Roman not found. Using DejaVu Serif as fallback.")
-        plt.rcParams['font.family'] = 'serif'
-        plt.rcParams['font.serif'] = ['DejaVu Serif']
-    
-    # Update font sizes and other plot parameters
-    plt.rcParams.update({
-        'font.size': 20,
-        'axes.titlesize': 30,
-        'axes.labelsize': 30,
-        'xtick.labelsize': 30,
-        'ytick.labelsize': 30,
-        'legend.fontsize': 26
-    })
-
-    # Create the plot
-    plt.figure(figsize=(15, 9))
-    ax = plt.gca()
-    
-    # Plot the average trend without markers
-    plt.plot(
-        df.index, 
-        df['Average'], 
-        color='#d62728',           # Distinct color for the average trend
-        linewidth=3,               # Thicker line for prominence
-        label='Average Trend'      # Label for the legend
-    )
-    
-    # Set plot titles and labels
-    plt.title('Average Value Trend Across Distributions', fontsize=30)
-    plt.xlabel('Index', fontsize=30)  # Replace 'Index' with specific category names if applicable
-    plt.ylabel('Average Score', fontsize=30)
-    
-    # Customize x-axis ticks
-    plt.xticks(fontsize=30)
-    
-    # Customize y-axis ticks
-    plt.yticks(fontsize=30)
-    
-    # Set y-axis limits based on data with padding
-    plt.ylim(df['Average'].min() - 0.05, df['Average'].max() + 0.05)
-    
-    # Add grid for better readability
-    plt.grid(True, linestyle='--', alpha=0.5)
-    
-    # Add legend with customized font sizes
-    legend = plt.legend(loc='upper right', title='Legend', title_fontsize=30)
-    plt.setp(legend.get_title(), fontsize='26')
-    plt.setp(legend.get_texts(), fontsize='26')
-    
-    # Adjust layout for better spacing
+    # Create and save plot
+    fig, ax = create_styled_plot(df)
     plt.tight_layout()
     
-    # Save the plot as a high-resolution PDF
-    plt.savefig('average_value_trend_distributions.pdf', dpi=300)
-    
-    # Display the plot
+    # Save with high quality settings
+    plt.savefig('average_value_trend_distributions.pdf', 
+                dpi=300, 
+                bbox_inches='tight',
+                pad_inches=0.1,
+                facecolor='white',
+                edgecolor='none')
     plt.show()
 
 if __name__ == "__main__":
