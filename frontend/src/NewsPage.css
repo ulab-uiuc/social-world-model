@@ -1,4 +1,3 @@
-/* ===== 引入变量（如果需要独立使用） ===== */
 .news-container {
   --primary-color: #3b82f6;
   --primary-light: #60a5fa;
@@ -32,7 +31,6 @@
   --transition-medium: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* ===== 新闻页面容器 ===== */
 .news-container {
   max-width: 1200px;
   margin: 2rem auto;
@@ -40,7 +38,6 @@
   position: relative;
 }
 
-/* 页面装饰 */
 .news-container::before {
   content: '';
   position: absolute;
@@ -53,7 +50,6 @@
   z-index: -1;
 }
 
-/* ===== 新闻标题 ===== */
 .news-title {
   font-size: 2rem;
   font-weight: 700;
@@ -63,13 +59,11 @@
   margin-bottom: 2rem;
   text-align: center;
   position: relative;
-  /* 移除了 animation 属性 */
 }
 .news-title::after {
   display: none;
 }
 
-/* ===== 新闻列表 ===== */
 .news-list {
   list-style: none;
   padding: 0;
@@ -79,7 +73,6 @@
   gap: 1rem;
 }
 
-/* ===== 新闻项容器 ===== */
 .news-item-container {
   background: var(--glass-white);
   backdrop-filter: blur(10px);
@@ -92,7 +85,6 @@
   position: relative;
 }
 
-/* 新闻项装饰线 */
 .news-item-container::before {
   content: '';
   position: absolute;
@@ -119,7 +111,6 @@
   transform: scaleY(1);
 }
 
-/* ===== 新闻项 ===== */
 .news-item {
   display: flex;
   justify-content: space-between;
@@ -149,7 +140,6 @@
   color: var(--accent-purple);
 }
 
-/* 新闻链接悬浮下划线 */
 .news-link::after {
   content: '';
   position: absolute;
@@ -171,7 +161,6 @@
   display: block;
 }
 
-/* ===== 展开按钮 ===== */
 .expand-button {
   background: var(--glass-light);
   border: 1px solid var(--border-color);
@@ -216,7 +205,6 @@
   transform: translateY(-50%) rotate(180deg);
 }
 
-/* ===== 相关卡片容器 ===== */
 .related-cards-container {
   padding: 2rem;
   background: var(--glass-ultra-light);
@@ -226,7 +214,6 @@
   overflow: hidden;
 }
 
-/* 容器装饰 */
 .related-cards-container::before {
   content: '';
   position: absolute;
@@ -272,7 +259,6 @@
   border-radius: 2px;
 }
 
-/* ===== 卡片网格 ===== */
 .cards-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
@@ -280,7 +266,6 @@
   margin-top: 2rem;
 }
 
-/* ===== 相关卡片 ===== */
 .related-card {
   background: var(--glass-white);
   backdrop-filter: blur(10px);
@@ -294,7 +279,6 @@
   overflow: hidden;
 }
 
-/* 卡片顶部彩条 */
 .related-card::before {
   content: '';
   position: absolute;
@@ -321,7 +305,6 @@
   transform: translateX(0);
 }
 
-/* 卡片光晕效果 */
 .related-card::after {
   content: '';
   position: absolute;
@@ -356,7 +339,6 @@
   border-bottom: 1px solid var(--border-color);
 }
 
-/* ===== 迷你图表 ===== */
 .mini-chart {
   margin-bottom: 1rem;
   background: var(--glass-ultra-light);
@@ -371,7 +353,6 @@
   overflow: hidden;
 }
 
-/* 图表装饰 */
 .mini-chart::before {
   content: '';
   position: absolute;
@@ -384,7 +365,6 @@
   pointer-events: none;
 }
 
-/* ===== 卡片选项 ===== */
 .card-options {
   margin-bottom: 1rem;
 }
@@ -436,7 +416,6 @@
   -webkit-text-fill-color: transparent;
 }
 
-/* ===== 查看更多 ===== */
 .see-more {
   text-align: center;
   color: white;
@@ -472,7 +451,6 @@
   left: 100%;
 }
 
-/* ===== 无新闻提示 ===== */
 .no-news {
   text-align: center;
   color: var(--text-light);
@@ -496,7 +474,6 @@
   opacity: 0.1;
 }
 
-/* ===== 加载状态 ===== */
 .related-cards-container p {
   text-align: center;
   color: var(--text-secondary);
@@ -504,7 +481,6 @@
   font-size: 0.875rem;
 }
 
-/* ===== 响应式设计 ===== */
 @media (max-width: 768px) {
   .news-container {
     padding: 0 1rem;
@@ -548,7 +524,6 @@
   }
 }
 
-/* ===== 动画增强 ===== */
 @keyframes float {
   0%, 100% { transform: translate(0, 0) rotate(0deg); }
   33% { transform: translate(30px, -30px) rotate(120deg); }
@@ -567,7 +542,6 @@
   }
 }
 
-/* ===== 过渡优化 ===== */
 .news-item-container,
 .related-card,
 .expand-button,

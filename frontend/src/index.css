@@ -1,11 +1,8 @@
-/* ===== 全局变量 ===== */
 :root {
-  /* 主色系 */
   --primary-color: #3b82f6;
   --primary-light: #60a5fa;
   --primary-dark: #2563eb;
   
-  /* 辅助色系 - 用于装饰 */
   --accent-purple: #8B5CF6;
   --accent-purple-light: #A78BFA;
   --accent-teal: #06B6D4;
@@ -15,7 +12,6 @@
   --accent-pink: #EC4899;
   --accent-pink-light: #F9A8D4;
   
-  /* 渐变色 */
   --gradient-primary: linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%);
   --gradient-purple: linear-gradient(135deg, #8B5CF6 0%, #A78BFA 100%);
   --gradient-teal: linear-gradient(135deg, #06B6D4 0%, #10B981 100%);
@@ -23,22 +19,18 @@
   --gradient-pink: linear-gradient(135deg, #EC4899 0%, #F9A8D4 100%);
   --gradient-rainbow: linear-gradient(135deg, #3b82f6 0%, #8B5CF6 25%, #EC4899 50%, #F59E0B 75%, #10B981 100%);
   
-  /* 背景 */
   --background-main: #f0f4f8;
   --background-gradient: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
   
-  /* 玻璃效果 */
   --glass-white: rgba(255, 255, 255, 0.7);
   --glass-light: rgba(255, 255, 255, 0.5);
   --glass-ultra-light: rgba(255, 255, 255, 0.3);
   --glass-color: rgba(255, 255, 255, 0.1);
   
-  /* 文字 */
   --text-primary: #1e293b;
   --text-secondary: #64748b;
   --text-light: #94a3b8;
   
-  /* 边框和阴影 */
   --border-color: rgba(255, 255, 255, 0.18);
   --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.04);
   --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.07), 0 2px 4px rgba(0, 0, 0, 0.04);
@@ -46,13 +38,11 @@
   --shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.1), 0 10px 10px rgba(0, 0, 0, 0.04);
   --shadow-colored: 0 10px 40px rgba(139, 92, 246, 0.15);
   
-  /* 动画 */
   --transition-fast: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   --transition-medium: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   --transition-slow: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* ===== 基础样式重置 ===== */
 * {
   margin: 0;
   padding: 0;
@@ -68,7 +58,6 @@ body {
   overflow-x: hidden;
 }
 
-/* ===== 动态背景装饰 ===== */
 body::before {
   content: '';
   position: fixed;
@@ -85,7 +74,6 @@ body::before {
   z-index: -2;
 }
 
-/* 添加漂浮的彩色装饰圆 */
 body::after {
   content: '';
   position: fixed;
@@ -112,14 +100,12 @@ body::after {
   66% { transform: translate(20px, -20px) rotate(-240deg); }
 }
 
-/* ===== 容器布局 ===== */
 .app-container {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
 }
 
-/* ===== 头部样式 ===== */
 .app-header {
   position: sticky;
   top: 0;
@@ -133,7 +119,6 @@ body::after {
   overflow: hidden;
 }
 
-/* 头部彩色装饰线 */
 .app-header::after {
   content: '';
   position: absolute;
@@ -142,7 +127,6 @@ body::after {
   right: 0;
   height: 2px;
   background: var(--gradient-rainbow);
-  /* 已移除 animation 属性 */
 }
 
 .header-left {
@@ -166,7 +150,6 @@ body::after {
   transform: translateY(-1px);
 }
 
-/* 标题悬浮彩色光晕 */
 .app-title::after {
   content: '';
   position: absolute;
@@ -198,7 +181,7 @@ body::after {
 }
 
 .news-button::before {
-  display: none; /* 完全移除覆盖效果 */
+  display: none;
 }
 
 .news-button:hover {
@@ -217,7 +200,6 @@ body::after {
   z-index: 1;
 }
 
-/* ===== 标签过滤器 ===== */
 .tag-filter {
   padding: 1.5rem 2rem;
   background: var(--glass-white);
@@ -232,7 +214,6 @@ body::after {
   overflow: hidden;
 }
 
-/* 过滤器装饰 */
 .tag-filter::before {
   content: '';
   position: absolute;
@@ -274,7 +255,6 @@ body::after {
   box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
 }
 
-/* ===== 卡片容器 ===== */
 .card-container {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
@@ -284,7 +264,6 @@ body::after {
   margin: 0 auto;
 }
 
-/* ===== 卡片样式 ===== */
 .card {
   background: var(--glass-white);
   backdrop-filter: blur(10px);
@@ -301,7 +280,6 @@ body::after {
   flex-direction: column;
 }
 
-/* 卡片顶部彩色装饰线 - 随机颜色通过内联样式设置 */
 .card::before {
   content: '';
   position: absolute;
@@ -315,7 +293,6 @@ body::after {
   transition: transform 0.3s ease;
 }
 
-/* 为不同卡片设置不同的渐变色 */
 .card:nth-child(5n + 1)::before { background: var(--gradient-primary); }
 .card:nth-child(5n + 2)::before { background: var(--gradient-purple); }
 .card:nth-child(5n + 3)::before { background: var(--gradient-teal); }
@@ -332,7 +309,6 @@ body::after {
   transform: scaleX(1);
 }
 
-/* 卡片悬浮时的彩色光晕 */
 .card::after {
   content: '';
   position: absolute;
@@ -366,7 +342,6 @@ body::after {
   line-height: 1.4;
 }
 
-/* ===== 菜单样式 ===== */
 .menu {
   background: var(--glass-ultra-light);
   border-radius: 0.75rem;
@@ -406,7 +381,6 @@ body::after {
   -webkit-text-fill-color: transparent;
 }
 
-/* 为不同卡片的百分比使用不同颜色 */
 .card:nth-child(5n + 2) .option-percentage { 
   background: var(--gradient-purple);
   -webkit-background-clip: text;
@@ -428,7 +402,6 @@ body::after {
   -webkit-text-fill-color: transparent;
 }
 
-/* ===== 详情页面布局 ===== */
 .details-page {
   display: flex;
   gap: 2rem;
@@ -449,7 +422,6 @@ body::after {
   overflow: hidden;
 }
 
-/* 卡片装饰 */
 .left-card::before {
   content: '';
   position: absolute;
@@ -482,7 +454,6 @@ body::after {
   position: relative;
 }
 
-/* ===== 选项容器 ===== */
 .options-container {
   display: flex;
   flex-direction: column;
@@ -539,7 +510,6 @@ body::after {
   -webkit-text-fill-color: white !important;
 }
 
-/* ===== 理由容器 ===== */
 .reasons-container {
   margin-top: 1.5rem;
   padding: 1.5rem;
@@ -617,7 +587,6 @@ body::after {
   color: rgba(255, 255, 255, 0.9);
 }
 
-/* ===== 投票模块 ===== */
 .vote-module {
   background: var(--glass-ultra-light);
   padding: 1.5rem;
@@ -699,7 +668,6 @@ body::after {
   box-shadow: none;
 }
 
-/* ===== 图表容器 ===== */
 .history-chart-container {
   position: relative;
   margin-top: 2rem;
@@ -765,7 +733,6 @@ body::after {
   position: relative;
 }
 
-/* ===== 响应式设计 ===== */
 @media (max-width: 768px) {
   .app-header {
     padding: 1rem;
@@ -811,7 +778,6 @@ body::after {
   }
 }
 
-/* ===== 加载动画 ===== */
 @keyframes shimmer {
   0% {
     background-position: -200% 0;
@@ -832,7 +798,6 @@ body::after {
   animation: shimmer 1.5s infinite;
 }
 
-/* ===== 滚动条美化 ===== */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -852,19 +817,16 @@ body::after {
   background: var(--gradient-purple);
 }
 
-/* ===== 焦点样式 ===== */
 *:focus {
   outline: none;
   box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
 }
 
-/* ===== 选择文本样式 ===== */
 ::selection {
   background: var(--accent-purple);
   color: white;
 }
 
-/* ===== 彩虹闪烁动画 ===== */
 @keyframes rainbow {
   0% { background-position: 0% 50%; }
   50% { background-position: 100% 50%; }
