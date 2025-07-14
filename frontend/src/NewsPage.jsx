@@ -7,13 +7,13 @@ import TimeSeriesChart from "./TimeSeriesChart";
 const API_BASE_URL =
   window.location.hostname === "localhost"
     ? "http://localhost:5001"
-    : `http://${window.location.hostname}`;
+    : `http://${window.location.hostname}:5001`;
 
-const API_NEWS_URL = `${API_BASE_URL}/api/news`;
+const API_NEWS_URL = `/api/news`;
 
 const API_BACKEND_URL = window.location.hostname === "localhost"
   ? "http://localhost:5000"
-  : `http://${window.location.hostname}:8000`;
+  : `http://${window.location.hostname}:5000`;
 
 const API_NEWS_CARDS_URL = `${API_BACKEND_URL}/api/news_cards`;
 const API_VOTE_HISTORY_URL = `${API_BACKEND_URL}/api/vote_history`;

@@ -9,12 +9,12 @@ import CardDetails from "./CardDetails";
 
 const API_BASE_URL = window.location.hostname === "localhost"
   ? "http://localhost:5000"
-  : `http://${window.location.hostname}:8000`;
+  : `http://${window.location.hostname}:5000`;
 
-const API_CARDS_URL = `${API_BASE_URL}/api/cards`;
-const API_TAGS_URL = `${API_BASE_URL}/api/tags`;
-const API_VOTE_HISTORY_URL = `${API_BASE_URL}/api/vote_history`;
-const API_ESTIMATED_VOTE_HISTORY_URL = `${API_BASE_URL}/api/estimated_vote_history`
+const API_CARDS_URL = `/api/cards`;
+const API_TAGS_URL = `/api/tags`;
+const API_VOTE_HISTORY_URL = `/api/vote_history`;
+const API_ESTIMATED_VOTE_HISTORY_URL = `/api/estimated_vote_history`
 
 
 export const HistoryChart = ({ cardId, mode = 1 }) => {
