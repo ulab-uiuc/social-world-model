@@ -9,7 +9,7 @@ import CardDetails from "./CardDetails";
 
 const API_BASE_URL = window.location.hostname === "localhost"
   ? "http://localhost:5000"
-  : `http://${window.location.hostname}:5000`;
+  : "";
 
 const API_CARDS_URL = `/api/cards`;
 const API_TAGS_URL = `/api/tags`;
