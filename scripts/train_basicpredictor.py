@@ -11,6 +11,7 @@ from transformers import TrainingArguments
 import torch
 import wandb
 from accelerate import Accelerator
+import os
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train the Basic Social Wisdom Model')
@@ -102,6 +103,7 @@ def train(args):
         gradient_checkpointing=args.gradient_checkpointing, 
         report_to="wandb",
         logging_dir=os.path.join(args.output_dir, "logs"),
+        label_names=["labels"],
     )
 
     reasoner = BasicPosteriorReasoner(

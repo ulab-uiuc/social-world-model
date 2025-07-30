@@ -156,3 +156,20 @@ CUDA_VISIBLE_DEVICES=3 python train_basicpriorreasoner.py \
 --save-steps 200 \
 --eval-steps 200 \
 --epochs 20
+
+
+
+CUDA_VISIBLE_DEVICES=0 python train_basicpriorreasoner.py \
+--train-data-path ../data/swm_bench_train_filtered.jsonl \
+--valid-data-path ../data/splitted_polymarket/polymarket_data_processed_dev.jsonl \
+--corpus-news-path ../data/processed_dailynews/dailynews_data_processed.jsonl \
+--output-dir ../saves/saves_basicpriorreasoner_qwen2.5_0.5B_instruct_0730 \
+--model-name /mnt/data_from_server1/models/Qwen2.5-0.5B-Instruct \
+--cache-dir ../cache/cache_all_basicpriorreasoner \
+--reasoner-cache-dir ../cache/cache_all_basicpriorreasoner \
+--train-batch-size 1 \
+--eval-batch-size 1 \
+--reasoner-max-news-items 10 \
+--save-steps 200 \
+--eval-steps 200 \
+--epochs 20

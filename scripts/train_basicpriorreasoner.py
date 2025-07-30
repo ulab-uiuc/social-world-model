@@ -95,6 +95,8 @@ def train(args):
         metric_for_best_model='loss',
         save_safetensors=False,
         remove_unused_columns=False,
+        report_to="wandb",
+        label_names=["labels"]
     )
 
     # If your Prior reasoner depends on a Posterior reasoner (for generating p-dist),

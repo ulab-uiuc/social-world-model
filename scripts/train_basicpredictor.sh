@@ -259,13 +259,63 @@ CUDA_VISIBLE_DEVICES=4 python train_basicpredictor.py \
 --epochs 10
 
 
+CUDA_VISIBLE_DEVICES=4 python train_basicpredictor.py \
+--train-data-path ../data/splitted_polymarket/polymarket_data_processed_train.jsonl \
+--valid-data-path ../data/splitted_polymarket/polymarket_data_processed_dev.jsonl \
+--corpus-news-path ../data/processed_dailynews/dailynews_data_processed.jsonl \
+--output-dir ../saves/saves_all_basicpredictor_qwen2.5_7B_Instruct_ref \
+--model-name /mnt/data/models/Qwen2.5-7B-Instruct \
+--cache-dir ../cache/cache_all_basicpredictor \
+--reasoner-cache-dir ../cache/cache_all_basicpredictor \
+--train-batch-size 4 \
+--eval-batch-size 4 \
+--reasoner-max-news-items 10 \
+--save-steps 200 \
+--eval-steps 200 \
+--gradient-checkpointing \
+--epochs 10
+
+CUDA_VISIBLE_DEVICES=1 python train_basicpredictor.py \
+--train-data-path ../data/swm_bench_train_filtered.jsonl \
+--valid-data-path ../data/splitted_polymarket/polymarket_data_processed_dev.jsonl \
+--corpus-news-path ../data/processed_dailynews/dailynews_data_processed.jsonl \
+--output-dir ../saves/saves_all_basicpredictor_qwen2.5_0.5B_Instruct_0730 \
+--model-name /mnt/data_from_server1/models/Qwen2.5-0.5B-Instruct \
+--cache-dir ../cache/cache_all_basicpredictor \
+--reasoner-cache-dir ../cache/cache_all_basicpredictor \
+--train-batch-size 4 \
+--eval-batch-size 4 \
+--reasoner-max-news-items 10 \
+--save-steps 200 \
+--eval-steps 200 \
+--gradient-checkpointing \
+--epochs 10
+
+CUDA_VISIBLE_DEVICES=9 python train_basicpredictor.py \
+--train-data-path ../data/temporal_new_split_data/swm_bench_train_new.jsonl \
+--valid-data-path ../data/temporal_new_split_data/swm_bench_dev_new.jsonl \
+--corpus-news-path ../data/processed_dailynews/dailynews_data_processed.jsonl \
+--output-dir ../saves/new_split_saves_all_basicpredictor_qwen2.5_0.5B_Instruct_0730 \
+--model-name /mnt/data_from_server1/models/Qwen2.5-0.5B-Instruct \
+--cache-dir ../cache/cache_all_basicpredictor \
+--reasoner-cache-dir ../cache/cache_all_basicpredictor \
+--train-batch-size 4 \
+--eval-batch-size 4 \
+--reasoner-max-news-items 10 \
+--save-steps 200 \
+--eval-steps 200 \
+--gradient-checkpointing \
+--epochs 10
+
+
+
 # for sanity check
 CUDA_VISIBLE_DEVICES=4 python train_basicpredictor.py \
 --train-data-path ../data/splitted_polymarket/polymarket_data_processed_Crypto_test.jsonl \
 --valid-data-path ../data/splitted_polymarket/polymarket_data_processed_Crypto_test.jsonl \
 --corpus-news-path ../data/processed_dailynews/dailynews_data_processed.jsonl \
 --output-dir ../saves/saves_crypto_basicpredictor_qwen2.5_1.5B_Instruct_sanitycheck \
---model-name Qwen/Qwen2.5-1.5B-Instruct \
+--model-name /mnt/data_from_server1/models/Qwen2.5-0.5B-Instruct \
 --cache-dir ../cache/cache_crypto_basicpredictor_qwen2.5_1.5B_Instruct_sanitycheck \
 --reasoner-cache-dir ../cache/cache_crypto_basicpredictor_qwen2.5_1.5B_Instruct_sanitycheck \
 --epochs 200 \

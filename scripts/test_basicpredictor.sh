@@ -149,3 +149,57 @@ CUDA_VISIBLE_DEVICES=0 python test_basicpredictor.py \
 --cache-dir ../cache/cache_other_basicpredictor \
 --test-batch-size 1 \
 --reasoner-max-news-items 10
+
+CUDA_VISIBLE_DEVICES=3 python test_basicpredictor.py \
+--test-data-path ../data/polymarket_data_processed_Other_test.jsonl \
+--corpus-news-path ../data/processed_dailynews/dailynews_data_processed.jsonl \
+--model-checkpoint ../saves/saves_all_basicpredictor_qwen2.5_0.5B_Instruct_0730/checkpoint-best \
+--output-dir ../saves/saves_other_basicpredictor_Qwen2.5-0.5B-Instruct_0730 \
+--cache-dir ../cache/cache_other_basicpredictor \
+--test-batch-size 1 \
+--reasoner-max-news-items 10
+
+CUDA_VISIBLE_DEVICES=3 python test_basicpredictor.py \
+--test-data-path ../data/polymarket_data_processed_Other_test.jsonl \
+--corpus-news-path ../data/processed_dailynews/dailynews_data_processed.jsonl \
+--model-checkpoint ../saves/saves_all_basicpredictor_qwen2.5_0.5B_Instruct_0730/checkpoint-best \
+--output-dir ../saves/saves_other_basicpredictor_Qwen2.5-0.5B-Instruct_0730 \
+--cache-dir ../cache/cache_other_basicpredictor \
+--test-batch-size 1 \
+--reasoner-max-news-items 10
+
+CUDA_VISIBLE_DEVICES=3 python test_basicpredictor.py \
+--test-data-path ../data/polymarket_data_processed_Crypto_test_filtered.jsonl \
+--corpus-news-path ../data/processed_dailynews/dailynews_data_processed.jsonl \
+--model-checkpoint ../saves/saves_all_basicpredictor_qwen2.5_0.5B_Instruct_0730/checkpoint-best \
+--output-dir ../saves/saves_crypto_filtered_basicpredictor_Qwen2.5-0.5B-Instruct_0730 \
+--cache-dir ../cache/cache_crypto_basicpredictor \
+--test-batch-size 1 \
+--reasoner-max-news-items 10
+
+CUDA_VISIBLE_DEVICES=3 python test_basicpredictor.py \
+--test-data-path ../data/polymarket_data_processed_Sports_test.jsonl \
+--corpus-news-path ../data/processed_dailynews/dailynews_data_processed.jsonl \
+--model-checkpoint ../saves/saves_all_basicpredictor_qwen2.5_0.5B_Instruct_0730/checkpoint-best \
+--output-dir ../saves/saves_sports_basicpredictor_Qwen2.5-0.5B-Instruct_0730 \
+--cache-dir ../cache/cache_sports_basicpredictor \
+--test-batch-size 1 \
+--reasoner-max-news-items 10
+
+CUDA_VISIBLE_DEVICES=3 python test_basicpredictor.py \
+--test-data-path ../data/polymarket_data_processed_Election_test_filtered.jsonl \
+--corpus-news-path ../data/processed_dailynews/dailynews_data_processed.jsonl \
+--model-checkpoint ../saves/saves_all_basicpredictor_qwen2.5_0.5B_Instruct_0730/checkpoint-best \
+--output-dir ../saves/saves_election_filtered_basicpredictor_Qwen2.5-0.5B-Instruct_0730 \
+--cache-dir ../cache/cache_election_basicpredictor \
+--test-batch-size 1 \
+--reasoner-max-news-items 10
+
+CUDA_VISIBLE_DEVICES=3 python test_basicpredictor.py \
+--test-data-path ../data/polymarket_data_processed_Politics_test_filtered.jsonl \
+--corpus-news-path ../data/processed_dailynews/dailynews_data_processed.jsonl \
+--model-checkpoint ../saves/saves_all_basicpredictor_qwen2.5_0.5B_Instruct_0730/checkpoint-best \
+--output-dir ../saves/saves_politics_filtered_basicpredictor_Qwen2.5-0.5B-Instruct_0730 \
+--cache-dir ../cache/cache_politics_basicpredictor \
+--test-batch-size 1 \
+--reasoner-max-news-items 10
