@@ -8,6 +8,8 @@ from swm.predictor import BasicPredictor
 from swm.utils.metric import calculate_reg_metric
 from swm.utils.posterior_reasoner import BasicPosteriorReasoner
 from swm.utils.utils import load_dailynews_data, load_polymarket_data, set_seed
+from swm.reasoner import BasicPriorReasoner
+from swm.utils.wrappers import PriorAsReasoner
 
 
 def parse_args():
@@ -117,22 +119,37 @@ def test_pipeline(args):
         cache_dir=args.predictor_cache_dir,
         max_seq_length=args.max_seq_length,
         lora_config=lora_config,
+        window_size=5
     )
 
     # Load checkpoint
     predictor.load(args.predictor_checkpoint)
 
-    # Setup reasoner
-    posterior_reasoner = BasicPosteriorReasoner(
-        model_name=args.reasoner_name,
-        max_news_items=args.reasoner_max_news_items,
-        corpus_news=corpus_news,
-        cache_dir=args.output_dir,
-    )
+    # # Setup reasoner
+    # posterior_reasoner = BasicPosteriorReasoner(
+    #     model_name=args.reasoner_name,
+    #     max_news_items=args.reasoner_max_news_items,
+    #     corpus_news=corpus_news,
+    #     cache_dir=args.output_dir,
+    # )
 
-    # Run predictions
+    # # Run predictions
+    # results = predictor.predict(
+    #     markets=test_data, reasoner=posterior_reasoner, batch_size=args.test_batch_size
+    # )
+    prior_reasoner = BasicPriorReasoner(
+    model_name=args.model_name,
+    cache_dir=args.prior_reasoner_cache_dir,
+    max_seq_length=args.max_seq_length,
+    lora_config=lora_config,
+    )
+    prior_reasoner.load(args.prior_reasoner_checkpoint)
+    compatible_reasoner = PriorAsReasoner(prior_reasoner)
+
     results = predictor.predict(
-        markets=test_data, reasoner=posterior_reasoner, batch_size=args.test_batch_size
+        markets=test_data,
+        reasoner=compatible_reasoner,
+        batch_size=args.test_batch_size,
     )
 
     # Calculate metrics

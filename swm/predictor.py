@@ -13,6 +13,8 @@ from .dataset import BasicPolyMarketDatasetWithEventForPredictor
 from .reasoner import BasicPriorReasoner
 from .utils.posterior_reasoner import BasicPosteriorReasoner
 from .utils.regressor import LLMRegressor, LLMRegressorConfig
+from transformers import TrainingArguments, BitsAndBytesConfig
+from accelerate import Accelerator
 
 
 class WeightedTrainer(Trainer):
@@ -21,7 +23,7 @@ class WeightedTrainer(Trainer):
     ):
         group_size = len(group_indices)
         chunk_size = 8
-        acc_pred = 0
+        acc_pred = torch.tensor(0.0, device=inputs['input_ids'].device)
 
         group_weights = weights[group_indices]
         normalized_weights = group_weights / group_weights.sum()
@@ -55,7 +57,7 @@ class WeightedTrainer(Trainer):
         weights = inputs.pop('weights')
         group_ids = inputs.pop('group_ids')
 
-        total_loss = 0
+        total_loss = torch.tensor(0.0, device=labels.device)
         num_valid_groups = 0
         for group in torch.unique(group_ids):
             group_indices = torch.where(group_ids == group)[0]
@@ -97,15 +99,18 @@ class BasicPredictor:
         self,
         model_name: str,
         cache_dir: str,
+        window_size: int,
         max_seq_length: int = 512,
         lora_config: Optional[LoraConfig] = None,
     ):
         self.model_name = model_name
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.max_seq_length = max_seq_length
+        self.window_size = window_size
         self.model = None
         self.cache_dir = Path(cache_dir)
         self.lora_config = lora_config
+        # self.accelerator = accelerator
 
     def setup_model(self) -> None:
         config = LLMRegressorConfig(
@@ -172,12 +177,14 @@ class BasicPredictor:
             tokenizer=self.tokenizer,
             reasoner=reasoner,
             cache_dir=self.cache_dir,
+            window_size=self.window_size,
         )
         valid_dataset = BasicPolyMarketDatasetWithEventForPredictor(
             markets=valid_data,
             tokenizer=self.tokenizer,
             reasoner=reasoner,
             cache_dir=self.cache_dir,
+            window_size=self.window_size,
         )
 
         trainer = WeightedTrainer(
@@ -207,6 +214,7 @@ class BasicPredictor:
             tokenizer=self.tokenizer,
             reasoner=reasoner,
             cache_dir=self.cache_dir,
+            window_size=self.window_size,
         )
         dataloader = DataLoader(
             dataset,
