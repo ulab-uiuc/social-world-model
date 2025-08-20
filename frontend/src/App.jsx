@@ -8,14 +8,14 @@ import './App.css';
 import CardDetails from "./CardDetails";
 
 const API_BASE_URL = window.location.hostname === "localhost"
-  ? "http://localhost:5000"
+  ? "http://localhost:5002"
   : "";
 
 
-const API_CARDS_URL = `/api/cards`;
-const API_TAGS_URL = `/api/tags`;
-const API_VOTE_HISTORY_URL = `/api/vote_history`;
-const API_ESTIMATED_VOTE_HISTORY_URL = `/api/estimated_vote_history`
+const API_CARDS_URL = `${API_BASE_URL}/api/cards`;
+const API_TAGS_URL = `${API_BASE_URL}/api/tags`;
+const API_VOTE_HISTORY_URL = `${API_BASE_URL}/api/vote_history`;
+const API_ESTIMATED_VOTE_HISTORY_URL = `${API_BASE_URL}/api/estimated_vote_history`
 
 
 export const HistoryChart = ({ cardId, mode = 1 }) => {
@@ -159,7 +159,7 @@ function MainContent() {
             onChange={(e) => setSelectedTag(e.target.value)}
           >
             <option value="">All</option>
-            {tags.map((tag) => (
+            {Array.isArray(tags) && tags.map((tag) => (
               <option key={tag} value={tag}>
                 {tag}
               </option>
@@ -181,7 +181,7 @@ function CardList({ cards }) {
 
   return (
     <div className="card-container">
-      {cards.map((card) => (
+      {Array.isArray(cards) && cards.map((card) => (
         <div
           className="card"
           key={card.card_id}
@@ -189,7 +189,7 @@ function CardList({ cards }) {
         >
           <h3 className="card-title">{card.question}</h3>
           <div className="menu">
-            {card.options.map((option, idx) => (
+            {Array.isArray(card.options) && card.options.map((option, idx) => (
               <div className="menu-item" key={idx}>
                 <span className="option-label">{option.option}</span>
                 <span className="option-percentage">{option.percentage}%</span>
