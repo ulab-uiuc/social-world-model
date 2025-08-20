@@ -9,11 +9,11 @@ const API_BASE_URL =
     ? "http://localhost:5001"
     : `http://${window.location.hostname}:5001`;
 
-const API_NEWS_URL = `/api/news`;
+const API_NEWS_URL = `${API_BASE_URL}/api/news`;
 
 const API_BACKEND_URL = window.location.hostname === "localhost"
-  ? "http://localhost:5000"
-  : `http://${window.location.hostname}:5000`;
+  ? "http://localhost:5002"
+  : `http://${window.location.hostname}:5002`;
 
 const API_NEWS_CARDS_URL = `${API_BACKEND_URL}/api/news_cards`;
 const API_VOTE_HISTORY_URL = `${API_BACKEND_URL}/api/vote_history`;
@@ -75,10 +75,12 @@ const NewsPage = () => {
     try {
       if (!cardHistory[cardId]) {
         const response = await axios.get(`${API_VOTE_HISTORY_URL}/${cardId}`);
-        const formattedData = response.data.map(entry => ({
-          timestamp: entry.timestamp,
-          ...entry.votes,
-        }));
+        const formattedData = Array.isArray(response.data) 
+          ? response.data.map(entry => ({
+              timestamp: entry.timestamp,
+              ...entry.votes,
+            }))
+          : [];
         setCardHistory(prev => ({
           ...prev,
           [cardId]: formattedData
@@ -109,7 +111,7 @@ const NewsPage = () => {
         <p className="no-news">No news available</p>
       ) : (
         <ul className="news-list">
-          {news.map((item, index) => (
+          {Array.isArray(news) && news.map((item, index) => (
             <li key={index} className="news-item-container">
               <div className="news-item">
                 <div className="news-content">
@@ -139,7 +141,7 @@ const NewsPage = () => {
                   {relatedCards[item.news_id || `news-${index}`] ? (
                     relatedCards[item.news_id || `news-${index}`].length > 0 ? (
                       <div className="cards-grid">
-                        {relatedCards[item.news_id || `news-${index}`].map(card => (
+                        {Array.isArray(relatedCards[item.news_id || `news-${index}`]) && relatedCards[item.news_id || `news-${index}`].map(card => (
                           <div
                             key={card.card_id}
                             className="related-card"
@@ -155,7 +157,7 @@ const NewsPage = () => {
                               )}
                             </div>
                             <div className="card-options">
-                              {card.options.map((option, idx) => (
+                              {Array.isArray(card.options) && card.options.map((option, idx) => (
                                 <div className="option-row" key={idx}>
                                   <span>{option.option}</span>
                                   <span>{option.percentage}%</span>
