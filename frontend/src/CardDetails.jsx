@@ -15,8 +15,9 @@ const CardDetails = ({ cards, API_BASE_URL }) => {
   const [isGenerating, setIsGenerating] = useState(false);
 
   const availableModels = [
-    { value: 'gpt-5', label: 'GPT-5 (Latest)' },
-    { value: 'o4-mini', label: 'o4-mini' },
+    { value: 'gpt-4.1', label: 'GPT-4.1' },
+    { value: 'gpt-4.1-mini', label: 'GPT-4.1 Mini' },
+    { value: 'gpt-4.1-nano', label: 'GPT-4.1 Nano' },
     { value: 'claude-3-5-sonnet-20241022', label: 'Claude 3.5 Sonnet' },
     { value: 'claude-3-5-haiku-20241022', label: 'Claude 3.5 Haiku' },
     { value: 'claude-3-opus-20240229', label: 'Claude 3 Opus' },
