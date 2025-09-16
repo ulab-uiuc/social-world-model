@@ -176,12 +176,26 @@ class PolymarketUpdater:
                 if not prices:
                     continue
 
+                # Skip entries where not all options have data
+                if len(prices) < len(outcomes):
+                    logger.debug(f'Skipping timestamp {timestamp} - incomplete data: {prices}')
+                    continue
+
                 total_price = sum(prices.values())
+                if total_price <= 0:
+                    logger.debug(f'Skipping timestamp {timestamp} - zero total price')
+                    continue
 
                 votes = {}
                 for option, price in prices.items():
-                    percentage = (price / total_price * 100) if total_price > 0 else 0
+                    percentage = (price / total_price * 100)
                     votes[option] = round(percentage, 2)
+
+                # Verify percentages add up to approximately 100%
+                total_percentage = sum(votes.values())
+                if abs(total_percentage - 100) > 5:  # Allow 5% tolerance
+                    logger.debug(f'Skipping timestamp {timestamp} - percentages dont add up: {total_percentage}%')
+                    continue
 
                 history_entry = {
                     'card_id': card_id,

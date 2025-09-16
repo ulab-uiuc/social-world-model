@@ -15,12 +15,10 @@ const API_BASE_URL = window.location.hostname === "localhost"
 const API_CARDS_URL = `${API_BASE_URL}/api/cards`;
 const API_TAGS_URL = `${API_BASE_URL}/api/tags`;
 const API_VOTE_HISTORY_URL = `${API_BASE_URL}/api/vote_history`;
-const API_ESTIMATED_VOTE_HISTORY_URL = `${API_BASE_URL}/api/estimated_vote_history`
 
 
-export const HistoryChart = ({ cardId, mode = 1 }) => {
+export const HistoryChart = ({ cardId }) => {
   const [actualData, setActualData] = useState([]);
-  const [estimatedData, setEstimatedData] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -33,13 +31,6 @@ export const HistoryChart = ({ cardId, mode = 1 }) => {
           ...entry.votes,
         }));
         setActualData(formattedActualData);
-
-        const estimatedResponse = await axios.get(`${API_ESTIMATED_VOTE_HISTORY_URL}/${cardId}`);
-        const formattedEstimatedData = estimatedResponse.data.map(entry => ({
-          timestamp: entry.timestamp,
-          ...entry.votes,
-        }));
-        setEstimatedData(formattedEstimatedData);
       } catch (error) {
         console.error("Error fetching chart data:", error);
       } finally {
@@ -50,38 +41,11 @@ export const HistoryChart = ({ cardId, mode = 1 }) => {
     fetchData();
   }, [cardId]);
 
-
-  const getChartProps = () => {
-    switch (mode) {
-      case 1:
-        return {
-          data: actualData,
-          showEstimated: false
-        };
-      case 2:
-      return {
-        data: estimatedData,
-        estimatedData: [],
-      };
-      case 3:
-        return {
-          data: actualData,
-          estimatedData: estimatedData,
-          showBoth: true
-        };
-      default:
-        return {
-          data: actualData,
-          showEstimated: false
-        };
-    }
-  };
-
   if (isLoading) {
     return <div>Loading chart data...</div>;
   }
 
-  return <TimeSeriesChart {...getChartProps()} />;
+  return <TimeSeriesChart data={actualData} showEstimated={false} />;
 };
 
 
@@ -92,7 +56,7 @@ function App() {
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
       </Helmet>
       <Router>
-        <div className="app-container">
+        <div className="App">
           <Header />
           <MainContent />
         </div>
@@ -103,20 +67,27 @@ function App() {
 
 function Header() {
   const navigate = useNavigate();
+  const location = useLocation();
 
   return (
-    <header className="app-header">
-      <div className="header-left">
-        <h1 className="app-title" onClick={() => navigate('/')}>
-          Openmarket
-        </h1>
-        {location.pathname !== "/news" && (
-          <button className="news-button" onClick={() => navigate('/news')}>
-            News
+    <header className="navigation">
+      <div className="navigation-container">
+        <div className="nav-logo">
+          <button className="app-title" onClick={() => navigate('/')}>
+            Openmarket
           </button>
-        )}
+        </div>
+        
+        <div className="desktop-nav">
+          <div className="nav-links">
+            {location.pathname !== "/news" && (
+              <button className="news-button" onClick={() => navigate('/news')}>
+                News
+              </button>
+            )}
+          </div>
+        </div>
       </div>
-      <div className="horizontal-bar"></div>
     </header>
   );
 }
