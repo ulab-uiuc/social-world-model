@@ -17,6 +17,7 @@ relations_collection = db['card_news_relations']
 estimated_history_collection = db['estimated_vote_history']
 
 option_reasons_collection = db['option_reasons']
+news_collection = db['news']
 
 
 def record_hourly_data():
@@ -187,6 +188,8 @@ def get_vote_history(card_id):
             query['timestamp'] = {'$gte': cutoff_date.isoformat()}
 
         history = list(history_collection.find(query, {'_id': 0}).sort('timestamp', 1))
+        
+        # Return raw data without any cleaning or processing
         return jsonify(history), 200
     except Exception as e:
         print(f'Error in get_vote_history: {str(e)}')
@@ -283,6 +286,21 @@ def get_polymarket_info(card_id):
         }
 
         return jsonify(polymarket_info), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/news', methods=['GET'])
+def get_news():
+    try:
+        tag_filter = request.args.get('tag')
+        query = {}
+
+        if tag_filter:
+            query['tags'] = tag_filter
+
+        news = list(news_collection.find(query, {'_id': 0}).sort('timestamp', -1))
+        return jsonify(news)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

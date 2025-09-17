@@ -8,7 +8,6 @@ const CardDetails = ({ cards, API_BASE_URL }) => {
   const card = cards.find((c) => c.card_id === card_id);
 
   const [selectedOption, setSelectedOption] = useState(null);
-  const [chartMode, setChartMode] = useState(1);
   const [reasons, setReasons] = useState([]);
   const [selectedReason, setSelectedReason] = useState(null);
   const [selectedModel, setSelectedModel] = useState('gpt-4o-mini');
@@ -193,28 +192,8 @@ const CardDetails = ({ cards, API_BASE_URL }) => {
           <p>Please select an option to vote.</p>
         )}
         <div className="history-chart-container">
-          <div className="chart-controls">
-            <button
-              className={`chart-mode-btn ${chartMode === 1 ? 'active' : ''}`}
-              onClick={() => setChartMode(1)}
-            >
-              Real
-            </button>
-            <button
-              className={`chart-mode-btn ${chartMode === 2 ? 'active' : ''}`}
-              onClick={() => setChartMode(2)}
-            >
-              Estimated
-            </button>
-            <button
-              className={`chart-mode-btn ${chartMode === 3 ? 'active' : ''}`}
-              onClick={() => setChartMode(3)}
-            >
-              Both
-            </button>
-          </div>
           <div className="history-chart">
-            <HistoryChart cardId={card_id} mode={chartMode} />
+            <HistoryChart cardId={card_id} />
           </div>
         </div>
       </div>
