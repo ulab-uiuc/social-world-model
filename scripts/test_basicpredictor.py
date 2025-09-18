@@ -56,6 +56,7 @@ def test_predictor(args):
         test_data = load_polymarket_data(args.test_data_path)
         corpus_news = load_dailynews_data(args.corpus_news_path)
 
+    # breakpoint()
     # Setup LoRA
     lora_config = LoraConfig(
         r=args.r,
@@ -72,6 +73,7 @@ def test_predictor(args):
         cache_dir=args.cache_dir,
         max_seq_length=args.max_seq_length,
         lora_config=lora_config,
+        window_size=5
     )
 
     # Load checkpoint
@@ -85,11 +87,13 @@ def test_predictor(args):
         cache_dir=args.cache_dir,
     )
 
+    # breakpoint()
     # Run predictions
     results = predictor.predict(
         markets=test_data, reasoner=reasoner, batch_size=args.test_batch_size
     )
 
+    # breakpoint()
     # Calculate metrics
     predictions = [r['prediction'] for r in results]
     ground_truth = [r['ground_truth'] for r in results]

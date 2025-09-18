@@ -6,7 +6,12 @@ from transformers import TrainingArguments
 from swm.predictor import BasicPredictor
 from swm.utils.posterior_reasoner import BasicPosteriorReasoner
 from swm.utils.utils import load_dailynews_data, load_polymarket_data, set_seed
-
+from peft import LoraConfig
+from transformers import TrainingArguments
+import torch
+import wandb
+from accelerate import Accelerator
+import os
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train the Basic Social Wisdom Model')
@@ -38,11 +43,18 @@ def parse_args():
     parser.add_argument('--reasoner-max-news-items', type=int, default=10)
     parser.add_argument('--sanity-check', action='store_true')
     parser.add_argument('--reasoner-cache-dir', type=str, default='./cache')
+    parser.add_argument('--window-size', type=int, default=5)
+    parser.add_argument('--gradient-checkpointing', action='store_true')
     return parser.parse_args()
 
 
 def train(args):
     set_seed(args.seed)
+    wandb.init(
+        project="swm", 
+        name="swm-ref", 
+        config={k: v for k, v in vars(args).items() if isinstance(v, (int, float, str))}
+    )
     if args.sanity_check:
         train_data = load_polymarket_data(args.train_data_path)[:2]
         valid_data = load_polymarket_data(args.valid_data_path)[:2]
@@ -66,6 +78,7 @@ def train(args):
         cache_dir=args.cache_dir,
         max_seq_length=args.max_seq_length,
         lora_config=lora_config,
+        window_size=args.window_size,
     )
 
     training_args = TrainingArguments(
@@ -87,6 +100,10 @@ def train(args):
         metric_for_best_model='loss',
         save_safetensors=False,
         remove_unused_columns=False,
+        gradient_checkpointing=args.gradient_checkpointing, 
+        report_to="wandb",
+        logging_dir=os.path.join(args.output_dir, "logs"),
+        label_names=["labels"],
     )
 
     reasoner = BasicPosteriorReasoner(

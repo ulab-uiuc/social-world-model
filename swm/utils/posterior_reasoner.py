@@ -156,7 +156,6 @@ class BasicPosteriorReasoner:
         cache_key = self._get_cache_key(str(time), market.market_id)
         cache_path = self.cache_dir / f'{cache_key}.json'
 
-        # Try to load from cache
         cached_results = self._load_from_cache(cache_path)
         if cached_results is not None:
             return self._filter_for_return(cached_results)
