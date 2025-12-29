@@ -27,6 +27,8 @@ datasets = "*"
 jsonlines = "*"
 openai = "*"
 litellm = "*"
+kalshi-python = "^2.1.4"
+cryptography = "^46.0.3"
 
 
 [tool.poetry.group.dev.dependencies]
