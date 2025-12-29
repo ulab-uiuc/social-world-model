@@ -8,7 +8,7 @@ class PolyMarketData(BaseModel):
     market_id: str
     question: str
     resolution_source: Optional[str] = Field(default=None)
-    volumn: Optional[float] = Field(default=None)
+    volume: Optional[float] = Field(default=None)
     outcome: Optional[str] = Field(default=None)
     description: Optional[str] = Field(default=None)
     start_ts: Optional[float] = Field(default=None)
