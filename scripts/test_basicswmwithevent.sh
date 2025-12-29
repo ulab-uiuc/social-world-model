@@ -2,8 +2,8 @@
 CUDA_VISIBLE_DEVICES=9 python test_basicswmwithevent.py \
 --test-data-path ../data/splitted_polymarket/polymarket_data_processed_Crypto_test.jsonl \
 --corpus-news-path ../data/processed_dailynews/dailynews_data_processed.jsonl \
---prior-reasoner-checkpoint ../saves/saves_crypto_basicpriorreasoner/checkpoint-best \
---predictor-checkpoint ../saves/saves_crypto_basicpredictor/checkpoint-best \
+--prior-reasoner-checkpoint ../saves/saves_crypto_basicpriorreasoner_sanitycheck/checkpoint-best \
+--predictor-checkpoint ../saves/saves_crypto_basicpredictor/checkpoint-6000 \
 --output-dir ../saves/saves_crypto_basicswmwithevent \
 --prior-reasoner-cache-dir ../cache/cache_crypto_basicpriorreasoner \
 --test-batch-size 2 \
