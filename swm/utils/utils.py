@@ -14,11 +14,11 @@ def extract_search_keywords(question: str, model: str = "gpt-4o-mini") -> Option
     """Use GPT to extract search keywords from a market question.
     
     Args:
-        question: The market question (e.g., "Will Jumper airdrop in 2024?")
+        question: The market question (e.g., "Will Bitcoin hit 100k?")
         model: OpenAI model to use
         
     Returns:
-        Extracted search keywords (e.g., "Jumper airdrop crypto")
+        Extracted search keywords with AND operator (e.g., "Bitcoin AND price")
     """
     try:
         import openai
@@ -31,11 +31,13 @@ def extract_search_keywords(question: str, model: str = "gpt-4o-mini") -> Option
                     "role": "system",
                     "content": (
                         "You are a search keyword extractor. Given a prediction market question, "
-                        "extract 2-4 key search terms that would find relevant news articles. "
+                        "extract 2-3 key search terms that would find relevant news articles. "
                         "Focus on the main entity/topic names. Remove filler words like 'Will', 'by', 'in 2024'. "
                         "Output ONLY the keywords separated by ' OR ', nothing else. "
-                        "Use full names like 'Federal Reserve System' instead of 'FED'. "
-                        "Example output: Bitcoin OR halving OR price"
+                        "Use full names like 'Donald Trump' instead of 'Trump'. "
+                        "For multi-word entities, keep them together. "
+                        "Example: 'Will Bitcoin price hit 100k?' -> 'Bitcoin AND price'\n"
+                        "Example: 'Will Donald Trump win the election?' -> 'Donald Trump OR election'"
                     )
                 },
                 {
