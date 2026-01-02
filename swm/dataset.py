@@ -250,18 +250,17 @@ class RAGPolyMarketDataset(BasicPolyMarketDataset):
         return '\n'.join(lines)
 
 
-class BasicPolyMarketDatasetWithEventForPredictor(BaseDataset):
+class MultiEventForecasterDataset(BaseDataset):
+    """Dataset for MultiEventForecaster that uses precomputed attributions from market data."""
     def __init__(
         self,
         markets: List['PolyMarketData'],
         tokenizer: PreTrainedTokenizer,
-        reasoner: Any,
         cache_dir: str,
         window_size: int = 5,
         use_cache: bool = False,
     ):
         super().__init__(cache_dir=cache_dir, use_cache=use_cache)
-        self.reasoner = reasoner
         self.markets = markets
         self.tokenizer = tokenizer
         self.window_size = window_size
@@ -269,15 +268,12 @@ class BasicPolyMarketDatasetWithEventForPredictor(BaseDataset):
 
     def _compute_hash(self) -> str:
         content = [
-            f"{m.market_id}{m.start_ts or ''}{m.end_ts or ''}"
+            f"{m.market_id}{m.start_ts or ''}{m.end_ts or ''}{len(m.attributions or {})}"
             for m in self.markets
             if m.daily_time_series
         ]
         content_hash = hashlib.md5(''.join(content).encode()).hexdigest()
-        reasoner_hash = hashlib.md5(
-            str(self.reasoner.__dict__['model_name']).encode()
-        ).hexdigest()
-        return hashlib.md5(f'{content_hash}{reasoner_hash}'.encode()).hexdigest()
+        return content_hash
 
     def _create_datapoints(self) -> List[Dict[str, Any]]:
         grouped_points = defaultdict(
@@ -291,9 +287,11 @@ class BasicPolyMarketDatasetWithEventForPredictor(BaseDataset):
             }
         )
 
-        # Generate prompts and process one at a time
+        # Generate prompts using precomputed attributions
         for market in tqdm(self.markets, desc='Processing markets'):
             if not market.daily_time_series or 'Yes' not in market.daily_time_series:
+                continue
+            if not market.attributions:
                 continue
 
             series = market.daily_time_series['Yes']
@@ -303,12 +301,13 @@ class BasicPolyMarketDatasetWithEventForPredictor(BaseDataset):
             for start_idx in range(len(series) - self.window_size):
                 window = series[start_idx : start_idx + self.window_size]
                 target = series[start_idx + self.window_size]
-                current_ts = window[-1]['t']
-                target_ts = target['t']
+                target_ts = str(target['t'])  # attributions use string keys
 
+                # Get precomputed attributions for this timestamp
+                events = market.attributions.get(target_ts, [])
+                if not events:
+                    continue
 
-                # TODO: temporary fix for the reasoner for pipeline building
-                events = self.reasoner.reason(target_ts, market)
                 for event in events:
                     prompt = self._build_prompt(market, window, target, event['news'])
                     encoding = self.tokenizer(
@@ -411,18 +410,17 @@ class BasicPolyMarketDatasetWithEventForPredictor(BaseDataset):
         }
 
 
-class BasicPolyMarketDatasetWithEventForReasoner(BaseDataset):
+class PriorAttributerDataset(BaseDataset):
+    """Dataset for training PriorAttributer using precomputed attributions."""
     def __init__(
         self,
         markets: List[PolyMarketData],
         tokenizer: PreTrainedTokenizer,
-        reasoner: Any,
         cache_dir: str,
         window_size: int = 5,
         use_cache: bool = False,
     ):
         super().__init__(cache_dir=cache_dir, use_cache=use_cache)
-        self.reasoner = reasoner
         self.markets = markets
         self.tokenizer = tokenizer
         self.window_size = window_size
@@ -430,15 +428,12 @@ class BasicPolyMarketDatasetWithEventForReasoner(BaseDataset):
 
     def _compute_hash(self) -> str:
         content = [
-            f"{m.market_id}{m.start_ts or ''}{m.end_ts or ''}"
+            f"{m.market_id}{m.start_ts or ''}{m.end_ts or ''}{len(m.attributions or {})}"
             for m in self.markets
             if m.daily_time_series
         ]
         content_hash = hashlib.md5(''.join(content).encode()).hexdigest()
-        reasoner_hash = hashlib.md5(
-            str(getattr(self.reasoner, 'model_name', 'posterior')).encode()
-        ).hexdigest()
-        return hashlib.md5(f'{content_hash}{reasoner_hash}'.encode()).hexdigest()
+        return content_hash
 
     def _create_datapoints(self) -> List[Dict[str, Any]]:
         grouped_points = defaultdict(
@@ -457,6 +452,8 @@ class BasicPolyMarketDatasetWithEventForReasoner(BaseDataset):
         for market in tqdm(self.markets, desc='Processing markets'):
             if not market.daily_time_series or 'Yes' not in market.daily_time_series:
                 continue
+            if not market.attributions:
+                continue
 
             series = market.daily_time_series['Yes']
             if len(series) <= self.window_size:
@@ -465,14 +462,12 @@ class BasicPolyMarketDatasetWithEventForReasoner(BaseDataset):
             for start_idx in range(len(series) - self.window_size):
                 window = series[start_idx : start_idx + self.window_size]
                 target = series[start_idx + self.window_size]
-                current_ts = window[-1]['t']
+                current_ts = str(window[-1]['t'])  # attributions use string keys
 
-                events = self.reasoner.reason(current_ts, market)
-
-                #if (
-                #    len(events) <= 1
-                #):  # for KL loss, the distribution should at least have 2 elements
-                #    continue
+                # Get precomputed attributions for this timestamp
+                events = market.attributions.get(current_ts, [])
+                if not events:
+                    continue
 
                 for event in events:
                     prompt = self._build_prompt(market, window, target, event['news'])

@@ -16,7 +16,7 @@ from .utils.regressor import LLMRegressor, LLMRegressorConfig
 from .utils.retriever import SimilarityBasedPolyMarketRetriever
 
 
-class BasicSocialWM:
+class SocialWorldModel:
     def __init__(
         self,
         model_name: str,
@@ -66,7 +66,6 @@ class BasicSocialWM:
                 'ts': ts,
                 'outcomes': outcomes,
             }
-
         return collate_fn
 
     def train(
@@ -152,7 +151,7 @@ class BasicSocialWM:
         self.model.to('cuda' if torch.cuda.is_available() else 'cpu')
 
 
-class RAGSocialWM(BasicSocialWM):
+class RAGSocialWorldModel(SocialWorldModel):
     def __init__(
         self,
         model_name: str,

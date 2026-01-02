@@ -30,7 +30,7 @@ Format: Return JSON array of objects with "news_id" and "score" fields. Example:
 [{{"news_id": 0, "score": 85}}, {{"news_id": 1, "score": 15}}]"""
 
 
-class BasicPosteriorReasoner:
+class BasicPosteriorAttributer:
     def __init__(
         self,
         corpus_news: List[DailyNewsData],
@@ -149,10 +149,10 @@ class BasicPosteriorReasoner:
             'direction': 'increased' if price_change > 0 else 'decreased',
         }
 
-    def reason(
+    def attribute(
         self, time: Union[str, int], market: PolyMarketData
     ) -> List[Dict[str, Any]]:
-        """Main reasoning method with caching."""
+        """Main attribution method with caching."""
         cache_key = self._get_cache_key(str(time), market.market_id)
         cache_path = self.cache_dir / f'{cache_key}.json'
 
@@ -162,7 +162,7 @@ class BasicPosteriorReasoner:
             return self._filter_for_return(cached_results)
 
         # Compute new results
-        results = self._compute_reasoning(time, market)
+        results = self._compute_attribution(time, market)
         if results is None:  # No price change or news found
             results = []
 
@@ -171,6 +171,13 @@ class BasicPosteriorReasoner:
 
         # Filter zero scores for return
         return self._filter_for_return(results)
+
+    # Keep 'reason' as an alias for backward compatibility
+    def reason(
+        self, time: Union[str, int], market: PolyMarketData
+    ) -> List[Dict[str, Any]]:
+        """Alias for attribute() for backward compatibility."""
+        return self.attribute(time, market)
 
     def _load_from_cache(self, cache_path: Path) -> Optional[List[Dict[str, Any]]]:
         """Load and deserialize cached results."""
@@ -220,10 +227,10 @@ class BasicPosteriorReasoner:
         filtered_results = results
         return filtered_results[: self.max_news_items]
 
-    def _compute_reasoning(
+    def _compute_attribution(
         self, time: Union[str, int], market: PolyMarketData
     ) -> List[Dict[str, Any]]:
-        """Compute reasoning results for the given time and market."""
+        """Compute attribution results for the given time and market."""
         date = datetime.strptime(convert_to_date(time), '%Y-%m-%d')
 
         # Get price change and historical data
@@ -357,3 +364,4 @@ class BasicPosteriorReasoner:
             for r in results
         ]
         return sorted(scored_news, key=lambda x: x['score'], reverse=True)
+
