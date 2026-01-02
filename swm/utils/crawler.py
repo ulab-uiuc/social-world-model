@@ -12,7 +12,6 @@ import jsonlines
 import requests
 import serpapi
 from bs4 import BeautifulSoup
-from py_clob_client.client import ClobClient
 from scholarly import scholarly
 from tqdm import tqdm
 
@@ -86,7 +85,7 @@ class PolyMarketEventCrawler(PolyMarketCrawler):
 
     def get_event_from_offset(self, offset: Union[str, int]) -> List[Dict]:
         response = httpx.get(
-            f'https://gamma-api.polymarket.com/events?offset={offset}&limit=100'
+            f'https://gamma-api.polymarket.com/events?offset={offset}&limit=100&active=true&closed=false'
         )
         if response.status_code == 200:
             return response.json()
@@ -97,7 +96,7 @@ class PolyMarketHistoryCrawler(PolyMarketCrawler):
     def __init__(self, input_file: str, output_file: str):
         super().__init__(output_file, cache_size=5)
         self.input_file = input_file
-        self.processed_events = self._load_processed_events(input_file)
+        self.processed_events = self._load_processed_events(output_file)
 
     def collect(self):
         """Collect market histories based on the events in the input file."""
@@ -139,7 +138,7 @@ class PolyMarketHistoryCrawler(PolyMarketCrawler):
 
         for market in modified_event.get('markets', []):
             token_ids = json.loads(market.get('clobTokenIds', '[]'))
-            start_ts = 1
+            start_ts = None
             market['history'] = {}
 
             with ThreadPoolExecutor(max_workers=3) as executor:
@@ -164,32 +163,31 @@ class PolyMarketHistoryCrawler(PolyMarketCrawler):
         max_retries: int = 5,
         start_ts: Optional[int] = None,
     ) -> List[Dict[str, Union[int, float]]]:
-        host = 'https://clob.polymarket.com'
-        key = os.getenv('PK')
-        chain_id = 137
-
-        if not key:
-            raise ValueError(
-                'Private key not found. Please set PK in the environment variables.'
-            )
-
-        client = ClobClient(host, key=key, chain_id=chain_id)
+        """Fetch price history for a token using the CLOB prices-history API."""
+        base_url = 'https://clob.polymarket.com/prices-history'
 
         for attempt in range(max_retries):
             try:
-                if start_ts is None:
-                    price_data = client.get_price_history_for_interval(
-                        token_id=token_id,
-                        fidelity=fidelity,
-                        interval='max',
-                    )
+                # Always use interval=max, filter by start_ts locally
+                url = f'{base_url}?market={token_id}&interval=max&fidelity={fidelity}'
+                response = httpx.get(url, timeout=30)
+                
+                if response.status_code == 200:
+                    price_data = response.json()
+                    history = price_data.get('history', [])
+                    
+                    # Debug: print first attempt's response
+                    if attempt == 0 and not history:
+                        print(f'DEBUG: Empty history for token {token_id[:20]}...')
+                        print(f'DEBUG: Response: {price_data}')
+                    
+                    # Filter by start_ts if provided
+                    if start_ts is not None and history:
+                        history = [p for p in history if p.get('t', 0) >= start_ts]
+                    
+                    return history
                 else:
-                    price_data = client.get_price_history_with_start_ts_only(
-                        token_id=token_id,
-                        fidelity=str(fidelity),
-                        start_ts=str(start_ts),
-                    )
-                return price_data['history']
+                    raise Exception(f'HTTP {response.status_code}: {response.text}')
 
             except Exception as e:
                 wait_time = 2**attempt
@@ -526,7 +524,6 @@ class KalshiCrawler:
                     if max_markets and total_collected >= max_markets:
                         break
 
-                
                 time.sleep(0.2)
             except Exception as e:
                 print(f"Error processing {s_ticker}: {e}")

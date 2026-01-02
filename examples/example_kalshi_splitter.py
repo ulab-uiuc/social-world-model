@@ -4,22 +4,22 @@ from pathlib import Path
 
 import jsonlines
 
-from swm.data import PolyMarketData
+from swm.data import KalshiData
 from swm.utils.splitter import get_split_stats, split_by_time
 
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description='Split PolyMarket data into train/dev/test based on time cutoffs'
+        description='Split Kalshi data into train/dev/test based on time cutoffs'
     )
     parser.add_argument(
         '--input_file',
         required=True,
-        help='Input JSONL file with processed PolyMarket data',
+        help='Input JSONL file with processed Kalshi data',
     )
     parser.add_argument(
         '--output_dir',
-        default='../data/splitted_polymarket',
+        default='../data/splitted_kalshi',
         help='Output directory for split files',
     )
     parser.add_argument(
@@ -50,7 +50,7 @@ def main():
 
     # Load data
     with jsonlines.open(args.input_file, 'r') as reader:
-        dataset = [PolyMarketData.from_dict(data) for data in reader]
+        dataset = [KalshiData.from_dict(data) for data in reader]
 
     print(f'Loaded {len(dataset)} records from {args.input_file}')
 
@@ -78,3 +78,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+

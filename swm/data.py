@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from pydantic import BaseModel, Field
 
@@ -16,25 +16,14 @@ class PolyMarketData(BaseModel):
     tags: Optional[List[str]] = Field(default=None)
     tag_ids: Optional[List[str]] = Field(default=None)
     categories: Optional[List[str]] = Field(default=None)
-    daily_time_series: Optional[Dict[str, List[Dict[str, Union[int, float]]]]] = Field(
-        default=None
-    )
-    hourly_time_series: Optional[Dict[str, List[Dict[str, Union[int, float]]]]] = Field(
-        default=None
-    )
-    breakpoint_ts_pairs: Optional[Dict[str, List[Tuple[float, float, float]]]] = Field(
-        default=None
-    )
+    # Time series as simple list (represents Yes probability)
+    daily_time_series: Optional[List[Dict[str, Union[int, float]]]] = Field(default=None)
+    time_series: Optional[List[Dict[str, Union[int, float]]]] = Field(default=None)
+    daily_breakpoints: Optional[List[Dict[str, Any]]] = Field(default=None)
     window_series: Optional[List[Dict[str, Union[int, float]]]] = Field(default=None)
 
     @classmethod
     def from_dict(cls, data: Dict) -> 'PolyMarketData':
-        if 'breakpoint_ts_pairs' in data and data['breakpoint_ts_pairs']:
-            data['breakpoint_ts_pairs'] = {
-                key: [tuple(pair) for pair in pairs]
-                for key, pairs in data['breakpoint_ts_pairs'].items()
-            }
-
         return cls(**{k: v for k, v in data.items() if k in cls.__annotations__})
 
     class Config:
@@ -45,29 +34,26 @@ class PolyMarketData(BaseModel):
 class KalshiData(BaseModel):
     """
     Data model for Kalshi prediction market data.
-    Updated to be compatible with PolyMarket data structure while preserving Kalshi specifics.
+    Compatible with PolyMarket data structure.
     """
-    # PolyMarket-compatible core fields
-    event_id: str  # Was event_ticker
-    market_id: str  # Was market_ticker
-    question: str  # Was title
-    resolution_source: Optional[str] = Field(default=None)  # Was settlement_source
-    volumn: Optional[float] = Field(default=None)  # Note: PolyMarket uses 'volumn' (typo preserved)
-    outcome: Optional[str] = Field(default=None)  # Was result
-    description: Optional[str] = Field(default=None)  # Was subtitle
-    start_ts: Optional[float] = Field(default=None)  # Was open_time
-    end_ts: Optional[float] = Field(default=None)  # Was close_time/expiration_time
+    # Core fields
+    event_id: str
+    market_id: str
+    question: str
+    resolution_source: Optional[str] = Field(default=None)
+    volumn: Optional[float] = Field(default=None)
+    outcome: Optional[str] = Field(default=None)
+    description: Optional[str] = Field(default=None)
+    start_ts: Optional[float] = Field(default=None)
+    end_ts: Optional[float] = Field(default=None)
     tags: Optional[List[str]] = Field(default=None)
     tag_ids: Optional[List[str]] = Field(default=None)
     categories: Optional[List[str]] = Field(default=None)
     
-    # Time series (PolyMarket format: {'Yes': [{'t': ts, 'p': price}, ...], 'No': [...]})
-    daily_time_series: Optional[Dict[str, List[Dict[str, Union[int, float]]]]] = Field(
-        default=None
-    )
-    hourly_time_series: Optional[Dict[str, List[Dict[str, Union[int, float]]]]] = Field(
-        default=None
-    )
+    # Time series as simple list (represents Yes probability)
+    daily_time_series: Optional[List[Dict[str, Union[int, float]]]] = Field(default=None)
+    time_series: Optional[List[Dict[str, Union[int, float]]]] = Field(default=None)
+    daily_breakpoints: Optional[List[Dict[str, Any]]] = Field(default=None)
     
     # Kalshi-specific fields (Legacy/Extra)
     event_ticker: Optional[str] = Field(default=None)
