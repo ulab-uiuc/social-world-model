@@ -21,14 +21,13 @@ def main():
     
     
     crawler = KalshiCrawler(
-        output_file='../data/kalshi_markets.jsonl',
+        output_file='../data/raw_kalshi/kalshi_data_raw.jsonl',
         private_key_path=private_key_path,
-        cache_size=50,
     )
     
     crawler.collect_markets(max_markets=5000000)
     
-    print(f"\n📂 Data saved to: data/kalshi_markets.jsonl")
+    print(f"\n📂 Data saved.")
 
 
 if __name__ == "__main__":

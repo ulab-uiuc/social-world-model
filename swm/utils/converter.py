@@ -5,8 +5,9 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
 from pydantic import ValidationError
+import requests
 
-from ..data import DailyNewsData, PolyMarketData
+from ..data import DailyNewsData, KalshiData, PolyMarketData
 from .utils import filter_midnight_points
 
 
@@ -20,9 +21,7 @@ class Category(str, Enum):
 
 @dataclass
 class TimeSeriesConfig:
-    prob_threshold: float = 0.5
-    time_threshold: float = 0.05
-    min_time_diff: float = 3600  # 1 hour in seconds
+    z_score_threshold: float = 2.0  # Z-score threshold for anomaly detection
 
 
 class PolyMarketDataConverter:
@@ -35,31 +34,64 @@ class PolyMarketDataConverter:
 
     def find_breakpoints(
         self,
-        time_series_data: List[Dict[str, float]],
-        start_ts: float,
-        end_ts: float,
-    ) -> List[Tuple[float, float, float]]:
-        if self.config.prob_threshold > 1.0:
+        daily_series: List[Dict[str, float]],
+    ) -> List[Dict[str, Any]]:
+        """Detect anomalies in daily time series using Z-score based detection.
+        
+        Algorithm:
+        1. Calculate mean and std of all consecutive price changes
+        2. Compute Z-score for each change
+        3. Detect changes where Z-score exceeds threshold
+        
+        Args:
+            daily_series: List of {'t': timestamp, 'p': price} sorted by time
+            
+        Returns:
+            List of breakpoint dicts with full point information
+        """
+        if not daily_series or len(daily_series) < 2:
             return []
-
-        max_time_diff = max(
-            (end_ts - start_ts) * self.config.time_threshold, self.config.min_time_diff
-        )
-
-        price_points = {(point['t'], point['p']) for point in time_series_data}
-        price_points = sorted(price_points)
-
-        valid_pairs = []
-        for i, (t1, p1) in enumerate(price_points):
-            for t2, p2 in price_points[i + 1 :]:
-                time_diff = t2 - t1
-                if time_diff > max_time_diff or time_diff == 0:
-                    break
-
-                if abs(p2 - p1) >= self.config.prob_threshold:
-                    valid_pairs.append((t1, t2, abs(p2 - p1)))
-
-        return valid_pairs
+        
+        breakpoints = []
+        z_threshold = self.config.z_score_threshold
+        
+        # Sort by timestamp
+        sorted_series = sorted(daily_series, key=lambda x: x['t'])
+        
+        # Calculate all consecutive changes
+        changes = []
+        for i in range(len(sorted_series) - 1):
+            p1 = sorted_series[i]['p']
+            p2 = sorted_series[i + 1]['p']
+            changes.append(abs(p2 - p1))
+        
+        # Calculate statistics for Z-score
+        if len(changes) >= 3:
+            import statistics
+            mean_change = statistics.mean(changes)
+            std_change = statistics.stdev(changes) if len(changes) > 1 else 1.0
+            std_change = max(std_change, 0.01)  # Avoid division by zero
+        else:
+            # Not enough data for meaningful statistics
+            return []
+        
+        # Detect anomalies based on Z-score
+        for i in range(len(sorted_series) - 1):
+            t1, p1 = sorted_series[i]['t'], sorted_series[i]['p']
+            t2, p2 = sorted_series[i + 1]['t'], sorted_series[i + 1]['p']
+            
+            change = abs(p2 - p1)
+            z_score = (change - mean_change) / std_change
+            
+            if z_score > z_threshold:
+                breakpoints.append({
+                    'before': {'t': float(t1), 'p': round(p1, 4)},
+                    'after': {'t': float(t2), 'p': round(p2, 4)},
+                    'change': round(change, 4),
+                    'z_score': round(z_score, 2),
+                })
+        
+        return breakpoints
 
     def find_categories(self, tags: List[str]) -> List[Category]:
         matches = set()
@@ -79,25 +111,26 @@ class PolyMarketDataConverter:
             return outcomes[max_price_index]
         return None
 
-    def parse_hourly_time_series(
+    def parse_time_series(
         self, market: Dict[str, Any], outcomes: List[str]
-    ) -> Dict[str, Dict[int, float]]:
+    ) -> List[Dict[str, float]]:
+        """Parse hourly time series, only keeping the first outcome (Yes)."""
         clob_token_ids = json.loads(market['clobTokenIds'])
-        return {
-            outcomes[idx]: market['history'][str(token_id)]
-            for idx, token_id in enumerate(clob_token_ids)
-        }
+        if clob_token_ids:
+            first_token_id = clob_token_ids[0]
+            return market['history'].get(str(first_token_id), [])
+        return []
 
     def parse_daily_time_series(
         self, market: Dict[str, Any], outcomes: List[str]
-    ) -> Dict[str, List[Dict[str, float]]]:
+    ) -> List[Dict[str, float]]:
+        """Parse daily time series, only keeping the first outcome (Yes)."""
         clob_token_ids = json.loads(market['clobTokenIds'])
-        daily_data = {}
-        for idx, token_id in enumerate(clob_token_ids):
-            daily_data[outcomes[idx]] = filter_midnight_points(
-                market['history'][str(token_id)]
-            )
-        return daily_data
+        if clob_token_ids:
+            first_token_id = clob_token_ids[0]
+            hourly_data = market['history'].get(str(first_token_id), [])
+            return filter_midnight_points(hourly_data)
+        return []
 
     def parse_timestamp(self, datetime_str: str) -> float:
         for fmt in self.datetime_formats:
@@ -127,16 +160,14 @@ class PolyMarketDataConverter:
             end_date = market['endDate'] if 'endDate' in market else event['endDate']
             start_ts = self.parse_timestamp(start_date)
             end_ts = self.parse_timestamp(end_date)
-            hourly_time_series = self.parse_hourly_time_series(market, outcome_options)
+            time_series = self.parse_time_series(market, outcome_options)
             daily_time_series = self.parse_daily_time_series(market, outcome_options)
             volume = market.get('volume', None)
             resolution_source = market.get('resolutionSource', None)
             description = market.get('description', None)
 
-            breakpoint_ts_pairs = {
-                outcome: self.find_breakpoints(data, start_ts, end_ts)
-                for outcome, data in hourly_time_series.items()
-            }
+            # Find daily breakpoints using daily time series for anomaly detection
+            daily_breakpoints = self.find_breakpoints(daily_time_series)
 
             return PolyMarketData(
                 event_id=event['id'],
@@ -146,14 +177,14 @@ class PolyMarketDataConverter:
                 resolution_source=resolution_source,
                 volume=volume,
                 outcome=outcome,
-                hourly_time_series=hourly_time_series,
+                time_series=time_series,
                 daily_time_series=daily_time_series,
                 tags=tags,
                 tag_ids=tag_ids,
                 categories=categories,
                 start_ts=start_ts,
                 end_ts=end_ts,
-                breakpoint_ts_pairs=breakpoint_ts_pairs,
+                daily_breakpoints=daily_breakpoints,
             )
         except (KeyError, json.JSONDecodeError, ValueError) as e:
             print(f"Error processing market {market.get('id', 'unknown')}: {str(e)}")
@@ -170,6 +201,153 @@ class PolyMarketDataConverter:
         except KeyError as e:
             print(f"Error processing event {event.get('id', 'unknown')}: {str(e)}")
             return []
+
+
+class KalshiDataConverter:
+    """Converter for Kalshi prediction market data to standardized format."""
+
+    def __init__(self, config: Optional[TimeSeriesConfig] = None):
+        self.config = config or TimeSeriesConfig()
+
+        url = "https://api.elections.kalshi.com/trade-api/v2/series"
+        response = requests.get(url)
+        response.raise_for_status()
+        data = response.json()
+        self.series_ticker_dict = {series['ticker']: series['category'] for series in data['series']}
+
+    def find_breakpoints(
+        self,
+        daily_series: List[Dict[str, float]],
+    ) -> List[Dict[str, Any]]:
+        """Detect anomalies in daily time series using Z-score based detection.
+        
+        Algorithm:
+        1. Calculate mean and std of all consecutive price changes
+        2. Compute Z-score for each change
+        3. Detect changes where Z-score exceeds threshold
+        
+        Args:
+            daily_series: List of {'t': timestamp, 'p': price} sorted by time
+            
+        Returns:
+            List of breakpoint dicts with full point information
+        """
+        if not daily_series or len(daily_series) < 2:
+            return []
+        
+        breakpoints = []
+        z_threshold = self.config.z_score_threshold
+        
+        # Sort by timestamp
+        sorted_series = sorted(daily_series, key=lambda x: x['t'])
+        
+        # Calculate all consecutive changes
+        changes = []
+        for i in range(len(sorted_series) - 1):
+            p1 = sorted_series[i]['p']
+            p2 = sorted_series[i + 1]['p']
+            changes.append(abs(p2 - p1))
+        
+        # Calculate statistics for Z-score
+        if len(changes) >= 3:
+            import statistics
+            mean_change = statistics.mean(changes)
+            std_change = statistics.stdev(changes) if len(changes) > 1 else 1.0
+            std_change = max(std_change, 0.01)  # Avoid division by zero
+        else:
+            # Not enough data for meaningful statistics
+            return []
+        
+        # Detect anomalies based on Z-score
+        for i in range(len(sorted_series) - 1):
+            t1, p1 = sorted_series[i]['t'], sorted_series[i]['p']
+            t2, p2 = sorted_series[i + 1]['t'], sorted_series[i + 1]['p']
+            
+            change = abs(p2 - p1)
+            z_score = (change - mean_change) / std_change
+            
+            if z_score > z_threshold:
+                breakpoints.append({
+                    'before': {'t': float(t1), 'p': round(p1, 4)},
+                    'after': {'t': float(t2), 'p': round(p2, 4)},
+                    'change': round(change, 4),
+                    'z_score': round(z_score, 2),
+                })
+        
+        return breakpoints
+
+    def find_categories(self, event_id: str, question: str) -> List[str]:
+        """Get category from Kalshi series ticker."""
+        series_ticker = event_id.split('-')[0]
+        category_str = self.series_ticker_dict.get(series_ticker, 'Other')
+        return [category_str]
+
+    def parse_time_series(
+        self, time_series: List[Dict[str, float]]
+    ) -> List[Dict[str, float]]:
+        """Return the time series directly (represents Yes probability)."""
+        return time_series
+
+    def parse_daily_time_series(
+        self, time_series: List[Dict[str, float]]
+    ) -> List[Dict[str, float]]:
+        """Filter to daily (midnight) points."""
+        return filter_midnight_points(time_series)
+
+    def process_market(self, market_data: Dict[str, Any]) -> Optional[KalshiData]:
+        """Process a single Kalshi market entry."""
+        try:
+            event_id = market_data.get('event_id', '')
+            market_id = market_data.get('market_id', '')
+            question = market_data.get('question', '')
+            time_series = market_data.get('time_series', [])
+
+            if not time_series:
+                return None
+
+            categories = self.find_categories(event_id, question)
+            start_ts = market_data.get('start_ts', 0)
+            end_ts = market_data.get('end_ts', 0)
+
+            time_series = self.parse_time_series(time_series)
+            daily_time_series = self.parse_daily_time_series(time_series)
+
+            # Find daily breakpoints using daily time series for anomaly detection
+            daily_breakpoints = self.find_breakpoints(daily_time_series)
+
+            # Map outcome to Yes/No format
+            outcome = market_data.get('outcome')
+            if outcome == 'yes':
+                outcome = 'Yes'
+            elif outcome == 'no':
+                outcome = 'No'
+
+            return KalshiData(
+                event_id=event_id,
+                market_id=market_id,
+                question=question,
+                description=market_data.get('yes_sub_title'),
+                outcome=outcome,
+                time_series=time_series,
+                daily_time_series=daily_time_series,
+                categories=[c for c in categories],
+                start_ts=start_ts,
+                end_ts=end_ts,
+                daily_breakpoints=daily_breakpoints,
+                # Kalshi-specific fields
+                event_ticker=event_id,
+                market_ticker=market_id,
+                title=question,
+                subtitle=market_data.get('yes_sub_title'),
+            )
+        except (KeyError, ValueError, TypeError) as e:
+            print(f"Error processing Kalshi market {market_data.get('market_id', 'unknown')}: {e}")
+            return None
+
+    def convert(self, market_data: Dict[str, Any]) -> List[KalshiData]:
+        """Convert a single Kalshi market entry to list of KalshiData."""
+        result = self.process_market(market_data)
+        return [result] if result else []
 
 
 class DailyNewsConverter:
