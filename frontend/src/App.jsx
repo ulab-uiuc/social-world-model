@@ -1,39 +1,105 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, useNavigate, useParams } from 'react-router-dom';
+import { Helmet } from 'react-helmet';
+import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, useParams } from 'react-router-dom';
+import axios from "axios";
+import NewsPage from "./NewsPage";
 import TimeSeriesChart from "./TimeSeriesChart";
 import './App.css';
-import axios from "axios";
+import CardDetails from "./CardDetails";
+
+const API_BASE_URL = window.location.hostname === "localhost"
+  ? "http://localhost:5002"
+  : "";
+
+
+const API_CARDS_URL = `${API_BASE_URL}/api/cards`;
+const API_TAGS_URL = `${API_BASE_URL}/api/tags`;
+const API_VOTE_HISTORY_URL = `${API_BASE_URL}/api/vote_history`;
+
 
 export const HistoryChart = ({ cardId }) => {
-  const [data, setData] = useState([]);
+  const [actualData, setActualData] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const fetchHistory = async () => {
+    const fetchData = async () => {
+      setIsLoading(true);
       try {
-        const response = await axios.get(`http://127.0.0.1:5000/api/vote_history/${cardId}`);
-        const formattedData = response.data.map(entry => ({
+        const actualResponse = await axios.get(`${API_VOTE_HISTORY_URL}/${cardId}`);
+        const formattedActualData = actualResponse.data.map(entry => ({
           timestamp: entry.timestamp,
           ...entry.votes,
         }));
-        setData(formattedData);
+        setActualData(formattedActualData);
       } catch (error) {
-        console.error("Error fetching vote history:", error);
+        console.error("Error fetching chart data:", error);
+      } finally {
+        setIsLoading(false);
       }
     };
-    fetchHistory();
+
+    fetchData();
   }, [cardId]);
 
-  return <TimeSeriesChart data={data} />;
+  if (isLoading) {
+    return <div>Loading chart data...</div>;
+  }
+
+  return <TimeSeriesChart data={actualData} showEstimated={false} />;
 };
 
+
 function App() {
+  return (
+    <>
+      <Helmet>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      </Helmet>
+      <Router>
+        <div className="App">
+          <Header />
+          <MainContent />
+        </div>
+      </Router>
+    </>
+  );
+}
+
+function Header() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  return (
+    <header className="navigation">
+      <div className="navigation-container">
+        <div className="nav-logo">
+          <button className="app-title" onClick={() => navigate('/')}>
+            Openmarket
+          </button>
+        </div>
+        
+        <div className="desktop-nav">
+          <div className="nav-links">
+            {location.pathname !== "/news" && (
+              <button className="news-button" onClick={() => navigate('/news')}>
+                News
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function MainContent() {
+  const location = useLocation();
   const [cards, setCards] = useState([]);
   const [tags, setTags] = useState([]);
   const [selectedTag, setSelectedTag] = useState("");
 
-
   useEffect(() => {
-    let url = "http://127.0.0.1:5000/api/cards";
+    let url = API_CARDS_URL;
     if (selectedTag) {
       url += `?tag=${selectedTag}`;
     }
@@ -45,9 +111,8 @@ function App() {
       .catch((error) => console.error("Error fetching cards:", error));
   }, [selectedTag]);
 
-
   useEffect(() => {
-    axios.get("http://127.0.0.1:5000/api/tags")
+    axios.get(API_TAGS_URL)
       .then((response) => {
         setTags(response.data);
       })
@@ -55,33 +120,30 @@ function App() {
   }, []);
 
   return (
-    <Router>
-      <div className="app-container">
-        <header className="app-header">
-          <h1 className="app-title">Openmarket</h1>
-          <div className="horizontal-bar"></div>
-          <div className="tag-filter">
-            <label htmlFor="tag-select">Filter by Tag: </label>
-            <select
-              id="tag-select"
-              value={selectedTag}
-              onChange={(e) => setSelectedTag(e.target.value)}
-            >
-              <option value="">All</option>
-              {tags.map((tag) => (
-                <option key={tag} value={tag}>
-                  {tag}
-                </option>
-              ))}
-            </select>
-          </div>
-        </header>
-        <Routes>
-          <Route path="/" element={<CardList cards={cards} />} />
-          <Route path="/details/:card_id" element={<CardDetails cards={cards} />} />
-        </Routes>
-      </div>
-    </Router>
+    <>
+      {location.pathname === "/" && (
+        <div className="tag-filter">
+          <label htmlFor="tag-select">Filter by Tag: </label>
+          <select
+            id="tag-select"
+            value={selectedTag}
+            onChange={(e) => setSelectedTag(e.target.value)}
+          >
+            <option value="">All</option>
+            {Array.isArray(tags) && tags.map((tag) => (
+              <option key={tag} value={tag}>
+                {tag}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+      <Routes>
+        <Route path="/" element={<CardList cards={cards} />} />
+        <Route path="/details/:card_id" element={<CardDetails cards={cards} API_BASE_URL={API_BASE_URL} />} />
+        <Route path="/news" element={<NewsPage />} />
+      </Routes>
+    </>
   );
 }
 
@@ -90,7 +152,7 @@ function CardList({ cards }) {
 
   return (
     <div className="card-container">
-      {cards.map((card) => (
+      {Array.isArray(cards) && cards.map((card) => (
         <div
           className="card"
           key={card.card_id}
@@ -98,7 +160,7 @@ function CardList({ cards }) {
         >
           <h3 className="card-title">{card.question}</h3>
           <div className="menu">
-            {card.options.map((option, idx) => (
+            {Array.isArray(card.options) && card.options.map((option, idx) => (
               <div className="menu-item" key={idx}>
                 <span className="option-label">{option.option}</span>
                 <span className="option-percentage">{option.percentage}%</span>
@@ -107,74 +169,6 @@ function CardList({ cards }) {
           </div>
         </div>
       ))}
-    </div>
-  );
-}
-
-function CardDetails({ cards }) {
-  const { card_id } = useParams();
-  const card = cards.find((c) => c.card_id === card_id);
-
-  const [selectedOption, setSelectedOption] = useState(null);
-
-  const handleVote = () => {
-    if (!selectedOption) return;
-
-    axios.post("http://127.0.0.1:5000/api/vote", {
-      card_id: card.card_id,
-      option: selectedOption.option,
-    })
-      .then(() => {
-        alert("Vote recorded successfully!");
-        window.location.reload();
-      })
-      .catch((error) => {
-        console.error("Error recording vote:", error);
-        alert("Failed to record vote. Please try again.");
-      });
-  };
-
-  if (!card) {
-    return <div>Card not found</div>;
-  }
-
-  const handleOptionClick = (option) => {
-    setSelectedOption(option);
-  };
-
-  return (
-    <div className="details-page">
-      <div className="left-card">
-        <h2>{card.question}</h2>
-        <div className="options-table">
-          {card.options.map((option, idx) => (
-            <div
-              className="option-row clickable-option"
-              key={idx}
-              onClick={() => handleOptionClick(option)}
-            >
-              <span className="option-label">{option.option}</span>
-              <span className="option-percentage">{option.percentage}%</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="right-card">
-        <h2>Vote Option</h2>
-        {selectedOption ? (
-          <div className="vote-module">
-            <p>Selected: <strong>{selectedOption.option}</strong></p>
-            <p>Chance: <strong>{selectedOption.percentage}%</strong></p>
-            <button className="vote-button" onClick={handleVote}>Vote</button>
-          </div>
-        ) : (
-          <p>Please select an option to vote.</p>
-        )}
-        <div className="history-chart">
-          <HistoryChart cardId={card_id} />
-        </div>
-      </div>
     </div>
   );
 }

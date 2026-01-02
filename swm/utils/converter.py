@@ -162,7 +162,7 @@ class PolyMarketDataConverter:
             end_ts = self.parse_timestamp(end_date)
             time_series = self.parse_time_series(market, outcome_options)
             daily_time_series = self.parse_daily_time_series(market, outcome_options)
-            volumn = market.get('volume', None)
+            volume = market.get('volume', None)
             resolution_source = market.get('resolutionSource', None)
             description = market.get('description', None)
 
@@ -175,7 +175,7 @@ class PolyMarketDataConverter:
                 question=market['question'],
                 description=description,
                 resolution_source=resolution_source,
-                volume=volumn,
+                volume=volume,
                 outcome=outcome,
                 time_series=time_series,
                 daily_time_series=daily_time_series,
