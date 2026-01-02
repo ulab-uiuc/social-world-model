@@ -11,7 +11,7 @@ import jsonlines
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from swm.data import KalshiData
-from swm.utils.crawler import GoogleNewsCrawler
+from swm.utils.crawler import GNewsCrawler, GoogleNewsCrawler
 from swm.utils.utils import extract_search_keywords
 
 
@@ -21,12 +21,12 @@ def parse_args():
     )
     parser.add_argument(
         '--input_file',
-        default='../data/processed_kalshi/kalshi_data_processed_Economics.jsonl',
+        default='../data/processed_kalshi_v2_0102/kalshi_data_processed.jsonl',
         help='Input JSONL file with processed Kalshi data',
     )
     parser.add_argument(
         '--output_dir',
-        default='../data/kalshi_breakpoint_news',
+        default='../data/kalshi_breakpoint_news_v2_0102',
         help='Output directory for news files',
     )
     parser.add_argument(
@@ -38,8 +38,8 @@ def parse_args():
     parser.add_argument(
         '--days_after',
         type=int,
-        default=0,
-        help='Days after breakpoint to crawl (default: 1)',
+        default=-1,
+        help='Days after breakpoint to crawl (default: -1, meaning day before after_date)',
     )
     parser.add_argument(
         '--max_pages',
@@ -62,7 +62,7 @@ def parse_args():
     parser.add_argument(
         '--z_score_threshold',
         type=float,
-        default=2.0,
+        default=4.0,
         help='Minimum z_score to crawl news for (default: 2.0)',
     )
     parser.add_argument(
@@ -75,6 +75,23 @@ def parse_args():
         type=str,
         default='gpt-4o-mini',
         help='OpenAI model for keyword extraction (default: gpt-4o-mini)',
+    )
+    parser.add_argument(
+        '--proxy',
+        type=str,
+        default=None,
+        help='Proxy URL (e.g., http://user:pass@host:port or socks5://host:port)',
+    )
+    parser.add_argument(
+        '--proxy_file',
+        type=str,
+        default=None,
+        help='File containing proxy URLs (one per line) for rotation',
+    )
+    parser.add_argument(
+        '--use_gnews',
+        action='store_true',
+        help='Use GNews API instead of Google News scraping (requires GNEWS_API_KEY)',
     )
     return parser.parse_args()
 
@@ -141,7 +158,28 @@ def main():
         return
 
     # Initialize crawler
-    crawler = GoogleNewsCrawler(min_delay=args.min_delay, max_delay=args.max_delay)
+    if args.use_gnews:
+        api_key = os.environ.get("GNEWS_API_KEY")
+        if not api_key:
+            print("Error: GNEWS_API_KEY environment variable not set")
+            print("Get your free API key at: https://gnews.io/")
+            return
+        crawler = GNewsCrawler(api_key=api_key)
+        print("Using GNews API")
+    else:
+        # Load proxy list if provided
+        proxy_list = None
+        if args.proxy_file and os.path.exists(args.proxy_file):
+            with open(args.proxy_file, 'r') as f:
+                proxy_list = [line.strip() for line in f if line.strip()]
+            print(f'Loaded {len(proxy_list)} proxies from {args.proxy_file}')
+
+        crawler = GoogleNewsCrawler(
+            min_delay=args.min_delay,
+            max_delay=args.max_delay,
+            proxy=args.proxy,
+            proxy_list=proxy_list,
+        )
 
     # Crawl news for each breakpoint
     for i, q in enumerate(all_queries):
@@ -157,6 +195,11 @@ def main():
             f"{q['market_id']}_{q['before_date']}_to_{q['after_date']}.jsonl"
         )
 
+        # Skip if already crawled
+        if os.path.exists(output_file):
+            print(f"\n[{i + 1}/{len(all_queries)}] Skipping {q['market_id']} (already crawled)")
+            continue
+
         # Extract keywords using LLM if enabled
         search_query = q['query']
         if args.use_llm_keywords:
@@ -171,17 +214,28 @@ def main():
         print(f"  Date range: {start_date} to {end_date}")
 
         try:
-            crawler.crawl(
-                query=search_query,
-                start_date=start_date,
-                end_date=end_date,
-                output_file=output_file,
-                max_pages=args.max_pages,
-                fetch_full_content=True,
-            )
+            if args.use_gnews:
+                crawler.crawl(
+                    query=search_query,
+                    start_date=start_date,
+                    end_date=end_date,
+                    output_file=output_file,
+                    max_results=100,
+                )
+            else:
+                crawler.crawl(
+                    query=search_query,
+                    start_date=start_date,
+                    end_date=end_date,
+                    output_file=output_file,
+                    max_pages=args.max_pages,
+                    fetch_full_content=True,
+                )
         except Exception as e:
             print(f"  Error: {e}")
             continue
+
+        
 
     print(f'\nDone! News saved to {args.output_dir}')
 
