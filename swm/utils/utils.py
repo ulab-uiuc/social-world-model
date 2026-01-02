@@ -7,7 +7,7 @@ import jsonlines
 import numpy as np
 import torch
 
-from ..data import DailyNewsData, PolyMarketData
+from ..data import DailyNewsData, MarketData
 
 
 def extract_search_keywords(question: str, model: str = "gpt-4o-mini") -> Optional[str]:
@@ -113,10 +113,15 @@ def set_seed(seed: int = 42):
         torch.cuda.manual_seed_all(seed)
 
 
-def load_polymarket_data(data_path):
+def load_market_data(data_path):
+    """Load market data (works for both Polymarket and Kalshi)."""
     with jsonlines.open(data_path, 'r') as reader:
         dataset = list(reader)
-        return [PolyMarketData.from_dict(d) for d in dataset]
+        return [MarketData.from_dict(d) for d in dataset]
+
+
+# Backward compatibility
+load_polymarket_data = load_market_data
 
 
 def load_dailynews_data(data_path):

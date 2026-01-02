@@ -1,31 +1,50 @@
 #!/usr/bin/env python3
-"""Split Kalshi data by time - each market's time series is split at cutoff point."""
+"""
+Step 5: Split market data by time - each market's time series is split at cutoff point.
+
+Works for both Polymarket and Kalshi data.
+
+Usage:
+    # Kalshi
+    python step5_split_data.py \
+        --input_file ../data/processed_kalshi_v2_0102/kalshi_data_processed_with_news.jsonl \
+        --cutoff_date 2024-11-01
+
+    # Polymarket
+    python step5_split_data.py \
+        --input_file ../data/processed_polymarket_v2_0102/polymarket_data_processed_with_news.jsonl \
+        --cutoff_date 2024-10-01
+
+    # Or run both via shell script:
+    bash step5_split_data.sh
+
+Output:
+    {input_stem}_train_{cutoff_date}.jsonl
+    {input_stem}_test_{cutoff_date}.jsonl
+"""
 
 import argparse
-import json
-import os
 from datetime import datetime
 from pathlib import Path
 
 import jsonlines
 
-from swm.data import KalshiData
 from swm.utils.splitter import get_split_stats, split_dataset_by_time
 
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description='Split Kalshi data by time - splits each market\'s time series at cutoff'
+        description='Split market data by time - splits each market\'s time series at cutoff'
     )
     parser.add_argument(
         '--input_file',
-        default='../data/processed_kalshi_v2_0102/kalshi_data_processed.jsonl',
-        help='Input JSONL file with processed Kalshi data',
+        required=True,
+        help='Input JSONL file with processed market data',
     )
     parser.add_argument(
         '--output_dir',
-        default='../data/splitted_kalshi',
-        help='Output directory for split files',
+        default=None,
+        help='Output directory for split files. Default: same as input file directory',
     )
     parser.add_argument(
         '--cutoff_date',
@@ -41,23 +60,43 @@ def date_to_timestamp(date_str: str) -> float:
     return datetime.strptime(date_str, '%Y-%m-%d').timestamp()
 
 
+class SimpleMarketData:
+    """Simple wrapper to handle market data without pydantic dependency."""
+    
+    def __init__(self, data: dict):
+        self._data = data
+    
+    def model_dump(self) -> dict:
+        return self._data
+    
+    @classmethod
+    def from_dict(cls, data: dict) -> 'SimpleMarketData':
+        return cls(data)
+
+
 def main():
     args = parse_args()
 
-    output_path = Path(args.output_dir)
+    # Determine output directory
+    input_path = Path(args.input_file)
+    if args.output_dir:
+        output_path = Path(args.output_dir)
+    else:
+        output_path = input_path.parent
+
     output_path.mkdir(parents=True, exist_ok=True)
 
     cutoff_ts = date_to_timestamp(args.cutoff_date)
     print(f'Cutoff: {args.cutoff_date} (timestamp: {cutoff_ts})')
 
-    base_name = Path(args.input_file).stem
+    base_name = input_path.stem
     train_file = output_path / f'{base_name}_train_{args.cutoff_date}.jsonl'
     test_file = output_path / f'{base_name}_test_{args.cutoff_date}.jsonl'
 
     # Load data
     print(f'Loading data from {args.input_file}...')
     with jsonlines.open(args.input_file, 'r') as reader:
-        dataset = [KalshiData.from_dict(data) for data in reader]
+        dataset = [SimpleMarketData.from_dict(data) for data in reader]
     print(f'Loaded {len(dataset)} markets')
 
     # Split by time
@@ -84,3 +123,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+

@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from pydantic import ValidationError
 import requests
 
-from ..data import DailyNewsData, KalshiData, PolyMarketData
+from ..data import DailyNewsData, KalshiData, MarketData
 from .utils import filter_midnight_points
 
 
@@ -43,7 +43,7 @@ class TimeSeriesConfig:
     rolling_window: int = 30  # Window size for rolling robust z-score calculation
 
 
-class PolyMarketDataConverter:
+class MarketDataConverter:
     def __init__(self, config: Optional[TimeSeriesConfig] = None):
         self.config = config or TimeSeriesConfig()
         self.datetime_formats = [
@@ -216,7 +216,7 @@ class PolyMarketDataConverter:
         self,
         market: Dict[str, Any],
         event: Dict[str, Any],
-    ) -> Optional[PolyMarketData]:
+    ) -> Optional[MarketData]:
         try:
             event_tags = event.get('tags') or []
             tags = [tag['label'] for tag in event_tags]
@@ -251,7 +251,7 @@ class PolyMarketDataConverter:
             # Find daily breakpoints using daily time series for anomaly detection
             daily_breakpoints = self.find_breakpoints(daily_time_series)
 
-            return PolyMarketData(
+            return MarketData(
                 event_id=event['id'],
                 market_id=market['id'],
                 question=market['question'],
@@ -272,7 +272,7 @@ class PolyMarketDataConverter:
             print(f"Error processing market {market.get('id', 'unknown')}: {str(e)}")
             return None
 
-    def convert(self, event: Dict[str, Any]) -> List[PolyMarketData]:
+    def convert(self, event: Dict[str, Any]) -> List[MarketData]:
         markets = event.get('markets') or []
         if not markets:
             return []

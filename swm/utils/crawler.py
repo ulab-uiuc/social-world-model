@@ -23,7 +23,7 @@ except ImportError:
     HAS_KALSHI_SDK = False
 
 
-class PolyMarketCrawler:
+class MarketCrawler:
     def __init__(self, output_file: str, cache_size: int = 100):
         self.output_file = output_file
         self.cache_size = cache_size
@@ -58,12 +58,12 @@ class PolyMarketCrawler:
         return event
 
 
-class PolyMarketEventCrawler(PolyMarketCrawler):
+class MarketEventCrawler(MarketCrawler):
     def __init__(self, output_file: str):
         super().__init__(output_file, cache_size=100)
 
     def collect(self, start_offset: int, end_offset: int, step: int = 100):
-        """Collect events from PolyMarket API and store them in the output file."""
+        """Collect events from Market API and store them in the output file."""
         for offset in tqdm(
             range(start_offset, end_offset, step), desc='Collecting events'
         ):
@@ -92,7 +92,7 @@ class PolyMarketEventCrawler(PolyMarketCrawler):
         raise Exception(f'Failed to fetch events: HTTP {response.status_code}')
 
 
-class PolyMarketHistoryCrawler(PolyMarketCrawler):
+class MarketHistoryCrawler(MarketCrawler):
     def __init__(self, input_file: str, output_file: str):
         super().__init__(output_file, cache_size=5)
         self.input_file = input_file

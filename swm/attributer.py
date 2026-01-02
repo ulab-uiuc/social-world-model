@@ -9,9 +9,8 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from transformers import AutoTokenizer, Trainer, TrainingArguments
 
-from .data import PolyMarketData
-from .dataset import BasicPolyMarketDatasetWithEventForReasoner
-from .utils.posterior_reasoner import BasicPosteriorReasoner
+from .data import MarketData
+from .dataset import PriorAttributerDataset
 from .utils.regressor import LLMRegressor, LLMRegressorConfig
 
 
@@ -111,7 +110,7 @@ class KLDivergenceTrainer(Trainer):
         )
 
 
-class BasicPriorReasoner:
+class BasicPriorAttributer:
     def __init__(
         self,
         model_name: str,
@@ -178,24 +177,32 @@ class BasicPriorReasoner:
 
     def train(
         self,
-        train_data: List[PolyMarketData],
-        valid_data: List[PolyMarketData],
+        train_data: List[MarketData],
+        valid_data: List[MarketData],
         training_args: TrainingArguments,
-        posterior_reasoner: BasicPosteriorReasoner,
     ) -> str:
+        """
+        Train PriorAttributer using precomputed attributions.
+        
+        Args:
+            train_data: List of markets with precomputed attributions in market.attributions
+            valid_data: List of markets with precomputed attributions
+            training_args: HuggingFace TrainingArguments
+            
+        Returns:
+            Path to best model checkpoint
+        """
         if self.model is None:
             self.setup_model()
 
-        train_dataset = BasicPolyMarketDatasetWithEventForReasoner(
+        train_dataset = PriorAttributerDataset(
             markets=train_data,
             tokenizer=self.tokenizer,
-            reasoner=posterior_reasoner,
             cache_dir=self.cache_dir,
         )
-        valid_dataset = BasicPolyMarketDatasetWithEventForReasoner(
+        valid_dataset = PriorAttributerDataset(
             markets=valid_data,
             tokenizer=self.tokenizer,
-            reasoner=posterior_reasoner,
             cache_dir=self.cache_dir,
         )
 
@@ -223,14 +230,22 @@ class BasicPriorReasoner:
 
     def predict(
         self,
-        markets: List[PolyMarketData],
-        posterior_reasoner: BasicPosteriorReasoner,
+        markets: List[MarketData],
         batch_size: int = 8,
     ) -> List[Dict[str, Any]]:
-        dataset = BasicPolyMarketDatasetWithEventForReasoner(
+        """
+        Predict attribution distributions for markets.
+        
+        Args:
+            markets: List of markets with precomputed attributions in market.attributions
+            batch_size: Batch size for prediction
+            
+        Returns:
+            List of predictions with q_dist (predicted) and p_dist (ground truth)
+        """
+        dataset = PriorAttributerDataset(
             markets=markets,
             tokenizer=self.tokenizer,
-            reasoner=posterior_reasoner,
             cache_dir=self.cache_dir,
         )
         dataloader = DataLoader(
@@ -281,6 +296,29 @@ class BasicPriorReasoner:
                     )
 
         return results
+    
+    def attribute(
+        self,
+        timestamp: float,
+        market: MarketData,
+    ) -> List[Dict[str, Any]]:
+        """
+        Generate attributions for a single market at a specific timestamp.
+        
+        This is used during inference with MultiEventForecaster.
+        
+        Args:
+            timestamp: The timestamp to generate attributions for
+            market: The market data
+            
+        Returns:
+            List of {news, score} dicts
+        """
+        # TODO: Implement real-time attribution prediction
+        # For now, return from precomputed if available
+        if market.attributions:
+            return market.attributions.get(str(timestamp), [])
+        return []
 
     def save(self, path: str) -> None:
         if self.model:
@@ -289,3 +327,4 @@ class BasicPriorReasoner:
     def load(self, path: str) -> None:
         self.model = LLMRegressor.from_pretrained(path)
         self.model.to('cuda' if torch.cuda.is_available() else 'cpu')
+

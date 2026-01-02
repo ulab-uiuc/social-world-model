@@ -1,8 +1,9 @@
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Protocol, Tuple, Union
 
-from ..data import KalshiData, PolyMarketData
 
-MarketData = Union[PolyMarketData, KalshiData]
+class MarketDataProtocol(Protocol):
+    """Protocol for market data objects - must have model_dump() method."""
+    def model_dump(self) -> Dict[str, Any]: ...
 
 
 def split_time_series_by_cutoff(
@@ -49,7 +50,7 @@ def split_breakpoints_by_cutoff(
 
 
 def split_market_by_time(
-    market: MarketData,
+    market: MarketDataProtocol,
     cutoff_ts: float,
 ) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
     """Split a single market's time series data at cutoff timestamp.
@@ -112,7 +113,7 @@ def split_market_by_time(
 
 
 def split_dataset_by_time(
-    data_list: List[MarketData],
+    data_list: List[MarketDataProtocol],
     cutoff_ts: float,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Split all markets' time series at cutoff timestamp.

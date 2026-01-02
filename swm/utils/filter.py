@@ -1,6 +1,6 @@
 from typing import Dict, List, Optional
 
-from ..data import DailyNewsData, PolyMarketData
+from ..data import DailyNewsData, MarketData
 
 
 class TimeBasedDailyNewsFilter:
@@ -36,14 +36,14 @@ class TimeBasedDailyNewsFilter:
         return relevant
 
 
-class TimeBasedPolyMarketFilter:
-    def __init__(self, corpus_markets: List[PolyMarketData]):
+class TimeBasedMarketFilter:
+    def __init__(self, corpus_markets: List[MarketData]):
         self.corpus_markets = corpus_markets
 
     def filter(
         self,
         target_ts: int,
-    ) -> List[PolyMarketData]:
+    ) -> List[MarketData]:
         relevant_markets = []
 
         for market in self.corpus_markets:
