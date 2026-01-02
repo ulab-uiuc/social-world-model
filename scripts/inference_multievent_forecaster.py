@@ -26,7 +26,7 @@ import jsonlines
 
 from swm.forecaster import MultiEventForecaster
 from swm.attributer import BasicPriorAttributer
-from swm.utils.utils import load_polymarket_data, set_seed
+from swm.utils.utils import load_market_data, set_seed
 
 
 def parse_args():
@@ -65,7 +65,7 @@ def main():
     
     # Load test data
     print(f"Loading test data from {args.test_data_path}...")
-    test_data = load_polymarket_data(args.test_data_path)
+    test_data = load_market_data(args.test_data_path)
     if args.limit:
         test_data = test_data[:args.limit]
     print(f"Loaded {len(test_data)} markets")

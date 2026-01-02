@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from transformers import AutoTokenizer, Trainer, TrainingArguments
 
-from .data import PolyMarketData
+from .data import MarketData
 from .dataset import PriorAttributerDataset
 from .utils.regressor import LLMRegressor, LLMRegressorConfig
 
@@ -177,8 +177,8 @@ class BasicPriorAttributer:
 
     def train(
         self,
-        train_data: List[PolyMarketData],
-        valid_data: List[PolyMarketData],
+        train_data: List[MarketData],
+        valid_data: List[MarketData],
         training_args: TrainingArguments,
     ) -> str:
         """
@@ -230,7 +230,7 @@ class BasicPriorAttributer:
 
     def predict(
         self,
-        markets: List[PolyMarketData],
+        markets: List[MarketData],
         batch_size: int = 8,
     ) -> List[Dict[str, Any]]:
         """
@@ -300,7 +300,7 @@ class BasicPriorAttributer:
     def attribute(
         self,
         timestamp: float,
-        market: PolyMarketData,
+        market: MarketData,
     ) -> List[Dict[str, Any]]:
         """
         Generate attributions for a single market at a specific timestamp.

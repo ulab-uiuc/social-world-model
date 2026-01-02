@@ -2,6 +2,19 @@
 """
 Crawl Google News for breakpoints and embed news directly into daily_breakpoints.
 
+Works for both Polymarket and Kalshi data.
+
+Usage:
+    # Kalshi - outputs to kalshi_data_processed_with_news.jsonl
+    python crawl_breakpoint_news.py \
+        --input_file ../data/processed_kalshi_v2_0102/kalshi_data_processed.jsonl \
+        --use_gnews
+
+    # Polymarket - outputs to polymarket_data_processed_with_news.jsonl
+    python crawl_breakpoint_news.py \
+        --input_file ../data/processed_polymarket_v2_0102/polymarket_data_processed.jsonl \
+        --use_gnews
+
 Output: Updated market data with news embedded in each breakpoint:
 {
     "daily_breakpoints": [
@@ -42,9 +55,9 @@ def parse_args():
         help='Input JSONL file with processed Kalshi data',
     )
     parser.add_argument(
-        '--output_dir',
-        default='../data/kalshi_breakpoint_news_v2_0102',
-        help='Output directory for news files',
+        '--output_file',
+        default='../data/processed_kalshi_v2_0102/kalshi_data_processed_with_news.jsonl',
+        help='Output JSONL file with news embedded in breakpoints',
     )
     parser.add_argument(
         '--days_before',
@@ -154,8 +167,32 @@ def crawl_news_for_breakpoint(
         return []
 
 
+def load_processed_market_ids(output_file: str) -> set:
+    """Load market IDs that have already been processed."""
+    processed_ids = set()
+    if Path(output_file).exists():
+        try:
+            with jsonlines.open(output_file, 'r') as reader:
+                for market in reader:
+                    market_id = market.get('market_id')
+                    if market_id is not None:
+                        processed_ids.add(str(market_id))
+        except Exception as e:
+            print(f"Warning: Error reading existing output file: {e}")
+    return processed_ids
+
+
 def main():
     args = parse_args()
+
+    # Prepare output file
+    Path(args.output_file).parent.mkdir(parents=True, exist_ok=True)
+    
+    # Load already processed market IDs for resume support
+    processed_ids = set()
+    if args.skip_existing and Path(args.output_file).exists():
+        processed_ids = load_processed_market_ids(args.output_file)
+        print(f'Found {len(processed_ids)} already processed markets in output file')
 
     # Load market data
     print(f'Loading data from {args.input_file}...')
@@ -190,70 +227,81 @@ def main():
         )
         print("Using Google News scraping")
 
-    # Process each market
+    # Process each market and write incrementally
     crawled_count = 0
-    skipped_count = 0
+    skipped_markets = 0
+    skipped_breakpoints = 0
     
-    for market in tqdm(markets, desc='Processing markets'):
-        breakpoints = market.get('daily_breakpoints', [])
-        if not breakpoints:
-            continue
-        
-        question = market.get('question') or market.get('title', '')
-        if not question:
-            continue
-        
-        # Extract keywords if enabled
-        search_query = question
-        if args.use_llm_keywords:
-            keywords = extract_search_keywords(question, model=args.llm_model)
-            if keywords:
-                search_query = keywords
-        
-        # Process each breakpoint
-        for bp in breakpoints:
-            z_score = bp.get('z_score', 0)
-            if z_score < args.z_score_threshold:
+    # Open output file in append mode
+    write_mode = 'a' if processed_ids else 'w'
+    
+    with jsonlines.open(args.output_file, mode=write_mode) as writer:
+        for market in tqdm(markets, desc='Processing markets'):
+            market_id = str(market.get('market_id', ''))
+            
+            # Skip if already processed
+            if market_id in processed_ids:
+                skipped_markets += 1
                 continue
             
-            # Skip if already has news
-            if args.skip_existing and bp.get('news'):
-                skipped_count += 1
+            breakpoints = market.get('daily_breakpoints', [])
+            question = market.get('question') or market.get('title', '')
+            
+            if not breakpoints or not question:
+                # Write market as-is (no breakpoints to process)
+                writer.write(market)
                 continue
             
-            before_ts = bp.get('before', {}).get('t')
-            after_ts = bp.get('after', {}).get('t')
-            if before_ts is None or after_ts is None:
-                continue
+            # Extract keywords if enabled
+            search_query = question
+            if args.use_llm_keywords:
+                keywords = extract_search_keywords(question, model=args.llm_model)
+                if keywords:
+                    search_query = keywords
             
-            # Crawl news
-            news = crawl_news_for_breakpoint(
-                crawler=crawler,
-                query=search_query,
-                before_ts=before_ts,
-                after_ts=after_ts,
-                days_before=args.days_before,
-                days_after=args.days_after,
-                max_results=args.max_results,
-                use_gnews=args.use_gnews,
-            )
-            
-            # Embed news into breakpoint
-            bp['news'] = news
-            crawled_count += 1
-            
-            if crawled_count % 10 == 0:
-                tqdm.write(f'  Crawled {crawled_count} breakpoints, found {len(news)} articles for latest')
+            # Process each breakpoint
+            for bp in breakpoints:
+                z_score = bp.get('z_score', 0)
+                
+                # Below threshold - set empty news list
+                if z_score < args.z_score_threshold:
+                    if 'news' not in bp:
+                        bp['news'] = []
+                    continue
+                
+                # Skip if already has news in input data
+                if bp.get('news'):
+                    skipped_breakpoints += 1
+                    continue
+                
+                before_ts = bp.get('before', {}).get('t')
+                after_ts = bp.get('after', {}).get('t')
+                if before_ts is None or after_ts is None:
+                    bp['news'] = []
+                    continue
+                
+                # Crawl news
+                news = crawl_news_for_breakpoint(
+                    crawler=crawler,
+                    query=search_query,
+                    before_ts=before_ts,
+                    after_ts=after_ts,
+                    days_before=args.days_before,
+                    days_after=args.days_after,
+                    max_results=args.max_results,
+                    use_gnews=args.use_gnews,
+                )
+                
+                # Embed news into breakpoint
+                bp['news'] = news
+                tqdm.write(f'Found {len(news)} articles for breakpoint')
 
-    # Save output
-    print(f'\nSaving to {args.output_file}...')
-    Path(args.output_file).parent.mkdir(parents=True, exist_ok=True)
-    with jsonlines.open(args.output_file, 'w') as writer:
-        writer.write_all(markets)
+            writer.write(market)
 
     print(f'\nDone!')
     print(f'  Crawled: {crawled_count} breakpoints')
-    print(f'  Skipped: {skipped_count} (already had news)')
+    print(f'  Skipped markets: {skipped_markets} (already in output)')
+    print(f'  Skipped breakpoints: {skipped_breakpoints} (already had news)')
     print(f'  Output: {args.output_file}')
 
 

@@ -8,10 +8,10 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from transformers import AutoTokenizer, Trainer, TrainingArguments
 
-from .data import PolyMarketData
+from .data import MarketData
 from .dataset import MultiEventForecasterDataset, RAGMultiEventForecasterDataset
 from .utils.regressor import LLMRegressor, LLMRegressorConfig
-from .utils.retriever import SimilarityBasedPolyMarketRetriever
+from .utils.retriever import SimilarityBasedMarketRetriever
 
 
 class WeightedTrainer(Trainer):
@@ -164,8 +164,8 @@ class MultiEventForecaster:
 
     def train(
         self,
-        train_data: List[PolyMarketData],
-        valid_data: List[PolyMarketData],
+        train_data: List[MarketData],
+        valid_data: List[MarketData],
         training_args: TrainingArguments,
     ) -> str:
         """
@@ -211,7 +211,7 @@ class MultiEventForecaster:
 
     def predict(
         self,
-        markets: List[PolyMarketData],
+        markets: List[MarketData],
         attributer: Any = None,
         batch_size: int = 8,
     ) -> List[Dict[str, Union[str, float]]]:
@@ -280,10 +280,10 @@ class MultiEventForecaster:
 
     def _generate_attributions(
         self, 
-        markets: List[PolyMarketData], 
+        markets: List[MarketData], 
         attributer: Any,
         window_size: int = 5,
-    ) -> List[PolyMarketData]:
+    ) -> List[MarketData]:
         """Generate attributions for markets using the provided attributer."""
         for market in tqdm(markets, desc='Generating attributions'):
             if not market.daily_time_series or 'Yes' not in market.daily_time_series:
@@ -332,7 +332,7 @@ class RAGMultiEventForecaster(MultiEventForecaster):
         model_name: str,
         retriever_name: str,
         cache_dir: str,
-        corpus_markets: Optional[List[PolyMarketData]] = None,
+        corpus_markets: Optional[List[MarketData]] = None,
         max_seq_length: int = 512,
         lora_config: Optional[LoraConfig] = None,
         retriever_top_k: int = 50,
@@ -347,7 +347,7 @@ class RAGMultiEventForecaster(MultiEventForecaster):
         self.retriever_name = retriever_name
         self.retriever_top_k = retriever_top_k
         self.retriever_batch_size = retriever_batch_size
-        self.retriever = SimilarityBasedPolyMarketRetriever(
+        self.retriever = SimilarityBasedMarketRetriever(
             retriever_name=retriever_name,
             cache_dir=cache_dir,
             max_seq_length=max_seq_length,
@@ -357,15 +357,15 @@ class RAGMultiEventForecaster(MultiEventForecaster):
         if corpus_markets:
             self.setup_retriever(corpus_markets)
 
-    def setup_retriever(self, corpus_markets: List[PolyMarketData]) -> None:
+    def setup_retriever(self, corpus_markets: List[MarketData]) -> None:
         """Setup the retriever with a corpus of markets."""
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.retriever.setup_corpus(corpus_markets)
 
     def train(
         self,
-        train_data: List[PolyMarketData],
-        valid_data: List[PolyMarketData],
+        train_data: List[MarketData],
+        valid_data: List[MarketData],
         training_args: TrainingArguments,
     ) -> str:
         """
@@ -421,7 +421,7 @@ class RAGMultiEventForecaster(MultiEventForecaster):
 
     def predict(
         self,
-        markets: List[PolyMarketData],
+        markets: List[MarketData],
         attributer: Any = None,
         batch_size: int = 8,
     ) -> List[Dict[str, Union[str, float]]]:

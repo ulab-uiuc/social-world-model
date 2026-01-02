@@ -1,5 +1,22 @@
 #!/usr/bin/env python3
-"""Crawl Google News for Polymarket breakpoints (-2 days to +0 days around each breakpoint)."""
+"""
+Crawl Google News for breakpoints and embed news directly into daily_breakpoints.
+
+Output: Updated market data with news embedded in each breakpoint:
+{
+    "daily_breakpoints": [
+        {
+            "before": {"t": ..., "p": ...},
+            "after": {"t": ..., "p": ...},
+            "window_history": [...],
+            "news": [                     # <-- Added by this script
+                {"title": "...", "description": "...", "url": "...", "published_at": "..."},
+                ...
+            ]
+        }
+    ]
+}
+"""
 import argparse
 import os
 import sys
@@ -7,27 +24,27 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import jsonlines
+from tqdm import tqdm
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from swm.data import PolyMarketData
 from swm.utils.crawler import GNewsCrawler, GoogleNewsCrawler
 from swm.utils.utils import extract_search_keywords
 
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description='Crawl Google News around Polymarket breakpoints'
+        description='Crawl Google News and embed into breakpoints'
     )
     parser.add_argument(
         '--input_file',
-        default='../data/processed_polymarket_v2_0102/polymarket_data_processed.jsonl',
-        help='Input JSONL file with processed Polymarket data',
+        required=True,
+        help='Input JSONL file with processed market data',
     )
     parser.add_argument(
-        '--output_dir',
-        default='../data/polymarket_breakpoint_news_v2_0102',
-        help='Output directory for news files',
+        '--output_file',
+        required=True,
+        help='Output JSONL file with news embedded in breakpoints',
     )
     parser.add_argument(
         '--days_before',
@@ -42,10 +59,10 @@ def parse_args():
         help='Days after breakpoint to crawl (default: -1, meaning day before after_date)',
     )
     parser.add_argument(
-        '--max_pages',
+        '--max_results',
         type=int,
-        default=5,
-        help='Max pages to crawl per query (default: 5)',
+        default=20,
+        help='Max news articles per breakpoint (default: 20)',
     )
     parser.add_argument(
         '--min_delay',
@@ -62,7 +79,7 @@ def parse_args():
     parser.add_argument(
         '--z_score_threshold',
         type=float,
-        default=4.0,
+        default=2.0,
         help='Minimum z_score to crawl news for (default: 2.0)',
     )
     parser.add_argument(
@@ -77,85 +94,85 @@ def parse_args():
         help='OpenAI model for keyword extraction (default: gpt-4o-mini)',
     )
     parser.add_argument(
-        '--proxy',
-        type=str,
-        default=None,
-        help='Proxy URL (e.g., http://user:pass@host:port or socks5://host:port)',
-    )
-    parser.add_argument(
-        '--proxy_file',
-        type=str,
-        default=None,
-        help='File containing proxy URLs (one per line) for rotation',
-    )
-    parser.add_argument(
         '--use_gnews',
         action='store_true',
         help='Use GNews API instead of Google News scraping (requires GNEWS_API_KEY)',
     )
+    parser.add_argument(
+        '--skip_existing',
+        action='store_true',
+        help='Skip breakpoints that already have news',
+    )
     return parser.parse_args()
 
 
-def extract_breakpoint_queries(data: PolyMarketData, z_score_threshold: float = 2.0):
-    """Extract search queries and date ranges from breakpoints."""
-    if not data.daily_breakpoints:
+def crawl_news_for_breakpoint(
+    crawler,
+    query: str,
+    before_ts: float,
+    after_ts: float,
+    days_before: int,
+    days_after: int,
+    max_results: int,
+    use_gnews: bool,
+) -> list:
+    """Crawl news for a single breakpoint and return as list of dicts."""
+    before_date = datetime.fromtimestamp(before_ts)
+    after_date = datetime.fromtimestamp(after_ts)
+    start_date = (before_date - timedelta(days=days_before)).strftime('%Y-%m-%d')
+    end_date = (after_date + timedelta(days=days_after)).strftime('%Y-%m-%d')
+    
+    try:
+        if use_gnews:
+            articles = crawler.fetch(
+                query=query,
+                start_date=start_date,
+                end_date=end_date,
+                max_results=max_results,
+            )
+        else:
+            articles = crawler.fetch(
+                query=query,
+                start_date=start_date,
+                end_date=end_date,
+                max_results=max_results,
+            )
+        
+        # Normalize article format
+        news_list = []
+        for article in articles:
+            news_list.append({
+                'title': article.get('title', ''),
+                'description': article.get('description', ''),
+                'url': article.get('url', ''),
+                'published_at': article.get('published_at') or article.get('publishedAt', ''),
+                'source': article.get('source', {}).get('name', '') if isinstance(article.get('source'), dict) else article.get('source', ''),
+            })
+        return news_list
+    except Exception as e:
+        print(f"  Error crawling: {e}")
         return []
-
-    queries = []
-    for bp in data.daily_breakpoints:
-        # Filter by z_score threshold
-        z_score = bp.get('z_score', 0)
-        if z_score < z_score_threshold:
-            continue
-
-        # Get both before and after timestamps
-        before_ts = bp.get('before', {}).get('t')
-        after_ts = bp.get('after', {}).get('t')
-        if before_ts is None or after_ts is None:
-            continue
-
-        # Use the market question as the search query
-        query = data.question or data.description
-        if not query:
-            continue
-
-        queries.append({
-            'market_id': data.market_id,
-            'query': query,
-            'before_ts': before_ts,
-            'after_ts': after_ts,
-            'before_date': datetime.fromtimestamp(before_ts).strftime('%Y-%m-%d'),
-            'after_date': datetime.fromtimestamp(after_ts).strftime('%Y-%m-%d'),
-            'change': bp.get('change'),
-            'z_score': z_score,
-        })
-
-    return queries
 
 
 def main():
     args = parse_args()
 
-    output_path = Path(args.output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
-
-    # Load Polymarket data
+    # Load market data
+    print(f'Loading data from {args.input_file}...')
     with jsonlines.open(args.input_file, 'r') as reader:
-        dataset = [PolyMarketData.from_dict(data) for data in reader]
+        markets = list(reader)
+    print(f'Loaded {len(markets)} markets')
 
-    print(f'Loaded {len(dataset)} records from {args.input_file}')
-
-    # Extract all breakpoint queries
-    all_queries = []
-    for data in dataset:
-        queries = extract_breakpoint_queries(data, args.z_score_threshold)
-        all_queries.extend(queries)
-
-    print(f'Found {len(all_queries)} breakpoints to crawl')
-
-    if not all_queries:
-        print('No breakpoints found, exiting.')
-        return
+    # Count breakpoints
+    total_breakpoints = sum(
+        len(m.get('daily_breakpoints', []))
+        for m in markets
+    )
+    valid_breakpoints = sum(
+        len([bp for bp in m.get('daily_breakpoints', []) if bp.get('z_score', 0) >= args.z_score_threshold])
+        for m in markets
+    )
+    print(f'Total breakpoints: {total_breakpoints}, above threshold: {valid_breakpoints}')
 
     # Initialize crawler
     if args.use_gnews:
@@ -167,77 +184,78 @@ def main():
         crawler = GNewsCrawler(api_key=api_key)
         print("Using GNews API")
     else:
-        # Load proxy list if provided
-        proxy_list = None
-        if args.proxy_file and os.path.exists(args.proxy_file):
-            with open(args.proxy_file, 'r') as f:
-                proxy_list = [line.strip() for line in f if line.strip()]
-            print(f'Loaded {len(proxy_list)} proxies from {args.proxy_file}')
-
         crawler = GoogleNewsCrawler(
             min_delay=args.min_delay,
             max_delay=args.max_delay,
-            proxy=args.proxy,
-            proxy_list=proxy_list,
         )
+        print("Using Google News scraping")
 
-    # Crawl news for each breakpoint
-    for i, q in enumerate(all_queries):
-        # start_date = before_ts - days_before
-        # end_date = after_ts + days_after
-        before_date = datetime.fromtimestamp(q['before_ts'])
-        after_date = datetime.fromtimestamp(q['after_ts'])
-        start_date = (before_date - timedelta(days=args.days_before)).strftime('%Y-%m-%d')
-        end_date = (after_date + timedelta(days=args.days_after)).strftime('%Y-%m-%d')
-
-        output_file = os.path.join(
-            args.output_dir,
-            f"{q['market_id']}_{q['before_date']}_to_{q['after_date']}.jsonl"
-        )
-
-        # Skip if already crawled
-        if os.path.exists(output_file):
-            print(f"\n[{i + 1}/{len(all_queries)}] Skipping {q['market_id']} (already crawled)")
+    # Process each market
+    crawled_count = 0
+    skipped_count = 0
+    
+    for market in tqdm(markets, desc='Processing markets'):
+        breakpoints = market.get('daily_breakpoints', [])
+        if not breakpoints:
             continue
-
-        # Extract keywords using LLM if enabled
-        search_query = q['query']
+        
+        question = market.get('question') or market.get('title', '')
+        if not question:
+            continue
+        
+        # Extract keywords if enabled
+        search_query = question
         if args.use_llm_keywords:
-            keywords = extract_search_keywords(q['query'], model=args.llm_model)
+            keywords = extract_search_keywords(question, model=args.llm_model)
             if keywords:
                 search_query = keywords
+        
+        # Process each breakpoint
+        for bp in breakpoints:
+            z_score = bp.get('z_score', 0)
+            if z_score < args.z_score_threshold:
+                continue
+            
+            # Skip if already has news
+            if args.skip_existing and bp.get('news'):
+                skipped_count += 1
+                continue
+            
+            before_ts = bp.get('before', {}).get('t')
+            after_ts = bp.get('after', {}).get('t')
+            if before_ts is None or after_ts is None:
+                continue
+            
+            # Crawl news
+            news = crawl_news_for_breakpoint(
+                crawler=crawler,
+                query=search_query,
+                before_ts=before_ts,
+                after_ts=after_ts,
+                days_before=args.days_before,
+                days_after=args.days_after,
+                max_results=args.max_results,
+                use_gnews=args.use_gnews,
+            )
+            
+            # Embed news into breakpoint
+            bp['news'] = news
+            crawled_count += 1
+            
+            if crawled_count % 10 == 0:
+                tqdm.write(f'  Crawled {crawled_count} breakpoints, found {len(news)} articles for latest')
 
-        print(f"\n[{i + 1}/{len(all_queries)}] Crawling news for: {q['market_id']}")
-        print(f"  Original: {q['query'][:60]}...")
-        print(f"  Search:   {search_query}")
-        print(f"  Breakpoint: {q['before_date']} -> {q['after_date']} (z_score={q['z_score']:.2f}, change={q['change']:.4f})")
-        print(f"  Date range: {start_date} to {end_date}")
+    # Save output
+    print(f'\nSaving to {args.output_file}...')
+    Path(args.output_file).parent.mkdir(parents=True, exist_ok=True)
+    with jsonlines.open(args.output_file, 'w') as writer:
+        writer.write_all(markets)
 
-        try:
-            if args.use_gnews:
-                crawler.crawl(
-                    query=search_query,
-                    start_date=start_date,
-                    end_date=end_date,
-                    output_file=output_file,
-                    max_results=1000,
-                )
-            else:
-                crawler.crawl(
-                    query=search_query,
-                    start_date=start_date,
-                    end_date=end_date,
-                    output_file=output_file,
-                    max_pages=args.max_pages,
-                    fetch_full_content=False,
-                )
-        except Exception as e:
-            print(f"  Error: {e}")
-            continue
-
-    print(f'\nDone! News saved to {args.output_dir}')
+    print(f'\nDone!')
+    print(f'  Crawled: {crawled_count} breakpoints')
+    print(f'  Skipped: {skipped_count} (already had news)')
+    print(f'  Output: {args.output_file}')
 
 
 if __name__ == '__main__':
     main()
-

@@ -10,10 +10,10 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from transformers import AutoTokenizer, Trainer, TrainingArguments
 
-from .data import PolyMarketData
-from .dataset import BasicPolyMarketDataset, RAGPolyMarketDataset
+from .data import MarketData
+from .dataset import BasicMarketDataset, RAGMarketDataset
 from .utils.regressor import LLMRegressor, LLMRegressorConfig
-from .utils.retriever import SimilarityBasedPolyMarketRetriever
+from .utils.retriever import SimilarityBasedMarketRetriever
 
 
 class SocialWorldModel:
@@ -70,17 +70,17 @@ class SocialWorldModel:
 
     def train(
         self,
-        train_data: List[PolyMarketData],
-        valid_data: List[PolyMarketData],
+        train_data: List[MarketData],
+        valid_data: List[MarketData],
         training_args: TrainingArguments,
     ) -> str:
         if self.model is None:
             self.setup_model()
 
-        train_dataset = BasicPolyMarketDataset(
+        train_dataset = BasicMarketDataset(
             train_data, self.tokenizer, self.cache_dir
         )
-        valid_dataset = BasicPolyMarketDataset(
+        valid_dataset = BasicMarketDataset(
             valid_data, self.tokenizer, self.cache_dir
         )
 
@@ -100,9 +100,9 @@ class SocialWorldModel:
         return str(best_model_dir)
 
     def predict(
-        self, markets: List[PolyMarketData], batch_size: int = 8
+        self, markets: List[MarketData], batch_size: int = 8
     ) -> Dict[str, Dict[str, float]]:
-        dataset = BasicPolyMarketDataset(markets, self.tokenizer, self.cache_dir)
+        dataset = BasicMarketDataset(markets, self.tokenizer, self.cache_dir)
         results = {}
         dataloader = DataLoader(
             dataset,
@@ -158,7 +158,7 @@ class RAGSocialWorldModel(SocialWorldModel):
         retriever_name: str,
         cache_dir: str,
         lora_config: Optional[LoraConfig] = None,
-        corpus_markets: Optional[List[PolyMarketData]] = None,
+        corpus_markets: Optional[List[MarketData]] = None,
         max_seq_length: int = 512,
         retriever_top_k: int = 50,
         retriever_batch_size: int = 32,
@@ -172,7 +172,7 @@ class RAGSocialWorldModel(SocialWorldModel):
         self.retriever_name = retriever_name
         self.retriever_top_k = retriever_top_k
         self.retriever_batch_size = retriever_batch_size
-        self.retriever = SimilarityBasedPolyMarketRetriever(
+        self.retriever = SimilarityBasedMarketRetriever(
             retriever_name=retriever_name,
             cache_dir=cache_dir,
             max_seq_length=max_seq_length,
@@ -182,14 +182,14 @@ class RAGSocialWorldModel(SocialWorldModel):
         if corpus_markets:
             self.setup_retriever(corpus_markets)
 
-    def setup_retriever(self, corpus_markets: List[PolyMarketData]) -> None:
+    def setup_retriever(self, corpus_markets: List[MarketData]) -> None:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.retriever.setup_corpus(corpus_markets)
 
     def train(
         self,
-        train_data: List[PolyMarketData],
-        valid_data: List[PolyMarketData],
+        train_data: List[MarketData],
+        valid_data: List[MarketData],
         training_args: TrainingArguments,
     ) -> str:
         if self.model is None:
@@ -201,10 +201,10 @@ class RAGSocialWorldModel(SocialWorldModel):
         valid_similar = {
             m.market_id: self.retriever.find_similar(m) for m in valid_data
         }
-        train_dataset = RAGPolyMarketDataset(
+        train_dataset = RAGMarketDataset(
             train_data, train_similar, self.tokenizer, self.cache_dir
         )
-        valid_dataset = RAGPolyMarketDataset(
+        valid_dataset = RAGMarketDataset(
             valid_data, valid_similar, self.tokenizer, self.cache_dir
         )
 
@@ -226,10 +226,10 @@ class RAGSocialWorldModel(SocialWorldModel):
         return str(best_model_dir)
 
     def predict(
-        self, markets: List[PolyMarketData], batch_size: int = 8
+        self, markets: List[MarketData], batch_size: int = 8
     ) -> List[Dict[str, Union[str, float]]]:
         similar_markets = {m.market_id: self.retriever.find_similar(m) for m in markets}
-        dataset = RAGPolyMarketDataset(
+        dataset = RAGMarketDataset(
             markets, similar_markets, self.tokenizer, self.cache_dir
         )
         dataloader = DataLoader(

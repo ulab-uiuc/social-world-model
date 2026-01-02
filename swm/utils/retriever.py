@@ -8,10 +8,10 @@ import numpy as np
 import torch
 from sentence_transformers import SentenceTransformer
 
-from ..data import PolyMarketData
+from ..data import MarketData
 
 
-class SimilarityBasedPolyMarketRetriever:
+class SimilarityBasedMarketRetriever:
     def __init__(
         self,
         retriever_name: str,
@@ -34,7 +34,7 @@ class SimilarityBasedPolyMarketRetriever:
         self.embeddings = None
         self.market_embeddings = {}
 
-    def setup_corpus(self, corpus_markets: List[PolyMarketData]) -> None:
+    def setup_corpus(self, corpus_markets: List[MarketData]) -> None:
         self.corpus_ids = []
         embeddings_list = []
         for i in range(0, len(corpus_markets), self.retriever_batch_size):
@@ -56,8 +56,8 @@ class SimilarityBasedPolyMarketRetriever:
         self.corpus = {m.market_id: m for m in corpus_markets}
 
     def find_similar(
-        self, market: PolyMarketData, k: Optional[int] = None
-    ) -> List[PolyMarketData]:
+        self, market: MarketData, k: Optional[int] = None
+    ) -> List[MarketData]:
         k = k or self.retriever_top_k
         k = min(k, len(self.corpus_ids))
 
@@ -86,6 +86,6 @@ class SimilarityBasedPolyMarketRetriever:
 
         return similar_markets
 
-    def _compute_embedding(self, market: PolyMarketData) -> np.ndarray:
+    def _compute_embedding(self, market: MarketData) -> np.ndarray:
         query = f"{market.question} {market.description or ''}"[: self.max_seq_length]
         return self.sentence_transformer.encode([query])[0]
