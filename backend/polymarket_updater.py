@@ -171,24 +171,43 @@ class PolymarketUpdater:
 
             logger.info(f'Retrieved data for {len(all_timestamps)} total timestamps')
 
+            # Use forward-fill to handle missing data points
+            last_valid_prices = {}
+            
             for timestamp in sorted(all_timestamps):
-                prices = option_prices.get(timestamp, {})
-                if not prices:
-                    continue
+                current_prices = option_prices.get(timestamp, {})
+                
+                # Forward-fill missing prices from last valid state
+                for option in outcomes:
+                    if option in current_prices:
+                        last_valid_prices[option] = current_prices[option]
+                    elif option in last_valid_prices:
+                        current_prices[option] = last_valid_prices[option]
+                
+                # Only process if we have data for all options
+                if len(current_prices) == len(outcomes):
+                    total_price = sum(current_prices.values())
+                    if total_price <= 0:
+                        logger.debug(f'Skipping timestamp {timestamp} - zero total price')
+                        continue
 
-                total_price = sum(prices.values())
+                    votes = {}
+                    for option, price in current_prices.items():
+                        percentage = (price / total_price * 100)
+                        votes[option] = round(percentage, 2)
 
-                votes = {}
-                for option, price in prices.items():
-                    percentage = (price / total_price * 100) if total_price > 0 else 0
-                    votes[option] = round(percentage, 2)
+                    # Verify percentages add up to approximately 100%
+                    total_percentage = sum(votes.values())
+                    if abs(total_percentage - 100) > 5:  # Allow 5% tolerance
+                        logger.debug(f'Skipping timestamp {timestamp} - percentages dont add up: {total_percentage}%')
+                        continue
 
-                history_entry = {
-                    'card_id': card_id,
-                    'timestamp': datetime.utcfromtimestamp(timestamp).isoformat() + 'Z',
-                    'votes': votes,
-                }
-                result.append(history_entry)
+                    history_entry = {
+                        'card_id': card_id,
+                        'timestamp': datetime.utcfromtimestamp(timestamp).isoformat() + 'Z',
+                        'votes': votes,
+                    }
+                    result.append(history_entry)
 
             return result
 
@@ -321,73 +340,15 @@ class PolymarketUpdater:
         except Exception as e:
             logger.error(f'Error in update_price_history: {e}')
 
-    def get_event_by_id(self, event_id: str) -> Dict:
-        """Fetch a single event by its ID."""
-        try:
-            url = f'https://gamma-api.polymarket.com/events/{event_id}'
-            response = httpx.get(url, timeout=30)
-            if response.status_code == 200:
-                # endpoint returns a list with one event
-                data = response.json()
-                if isinstance(data, list) and data:
-                    return data[0]
-                return data
-            logger.error(
-                f'Failed to fetch event {event_id}: HTTP {response.status_code}'
-            )
-        except Exception as e:
-            logger.error(f'Error fetching event {event_id}: {e}')
-        return {}
-
-    def cleanup_inactive_cards(self):
-        """Remove cards for events that are no longer active."""
-        logger.info('Starting cleanup of inactive cards...')
-        removed_count = 0
-        for card in cards_collection.find({}, {'card_id': 1}):
-            event = self.get_event_by_id(card['card_id'])
-            if not event or not self.is_event_active(event):
-                cards_collection.delete_one({'card_id': card['card_id']})
-                removed_count += 1
-                logger.info(f'Cleaned up inactive card: {card["card_id"]}')
-        logger.info(f'Cleanup completed: {removed_count} cards removed')
-
 
 def main():
     updater = PolymarketUpdater()
 
-    scheduler = BackgroundScheduler(
-        job_defaults={'max_instances': 3, 'coalesce': False}
-    )
+    scheduler = BackgroundScheduler()
 
-    scheduler.add_job(
-        updater.update_active_events,
-        'interval',
-        hours=1,
-        id='update_active_events',
-        max_instances=2,
-        coalesce=False,
-        misfire_grace_time=3600,
-    )
+    scheduler.add_job(updater.update_active_events, 'interval', hours=1)
 
-    scheduler.add_job(
-        updater.update_price_history,
-        'interval',
-        minutes=30,
-        id='update_price_history',
-        max_instances=3,
-        coalesce=False,
-        misfire_grace_time=1800,
-    )
-
-    scheduler.add_job(
-        updater.cleanup_inactive_cards,
-        'interval',
-        hours=1,
-        id='cleanup_inactive_cards',
-        max_instances=1,
-        coalesce=False,
-        misfire_grace_time=3600,
-    )
+    scheduler.add_job(updater.update_price_history, 'interval', minutes=30)
 
     logger.info('Running initial data update...')
     updater.update_active_events()

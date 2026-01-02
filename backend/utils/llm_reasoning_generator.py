@@ -74,6 +74,98 @@ def extract_reasoning_and_answer(output: str) -> Tuple[str, str]:
     return output.strip(), ''
 
 
+def generate_and_store_reasons_for_option(
+    card_id: str, question: str, option: str, model_name: str = 'gpt-4o-mini'
+) -> list:
+    """Generate reasoning for a single option and return the reasons list"""
+    llm = LLMGenerator(model_name=model_name)
+    logger.info(f'Generating reasoning for card {card_id}, option {option} using {model_name}')
+
+    # Check if the reasoning already exists
+    existing = option_reasons_collection.find_one(
+        {'card_id': card_id, 'option': option, 'model': model_name}
+    )
+    
+    if existing and any(
+        reason.get('votes', 0) > 0 for reason in existing.get('reasons', [])
+    ):
+        logger.info(f'Reasoning already exists with votes for {card_id}/{option}/{model_name}')
+        return existing.get('reasons', [])
+
+    prompt = build_question_prompt(question, option)
+    response = llm.generate(prompt)
+    output = response.get('content', '')
+
+    if not output:
+        logger.warning(f'Empty response for option: {option}')
+        return []
+
+    reasoning, answer = extract_reasoning_and_answer(output)
+
+    summary_prompt = build_summary_prompt(question, option, reasoning)
+    summary_response = llm.generate(summary_prompt)
+    summary = summary_response.get('content', '')
+
+    if not summary:
+        logger.warning(f'Empty summary for option: {option}')
+        return []
+
+    # Process the reasoning text
+    bullet_points = []
+    lines = [line.strip() for line in summary.split('\n')]
+    lines = [line for line in lines if line and len(line) > 10]
+
+    for line in lines:
+        clean_line = line.replace('*', '').strip()
+        if ':' in clean_line[:20] or clean_line.isupper():
+            continue
+        bullet_points.append(clean_line)
+
+    if len(bullet_points) < 2 and lines:
+        full_text = ' '.join(lines)
+        sentences = [
+            s.strip() + '.' for s in full_text.split('.') if len(s.strip()) > 15
+        ]
+        bullet_points = []
+        for i in range(0, min(6, len(sentences)), 2):
+            if i + 1 < len(sentences):
+                point = sentences[i] + ' ' + sentences[i + 1]
+            else:
+                point = sentences[i]
+            bullet_points.append(point)
+
+    bullet_points = bullet_points[:3]
+    if not bullet_points:
+        bullet_points = [
+            "This option's outcome depends on several factors and current market conditions."
+        ]
+
+    reasons = []
+    for i, point in enumerate(bullet_points[:3], 1):
+        clean_point = point.replace('*', '').strip()
+        prefixes_to_remove = [
+            'Supporting Reasons:',
+            'Opposing Reasons:',
+            'Supporting Points:',
+            'Opposing Points:',
+        ]
+        for prefix in prefixes_to_remove:
+            if clean_point.startswith(prefix):
+                clean_point = clean_point[len(prefix) :].strip()
+
+        reasons.append({'reason_id': str(i), 'text': clean_point, 'votes': 1})
+
+    # Store to database
+    option_reasons_collection.update_one(
+        {'card_id': card_id, 'option': option, 'model': model_name},
+        {'$set': {'card_id': card_id, 'option': option, 'model': model_name, 'reasons': reasons}},
+        upsert=True,
+    )
+
+    logger.info(f'Stored {len(reasons)} reasons for {card_id}/{option}/{model_name}')
+    return reasons
+
+
 def generate_and_store_reasons(
     model_name: str, card_limit: int = None, sleep_time: float = 1.0
 ):
@@ -106,7 +198,7 @@ def generate_and_store_reasons(
             logger.info(f'  Generating reasoning for option: {option}')
 
             existing = option_reasons_collection.find_one(
-                {'card_id': card_id, 'option': option}
+                {'card_id': card_id, 'option': option, 'model': model_name}
             )
 
             if existing and any(
@@ -180,8 +272,8 @@ def generate_and_store_reasons(
                 reasons.append({'reason_id': str(i), 'text': clean_point, 'votes': 1})
 
             option_reasons_collection.update_one(
-                {'card_id': card_id, 'option': option},
-                {'$set': {'card_id': card_id, 'option': option, 'reasons': reasons}},
+                {'card_id': card_id, 'option': option, 'model': model_name},
+                {'$set': {'card_id': card_id, 'option': option, 'model': model_name, 'reasons': reasons}},
                 upsert=True,
             )
 

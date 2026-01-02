@@ -1,4 +1,4 @@
-CUDA_VISIBLE_DEVICES=4 python test_ragswm.py \
+CUDA_VISIBLE_DEVICES=8 python test_ragswm.py \
 --test-data-path ../data/splitted_polymarket/polymarket_data_processed_Crypto_test.jsonl \
 --corpus-data-path ../data/splitted_polymarket/polymarket_data_processed_train.jsonl \
 --model-checkpoint ../saves/saves_crypto_ragswm/checkpoint-11500 \
@@ -6,7 +6,7 @@ CUDA_VISIBLE_DEVICES=4 python test_ragswm.py \
 --cache-dir ../cache/cache_crypto_ragswm \
 --test-batch-size 20
 
-CUDA_VISIBLE_DEVICES=4 python test_ragswm.py \
+CUDA_VISIBLE_DEVICES=7 python test_ragswm.py \
 --test-data-path ../data/splitted_polymarket/polymarket_data_processed_Sports_test.jsonl \
 --corpus-data-path ../data/splitted_polymarket/polymarket_data_processed_train.jsonl \
 --model-checkpoint ../saves/saves_sports_ragswm/checkpoint-best \
@@ -14,7 +14,7 @@ CUDA_VISIBLE_DEVICES=4 python test_ragswm.py \
 --cache-dir ../cache/cache_sports_ragswm \
 --test-batch-size 20
 
-CUDA_VISIBLE_DEVICES=4 python test_ragswm.py \
+CUDA_VISIBLE_DEVICES=8 python test_ragswm.py \
 --test-data-path ../data/splitted_polymarket/polymarket_data_processed_Other_test.jsonl \
 --corpus-data-path ../data/splitted_polymarket/polymarket_data_processed_train.jsonl \
 --model-checkpoint ../saves/saves_other_ragswm/checkpoint-best \
@@ -30,10 +30,10 @@ CUDA_VISIBLE_DEVICES=4 python test_ragswm.py \
 --cache-dir ../cache/cache_election_ragswm \
 --test-batch-size 20
 
-CUDA_VISIBLE_DEVICES=4 python test_ragswm.py \
+CUDA_VISIBLE_DEVICES=9 python test_ragswm.py \
 --test-data-path ../data/splitted_polymarket/polymarket_data_processed_Politics_test.jsonl \
 --corpus-data-path ../data/splitted_polymarket/polymarket_data_processed_train.jsonl \
---model-checkpoint ../saves/saves_politics_ragswm/checkpoint-best \
+--model-checkpoint ../saves/saves_politics_ragswm/checkpoint-11500 \
 --output-dir ../saves/saves_politics_ragswm \
 --cache-dir ../cache/cache_politics_ragswm \
 --test-batch-size 20

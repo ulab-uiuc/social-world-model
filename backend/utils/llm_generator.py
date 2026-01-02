@@ -29,6 +29,8 @@ class LLMGenerator:
     def _setup_api_keys(self):
         if 'gpt' in self.model_name:
             litellm.api_key = os.getenv('OPENAI_API_KEY')
+        elif 'claude' in self.model_name:
+            litellm.api_key = os.getenv('ANTHROPIC_API_KEY')
         elif any(k in self.model_name for k in ['together', 'deepseek', 'qwen']):
             litellm.api_key = os.getenv('TOGETHER_API_KEY')
 
@@ -44,6 +46,17 @@ class LLMGenerator:
             {'role': 'user', 'content': user_prompt},
         ]
 
+    def get_model_params(self) -> Dict[str, Any]:
+        """Get model-specific parameters"""
+        # GPT-4.1 series and o4 models require temperature=1
+        if any(model in self.model_name.lower() for model in ['gpt-4.1', 'o4-mini']):
+            return {'temperature': 1, 'max_tokens': 1024}
+        # Claude models parameters
+        elif 'claude' in self.model_name.lower():
+            return {'temperature': 0.7, 'max_tokens': 1024}
+        else:
+            return {'temperature': 0.7, 'max_tokens': 1024}
+
     def generate(
         self, prompt: Union[str, List], system_prompt: Optional[str] = None
     ) -> Dict[str, Any]:
@@ -54,13 +67,15 @@ class LLMGenerator:
         else:
             raise ValueError('Prompt must be a string or a list of chat messages.')
 
+        # Get model-specific parameters
+        params = self.get_model_params()
+
         try:
             if self.use_together_native:
                 response = self.together_client.chat.completions.create(
                     model=self.together_model,
                     messages=messages,
-                    temperature=0.7,
-                    max_tokens=1024,
+                    **params,
                 )
                 return {
                     'content': response.choices[0].message.content,
@@ -70,8 +85,7 @@ class LLMGenerator:
                 response = litellm.completion(
                     model=self.model_name,
                     messages=messages,
-                    temperature=0.7,
-                    max_tokens=1024,
+                    **params,
                 )
                 return {
                     'content': response.choices[0].message['content'].strip(),
@@ -118,11 +132,11 @@ class LLMGenerator:
                 {'role': 'user', 'content': message_content},
             ]
             try:
+                params = self.get_model_params()
                 response = self.together_client.chat.completions.create(
                     model=self.together_model,
                     messages=messages,
-                    temperature=0.7,
-                    max_tokens=1024,
+                    **params,
                 )
                 return {
                     'content': response.choices[0].message.content,

@@ -1,17 +1,26 @@
 import json
 import os
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Set, Union
+from typing import Any, Dict, List, Optional, Set, Union
+from urllib.parse import parse_qs, quote_plus, urlencode, urlparse
 
 import httpx
 import jsonlines
 import requests
 import serpapi
-from py_clob_client.client import ClobClient
+from bs4 import BeautifulSoup
 from scholarly import scholarly
 from tqdm import tqdm
+
+try:
+    import kalshi_python
+    from kalshi_python.rest import ApiException
+    HAS_KALSHI_SDK = True
+except ImportError:
+    HAS_KALSHI_SDK = False
 
 
 class PolyMarketCrawler:
@@ -76,7 +85,7 @@ class PolyMarketEventCrawler(PolyMarketCrawler):
 
     def get_event_from_offset(self, offset: Union[str, int]) -> List[Dict]:
         response = httpx.get(
-            f'https://gamma-api.polymarket.com/events?offset={offset}&limit=100'
+            f'https://gamma-api.polymarket.com/events?offset={offset}&limit=100&active=true&closed=false'
         )
         if response.status_code == 200:
             return response.json()
@@ -87,7 +96,7 @@ class PolyMarketHistoryCrawler(PolyMarketCrawler):
     def __init__(self, input_file: str, output_file: str):
         super().__init__(output_file, cache_size=5)
         self.input_file = input_file
-        self.processed_events = self._load_processed_events(input_file)
+        self.processed_events = self._load_processed_events(output_file)
 
     def collect(self):
         """Collect market histories based on the events in the input file."""
@@ -129,7 +138,7 @@ class PolyMarketHistoryCrawler(PolyMarketCrawler):
 
         for market in modified_event.get('markets', []):
             token_ids = json.loads(market.get('clobTokenIds', '[]'))
-            start_ts = 1
+            start_ts = None
             market['history'] = {}
 
             with ThreadPoolExecutor(max_workers=3) as executor:
@@ -141,7 +150,8 @@ class PolyMarketHistoryCrawler(PolyMarketCrawler):
                 }
 
                 for token_id, future in token_futures.items():
-                    if history := future.result():
+                    history = future.result()
+                    if history:
                         market['history'][token_id] = history
 
         return modified_event
@@ -153,32 +163,31 @@ class PolyMarketHistoryCrawler(PolyMarketCrawler):
         max_retries: int = 5,
         start_ts: Optional[int] = None,
     ) -> List[Dict[str, Union[int, float]]]:
-        host = 'https://clob.polymarket.com'
-        key = os.getenv('PK')
-        chain_id = 137
-
-        if not key:
-            raise ValueError(
-                'Private key not found. Please set PK in the environment variables.'
-            )
-
-        client = ClobClient(host, key=key, chain_id=chain_id)
+        """Fetch price history for a token using the CLOB prices-history API."""
+        base_url = 'https://clob.polymarket.com/prices-history'
 
         for attempt in range(max_retries):
             try:
-                if start_ts is None:
-                    price_data = client.get_price_history_for_interval(
-                        token_id=token_id,
-                        fidelity=fidelity,
-                        interval='max',
-                    )
+                # Always use interval=max, filter by start_ts locally
+                url = f'{base_url}?market={token_id}&interval=max&fidelity={fidelity}'
+                response = httpx.get(url, timeout=30)
+                
+                if response.status_code == 200:
+                    price_data = response.json()
+                    history = price_data.get('history', [])
+                    
+                    # Debug: print first attempt's response
+                    if attempt == 0 and not history:
+                        print(f'DEBUG: Empty history for token {token_id[:20]}...')
+                        print(f'DEBUG: Response: {price_data}')
+                    
+                    # Filter by start_ts if provided
+                    if start_ts is not None and history:
+                        history = [p for p in history if p.get('t', 0) >= start_ts]
+                    
+                    return history
                 else:
-                    price_data = client.get_price_history_with_start_ts_only(
-                        token_id=token_id,
-                        fidelity=str(fidelity),
-                        start_ts=str(start_ts),
-                    )
-                return price_data['history']
+                    raise Exception(f'HTTP {response.status_code}: {response.text}')
 
             except Exception as e:
                 wait_time = 2**attempt
@@ -299,6 +308,229 @@ class GoogleScholarCrawler:
                     json.dump(all_paper_data, f)
             else:
                 print('Failed to retrieve paper data.')
+
+
+class KalshiCrawler:
+    """Crawler for Kalshi prediction market data."""
+
+    def __init__(
+        self,
+        output_file: str,
+        api_key_id: Optional[str] = None,
+        private_key_path: Optional[str] = None,
+        cache_size: int = 50,
+    ):
+        self.output_file = output_file
+        self.cache_size = cache_size
+        self.event_buffer = []
+        self.base_url = 'https://api.elections.kalshi.com/trade-api/v2'
+        self.api_key_id = api_key_id or os.getenv('KALSHI_API_KEY_ID')
+        self.private_key_path = private_key_path
+        self.client = None
+        
+        if HAS_KALSHI_SDK and self.api_key_id and self.private_key_path:
+            self._init_sdk_client()
+        
+        if not self.client:
+            print('⚠️ Kalshi SDK client not initialized.')
+    
+    def _init_sdk_client(self):
+        try:
+            configuration = kalshi_python.Configuration()
+            configuration.host = self.base_url
+            
+            with open(self.private_key_path, 'r') as f:
+                private_key_content = f.read()
+            
+            configuration.api_key_id = self.api_key_id
+            configuration.private_key_pem = private_key_content
+            
+            if hasattr(kalshi_python, 'KalshiClient'):
+                self.client = kalshi_python.KalshiClient(configuration)
+            elif hasattr(kalshi_python, 'ApiInstance'):
+                api_client = kalshi_python.ApiClient(configuration)
+                self.client = kalshi_python.ApiInstance(api_client)
+            else:
+                from kalshi_python.api_instance import ApiInstance
+                api_client = kalshi_python.ApiClient(configuration)
+                self.client = ApiInstance(api_client)
+            
+            print("✅ Kalshi SDK client initialized")
+        except Exception as e:
+            print(f"❌ Failed to initialize SDK client: {e}")
+            self.client = None
+
+    def _write_buffer(self) -> None:
+        if not self.event_buffer:
+            return
+        mode = 'a' if os.path.exists(self.output_file) else 'w'
+        with jsonlines.open(self.output_file, mode=mode) as writer:
+            writer.write_all(self.event_buffer)
+        self.event_buffer = []
+
+    def _load_processed_markets(self) -> Set[str]:
+        processed_tickers = set()
+        if os.path.exists(self.output_file):
+            try:
+                with jsonlines.open(self.output_file, 'r') as reader:
+                    for market in reader:
+                        ticker = market.get('ticker') or market.get('market_id')
+                        if ticker:
+                            processed_tickers.add(ticker)
+            except Exception as e:
+                print(f'Error loading processed markets: {e}')
+        return processed_tickers
+
+    def get_markets(self, limit: int = 100, series_ticker: Optional[str] = None) -> Dict:
+        url = f"https://api.elections.kalshi.com/trade-api/v2/markets?limit={limit}&series_ticker={series_ticker}"
+        try:
+            response = requests.get(url)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            print(f"HTTP get_markets error: {e}")
+            return {'markets': [], 'cursor': None}
+
+    def _format_market_for_output(self, market: Dict) -> Dict:
+        start_ts = None
+        end_ts = None
+        
+        if 'open_time' in market:
+            try:
+                dt = datetime.fromisoformat(market['open_time'].replace('Z', '+00:00'))
+                start_ts = int(dt.timestamp())
+            except:
+                pass
+        
+        if 'close_time' in market:
+            try:
+                dt = datetime.fromisoformat(market['close_time'].replace('Z', '+00:00'))
+                end_ts = int(dt.timestamp())
+            except:
+                pass
+        
+        outcome = None
+        if market.get('status') in ('settled', 'finalized'):
+            outcome = market.get('result')
+        
+        return {
+            'event_id': market.get('event_ticker', ''),
+            'market_id': market.get('ticker', ''),
+            'question': market.get('title', ''),
+            'yes_sub_title': market.get('yes_sub_title', ''),
+            'no_sub_title': market.get('no_sub_title', ''),
+            'time_series': market.get('time_series', []),
+            'outcome': outcome,
+            'start_ts': start_ts,
+            'end_ts': end_ts,
+        }
+
+    def get_market_price(self, series_ticker: str, market_ticker: str) -> List[Dict]:
+        try:
+            path = f"/series/{series_ticker}/markets/{market_ticker}/candlesticks"
+            now = datetime.now()
+            start_ts = int(now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()) - 86400 * 600
+            end_ts = start_ts + 86400 * 600
+            
+            query_params = {
+                "start_ts": start_ts,
+                "end_ts": end_ts,
+                "period_interval": 1440,
+            }
+            if self.client:
+                query_string = urlencode(query_params, doseq=True)
+                full_url = f"{self.base_url}{path}?{query_string}"
+                response = self.client.api_client.call_api("GET", full_url)
+                if hasattr(response, 'read'):
+                    data = json.loads(response.read().decode('utf-8'))
+                    return data.get('candlesticks', None)
+            return []
+        except Exception as e:
+            print(f"Error fetching price for {market_ticker}: {e}")
+            return []
+
+    def _process_price_to_ts(self, history: List[Dict]) -> List[Dict]:
+        if not history or len(history) < 2:
+            return []
+        
+        price_data = []
+        for entry in history:
+            timestamp = entry.get('end_period_ts')
+            raw_price = entry.get('price', {}).get('mean_dollars', None)
+            if raw_price is None:
+                continue
+            price_data.append({'t': timestamp, 'p': float(raw_price)})
+        
+        return price_data if len(price_data) >= 2 else []
+
+    def collect_markets(
+        self,
+        max_markets: Optional[int] = None,
+        series_ticker: Optional[str] = None,
+    ) -> None:
+        processed_tickers = self._load_processed_markets()
+        total_collected = 0
+        total_skipped = 0
+        
+        if not self.client:
+            print("⚠️ SDK client not initialized.")
+            return
+
+        print(f'Starting collection (already processed: {len(processed_tickers)})')
+        
+        try:
+            if series_ticker:
+                series_tickers = [series_ticker]
+            else:
+                series_resp = self.client.get_series()
+                series_tickers = [s.ticker for s in series_resp.series]
+                print(f"Found {len(series_tickers)} series")
+        except Exception as e:
+            print(f"Error fetching series: {e}")
+            return
+
+        for s_ticker in tqdm(series_tickers, desc="Processing"):
+            if max_markets and total_collected >= max_markets:
+                break
+
+            try:
+                result = self.get_markets(limit=1000, series_ticker=s_ticker)
+                markets = result.get('markets', [])
+                
+                for market in markets:
+                    ticker = market.get('ticker')
+                    
+                    if ticker in processed_tickers:
+                        total_skipped += 1
+                        continue
+                    
+                    history = self.get_market_price(s_ticker, ticker)
+                    time_series = self._process_price_to_ts(history) if history else []
+                    
+                    if len(time_series) == 0:
+                        continue
+                    
+                    
+                    market['time_series'] = time_series
+                    formatted_market = self._format_market_for_output(market)
+                    self.event_buffer.append(formatted_market)
+                    processed_tickers.add(ticker)
+                    total_collected += 1
+                    
+                    if len(self.event_buffer) >= self.cache_size:
+                        self._write_buffer()
+                        print(f'Collected {total_collected} (skipped {total_skipped})')
+                    
+                    if max_markets and total_collected >= max_markets:
+                        break
+
+                time.sleep(0.2)
+            except Exception as e:
+                print(f"Error processing {s_ticker}: {e}")
+                continue
+        
+        self._write_buffer()
+        print(f'\n✅ Collected {total_collected} markets, skipped {total_skipped}')
 
 
 class DailyNewsCrawler:
@@ -458,3 +690,237 @@ class DailyNewsCrawler:
             import traceback
 
             print(traceback.format_exc())
+
+
+class GoogleNewsCrawler:
+    """Crawler for Google News search results."""
+
+    def __init__(self, min_delay: float = 2.0, max_delay: float = 6.0):
+        self.min_delay = min_delay
+        self.max_delay = max_delay
+        self.session = requests.Session()
+        self.headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0.0.0 Safari/537.36"
+            ),
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Connection": "keep-alive",
+        }
+
+    def _random_delay(self):
+        import random
+        delay = random.uniform(self.min_delay, self.max_delay)
+        time.sleep(delay)
+
+    def _normalize_date(self, s: str) -> tuple[str, datetime]:
+        s = s.strip()
+        now = datetime.now()
+        if "-" in s:
+            dt = datetime.strptime(s, "%Y-%m-%d")
+            return dt.strftime("%m/%d/%Y"), dt
+        if "/" in s:
+            try:
+                dt = datetime.strptime(s, "%m/%d/%Y")
+                return s, dt
+            except ValueError:
+                pass
+        return now.strftime("%m/%d/%Y"), now
+
+    def _parse_relative_date(self, text: str, ref: datetime) -> float:
+        t = text.strip().lower()
+        
+        # English: "5 days ago", "1 hour ago"
+        m = re.match(r"^\s*(\d+)\s+(second|minute|hour|day)s?\s+ago\s*$", t)
+        if m:
+            num, unit = int(m.group(1)), m.group(2)
+            delta = {
+                "second": timedelta(seconds=num),
+                "minute": timedelta(minutes=num),
+                "hour": timedelta(hours=num),
+                "day": timedelta(days=num),
+            }[unit]
+            return (ref - delta).timestamp()
+        
+        # Absolute date formats
+        for fmt in ("%b %d, %Y", "%B %d, %Y"):
+            try:
+                return datetime.strptime(text.strip(), fmt).timestamp()
+            except ValueError:
+                continue
+        
+        return ref.timestamp()
+
+    def _clean_google_href(self, href: str) -> str:
+        if href.startswith("/url?"):
+            qs = parse_qs(urlparse(href).query)
+            if "q" in qs and qs["q"]:
+                return qs["q"][0]
+        return href
+
+    def _find_snippet(self, card, title_text: str, source_text: str, date_text: str) -> str:
+        for div in card.find_all(["div", "span"]):
+            text = div.get_text(strip=True)
+            if not text or len(text) < 20:
+                continue
+            if text in [title_text, source_text, date_text]:
+                continue
+            if title_text in text and len(text) < len(title_text) + 50:
+                continue
+            return text
+        return ""
+
+    def _extract_content_from_url(self, url: str, max_chars: int = 10000) -> str:
+        """Extract article content from URL."""
+        try:
+            time.sleep(0.5)
+            resp = self.session.get(url, headers=self.headers, timeout=10)
+            if resp.status_code != 200:
+                return ""
+            
+            soup = BeautifulSoup(resp.text, "html.parser")
+            
+            # Remove script and style elements
+            for tag in soup(["script", "style", "nav", "header", "footer", "aside"]):
+                tag.decompose()
+            
+            # Try common article content selectors
+            selectors = [
+                "article p",
+                "[itemprop='articleBody'] p",
+                ".article-content p",
+                ".article-body p",
+                ".post-content p",
+                ".entry-content p",
+                ".story-body p",
+                "main p",
+            ]
+            
+            for selector in selectors:
+                paragraphs = soup.select(selector)
+                if paragraphs:
+                    texts = []
+                    for p in paragraphs:
+                        text = p.get_text(strip=True)
+                        if len(text) > 30:
+                            texts.append(text)
+                    if texts:
+                        content = " ".join(texts)
+                        return content[:max_chars] if len(content) > max_chars else content
+            
+            # Fallback: get all paragraphs
+            paragraphs = soup.find_all("p")
+            texts = [p.get_text(strip=True) for p in paragraphs if len(p.get_text(strip=True)) > 50]
+            if texts:
+                content = " ".join(texts[:5])
+                return content[:max_chars] if len(content) > max_chars else content
+            
+            return ""
+        except Exception:
+            return ""
+
+    def fetch(
+        self,
+        query: str,
+        start_date: str,
+        end_date: str,
+        max_pages: int = 10,
+        fetch_full_content: bool = False,
+    ) -> List[Dict[str, Any]]:
+        start_fmt, _ = self._normalize_date(start_date)
+        end_fmt, ref_date = self._normalize_date(end_date)
+        
+        results: List[Dict[str, Any]] = []
+        
+        for page in range(max_pages):
+            encoded_query = quote_plus(query)
+            url = (
+                f"https://www.google.com/search?q={encoded_query}"
+                f"&tbs=cdr:1,cd_min:{start_fmt},cd_max:{end_fmt}"
+                f"&tbm=nws&start={page * 10}"
+            )
+            
+            try:
+                self._random_delay()
+                resp = self.session.get(url, headers=self.headers, timeout=15)
+                soup = BeautifulSoup(resp.text, "html.parser")
+            except Exception as e:
+                print(f"Request failed: {e}")
+                break
+            
+            cards = soup.select("div.SoaBEf")
+            if not cards:
+                break
+            
+            for el in cards:
+                try:
+                    a = el.find("a")
+                    if not a or "href" not in a.attrs:
+                        continue
+                    
+                    link = self._clean_google_href(a["href"])
+                    title_el = el.select_one("div.MBeuO")
+                    date_el = el.select_one(".LfVVr")
+                    source_el = el.select_one(".NUnG9d span")
+                    
+                    if not (title_el and date_el and source_el):
+                        continue
+                    
+                    title = title_el.get_text(strip=True)
+                    source = source_el.get_text(strip=True)
+                    date_text = date_el.get_text(strip=True)
+                    
+                    snippet = self._find_snippet(el, title, source, date_text)
+                    ts = self._parse_relative_date(date_text, ref_date)
+                    
+                    result = {
+                        "link": link,
+                        "title": title,
+                        "snippet": snippet,
+                        "date": ts,
+                        "source": source,
+                    }
+                    
+                    # Fetch full content if requested
+                    if fetch_full_content:
+                        content = self._extract_content_from_url(link)
+                        if content:
+                            result["content"] = content
+                    
+                    results.append(result)
+                except Exception:
+                    continue
+            
+            if not soup.find("a", id="pnnext"):
+                break
+        
+        return results
+
+    def crawl(
+        self,
+        query: str,
+        start_date: str,
+        end_date: str,
+        output_file: str,
+        max_pages: int = 10,
+        fetch_full_content: bool = False,
+    ) -> None:
+        print(f"Fetching news for '{query}' from {start_date} to {end_date}")
+        if fetch_full_content:
+            print("⚠️ Fetching full content (slower)")
+        
+        results = self.fetch(query, start_date, end_date, max_pages, fetch_full_content)
+        
+        if not results:
+            print("No results found")
+            return
+        
+        results = sorted(results, key=lambda x: x["date"], reverse=True)
+        
+        mode = 'a' if os.path.exists(output_file) else 'w'
+        with jsonlines.open(output_file, mode=mode) as writer:
+            writer.write_all(results)
+        
+        print(f"✅ Saved {len(results)} articles to {output_file}")
