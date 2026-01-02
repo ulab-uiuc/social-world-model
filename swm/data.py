@@ -3,6 +3,19 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from pydantic import BaseModel, Field
 
 
+class AttributedEvent(BaseModel):
+    """A single attributed event (news + score)."""
+    news: Dict[str, Any]  # News data (title, description, etc.)
+    score: float  # Attribution score (0-1)
+
+
+class AttributionResult(BaseModel):
+    """Attribution results for a specific market at a specific timestamp."""
+    market_id: str
+    timestamp: float
+    events: List[AttributedEvent] = Field(default_factory=list)
+
+
 class PolyMarketData(BaseModel):
     event_id: str
     market_id: str
@@ -21,6 +34,8 @@ class PolyMarketData(BaseModel):
     time_series: Optional[List[Dict[str, Union[int, float]]]] = Field(default=None)
     daily_breakpoints: Optional[List[Dict[str, Any]]] = Field(default=None)
     window_series: Optional[List[Dict[str, Union[int, float]]]] = Field(default=None)
+    # Precomputed attributions: {timestamp -> list of {news, score}}
+    attributions: Optional[Dict[str, List[Dict[str, Any]]]] = Field(default=None)
 
     @classmethod
     def from_dict(cls, data: Dict) -> 'PolyMarketData':

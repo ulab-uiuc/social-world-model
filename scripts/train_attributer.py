@@ -1,32 +1,46 @@
-# train_ragswm.py
+"""
+Train PriorAttributer using KL divergence from PosteriorAttributer.
 
+The input data should have attributions precomputed using precompute_attributions.py
+(which uses PosteriorAttributer). The PriorAttributer learns to predict the same
+distribution without access to news.
+
+Usage:
+    python train_attributer.py \
+        --train-data-path ../data/attributed/train.jsonl \
+        --valid-data-path ../data/attributed/valid.jsonl \
+        --output-dir ../saves/prior_attributer
+"""
 import argparse
 
 from peft import LoraConfig
 from transformers import TrainingArguments
 
-from swm.swm import RAGSocialWM
+from swm.attributer import BasicPriorAttributer
 from swm.utils.utils import load_polymarket_data, set_seed
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='Train the RAG Social Wisdom Model')
-
-    parser.add_argument('--train-data-path', type=str, required=True)
-    parser.add_argument('--valid-data-path', type=str, required=True)
-    parser.add_argument('--corpus-data-path', type=str, required=True)
+    parser = argparse.ArgumentParser(
+        description='Train PriorAttributer using precomputed posterior attributions'
+    )
+    # Data paths
+    parser.add_argument('--train-data-path', type=str, required=True,
+                        help='Path to training data with attributions')
+    parser.add_argument('--valid-data-path', type=str, required=True,
+                        help='Path to validation data with attributions')
+    
+    # Model config
     parser.add_argument('--model-name', type=str, default='Qwen/Qwen2.5-0.5B-Instruct')
-    parser.add_argument('--retriever-name', type=str, default='all-MiniLM-L6-v2')
-    parser.add_argument('--eval-batch-size', type=int, default=8)
     parser.add_argument('--cache-dir', type=str, default='./cache')
     parser.add_argument('--output-dir', type=str, default='./output')
     parser.add_argument('--max-seq-length', type=int, default=1024)
-    parser.add_argument('--retriever-top-k', type=int, default=50)
-    parser.add_argument('--retriever-batch-size', type=int, default=32)
+    
+    # Training config
     parser.add_argument('--epochs', type=int, default=3)
-    parser.add_argument('--learning-rate', type=float, default=5e-5)
-    parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--train-batch-size', type=int, default=8)
+    parser.add_argument('--eval-batch-size', type=int, default=8)
+    parser.add_argument('--learning-rate', type=float, default=5e-5)
     parser.add_argument('--gradient-accumulation-steps', type=int, default=1)
     parser.add_argument('--weight-decay', type=float, default=0.01)
     parser.add_argument('--warmup-steps', type=int, default=0)
@@ -35,24 +49,43 @@ def parse_args():
     parser.add_argument('--save-steps', type=int, default=500)
     parser.add_argument('--eval-steps', type=int, default=500)
     parser.add_argument('--fp16', action='store_true')
+    
+    # LoRA config
     parser.add_argument('--lora-alpha', type=float, default=32)
     parser.add_argument('--lora-dropout', type=float, default=0.1)
     parser.add_argument('--r', type=int, default=16)
+    
+    # Other
+    parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--sanity-check', action='store_true')
+    
     return parser.parse_args()
 
 
-def train(args):
+def main():
+    args = parse_args()
     set_seed(args.seed)
+    
+    # Load data with precomputed attributions
+    print(f"Loading training data from {args.train_data_path}...")
+    train_data = load_polymarket_data(args.train_data_path)
+    print(f"Loading validation data from {args.valid_data_path}...")
+    valid_data = load_polymarket_data(args.valid_data_path)
+    
     if args.sanity_check:
-        train_data = load_polymarket_data(args.train_data_path)[:1]
-        valid_data = load_polymarket_data(args.valid_data_path)[:1]
-        corpus_data = load_polymarket_data(args.corpus_data_path)[:1]
-    else:
-        train_data = load_polymarket_data(args.train_data_path)
-        valid_data = load_polymarket_data(args.valid_data_path)
-        corpus_data = load_polymarket_data(args.corpus_data_path)
-
+        train_data = train_data[:2]
+        valid_data = valid_data[:2]
+    
+    # Check attributions are present
+    train_with_attr = sum(1 for m in train_data if m.attributions)
+    valid_with_attr = sum(1 for m in valid_data if m.attributions)
+    print(f"Train: {train_with_attr}/{len(train_data)} markets have attributions")
+    print(f"Valid: {valid_with_attr}/{len(valid_data)} markets have attributions")
+    
+    if train_with_attr == 0:
+        raise ValueError("No training data has attributions. Run precompute_attributions.py first.")
+    
+    # Initialize model
     lora_config = LoraConfig(
         r=args.r,
         lora_alpha=args.lora_alpha,
@@ -61,18 +94,15 @@ def train(args):
         bias='none',
         task_type='CAUSAL_LM',
     )
-
-    rag_swm = RAGSocialWM(
+    
+    attributer = BasicPriorAttributer(
         model_name=args.model_name,
-        retriever_name=args.retriever_name,
         cache_dir=args.cache_dir,
-        lora_config=lora_config,
-        corpus_markets=corpus_data,
         max_seq_length=args.max_seq_length,
-        retriever_top_k=args.retriever_top_k,
-        retriever_batch_size=args.retriever_batch_size,
+        lora_config=lora_config,
     )
-
+    
+    # Training arguments
     training_args = TrainingArguments(
         output_dir=args.output_dir,
         num_train_epochs=args.epochs,
@@ -93,16 +123,18 @@ def train(args):
         save_safetensors=False,
         remove_unused_columns=False,
     )
-
-    best_model_checkpoint = rag_swm.train(
+    
+    # Train using precomputed attributions (no need to pass posterior_attributer)
+    best_checkpoint = attributer.train(
         train_data=train_data,
         valid_data=valid_data,
         training_args=training_args,
     )
-
-    rag_swm.save(best_model_checkpoint)
+    
+    print(f"Best model saved to: {best_checkpoint}")
+    attributer.save(best_checkpoint)
 
 
 if __name__ == '__main__':
-    args = parse_args()
-    train(args)
+    main()
+
