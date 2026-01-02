@@ -11,17 +11,36 @@ from ..data import DailyNewsData, KalshiData, PolyMarketData
 from .utils import filter_midnight_points
 
 
-class Category(str, Enum):
+class PolymarketCategory(str, Enum):
+    """Categories for Polymarket data."""
     POLITICS = 'Politics'
-    SPORTS = 'Sports'
     CRYPTO = 'Crypto'
     ELECTION = 'Election'
+
+
+class KalshiCategory(str, Enum):
+    """Categories for Kalshi data (excluding Sports and Climate)."""
+    COMPANIES = 'Companies'
+    CRYPTO = 'Crypto'
+    ECONOMICS = 'Economics'
+    EDUCATION = 'Education'
+    ELECTIONS = 'Elections'
+    ENTERTAINMENT = 'Entertainment'
+    FINANCIALS = 'Financials'
+    HEALTH = 'Health'
+    MENTIONS = 'Mentions'
     OTHER = 'Other'
+    POLITICS = 'Politics'
+    SCIENCE_AND_TECH = 'Science and Technology'
+    SOCIAL = 'Social'
+    TRANSPORTATION = 'Transportation'
+    WORLD = 'World'
 
 
 @dataclass
 class TimeSeriesConfig:
     z_score_threshold: float = 2.0  # Z-score threshold for anomaly detection
+    rolling_window: int = 30  # Window size for rolling robust z-score calculation
 
 
 class PolyMarketDataConverter:
@@ -32,15 +51,43 @@ class PolyMarketDataConverter:
             '%Y-%m-%dT%H:%M:%SZ',
         ]
 
+    def _compute_robust_z_score(
+        self,
+        changes: List[float],
+        current_change: float,
+    ) -> float:
+        """Compute robust z-score using median and MAD (Median Absolute Deviation).
+        
+        Args:
+            changes: List of historical changes (local window)
+            current_change: The change to compute z-score for
+            
+        Returns:
+            Robust z-score value
+        """
+        import statistics
+        
+        if len(changes) < 10:
+            return 0.0
+        
+        median = statistics.median(changes)
+        # MAD = median(|x_i - median|)
+        mad = statistics.median([abs(c - median) for c in changes])
+        # Scale MAD to approximate std (for normal distribution, MAD ≈ 0.6745 * std)
+        scaled_mad = mad * 1.4826
+        scaled_mad = max(scaled_mad, 0.01)  # Avoid division by zero
+        
+        return (current_change - median) / scaled_mad
+
     def find_breakpoints(
         self,
         daily_series: List[Dict[str, float]],
     ) -> List[Dict[str, Any]]:
-        """Detect anomalies in daily time series using Z-score based detection.
+        """Detect anomalies in daily time series using rolling robust Z-score.
         
         Algorithm:
-        1. Calculate mean and std of all consecutive price changes
-        2. Compute Z-score for each change
+        1. For each point, use a rolling window of previous changes
+        2. Compute robust Z-score using median and MAD (Median Absolute Deviation)
         3. Detect changes where Z-score exceeds threshold
         
         Args:
@@ -54,6 +101,7 @@ class PolyMarketDataConverter:
         
         breakpoints = []
         z_threshold = self.config.z_score_threshold
+        window_size = self.config.rolling_window
         
         # Sort by timestamp
         sorted_series = sorted(daily_series, key=lambda x: x['t'])
@@ -65,43 +113,59 @@ class PolyMarketDataConverter:
             p2 = sorted_series[i + 1]['p']
             changes.append(abs(p2 - p1))
         
-        # Calculate statistics for Z-score
-        if len(changes) >= 3:
-            import statistics
-            mean_change = statistics.mean(changes)
-            std_change = statistics.stdev(changes) if len(changes) > 1 else 1.0
-            std_change = max(std_change, 0.01)  # Avoid division by zero
-        else:
-            # Not enough data for meaningful statistics
-            return []
+        # Need at least 10 historical changes for meaningful statistics
+        min_history = 10
         
-        # Detect anomalies based on Z-score
-        for i in range(len(sorted_series) - 1):
-            t1, p1 = sorted_series[i]['t'], sorted_series[i]['p']
-            t2, p2 = sorted_series[i + 1]['t'], sorted_series[i + 1]['p']
+        # Detect anomalies using rolling robust z-score
+        for i in range(len(changes)):
+            if i < min_history:
+                # Not enough history yet
+                continue
             
-            change = abs(p2 - p1)
-            z_score = (change - mean_change) / std_change
+            # Use local window: previous changes only (causal)
+            start_idx = max(0, i - window_size)
+            local_changes = changes[start_idx:i]
+            
+            current_change = changes[i]
+            z_score = self._compute_robust_z_score(local_changes, current_change)
             
             if z_score > z_threshold:
+                t1, p1 = sorted_series[i]['t'], sorted_series[i]['p']
+                t2, p2 = sorted_series[i + 1]['t'], sorted_series[i + 1]['p']
+                
+                # Extract window history: points from start_idx to after point (inclusive)
+                window_end_idx = i + 2  # Include both before and after points
+                window_history = [
+                    {'t': float(sorted_series[j]['t']), 'p': round(sorted_series[j]['p'], 4)}
+                    for j in range(start_idx, min(window_end_idx, len(sorted_series)))
+                ]
+                
                 breakpoints.append({
                     'before': {'t': float(t1), 'p': round(p1, 4)},
                     'after': {'t': float(t2), 'p': round(p2, 4)},
-                    'change': round(change, 4),
+                    'change': round(current_change, 4),
                     'z_score': round(z_score, 2),
+                    'window_start': float(sorted_series[start_idx]['t']),
+                    'window_end': float(t2),
+                    'window_history': window_history,
                 })
         
         return breakpoints
 
-    def find_categories(self, tags: List[str]) -> List[Category]:
+    def find_categories(self, tags: List[str]) -> List[PolymarketCategory]:
+        """Find matching categories from tags.
+        
+        Only returns categories that match: Crypto, Election, Politics.
+        Returns empty list if no match found.
+        """
         matches = set()
         for tag in tags:
             tag_lower = tag.lower()
-            for category in Category:
-                if category != Category.OTHER and category.value.lower() in tag_lower:
+            for category in PolymarketCategory:
+                if category.value.lower() in tag_lower:
                     matches.add(category)
 
-        return list(matches) if matches else [Category.OTHER]
+        return list(matches)
 
     def parse_winning_outcome(
         self, outcomes: List[str], outcome_prices: List[str]
@@ -115,20 +179,28 @@ class PolyMarketDataConverter:
         self, market: Dict[str, Any], outcomes: List[str]
     ) -> List[Dict[str, float]]:
         """Parse hourly time series, only keeping the first outcome (Yes)."""
-        clob_token_ids = json.loads(market['clobTokenIds'])
+        clob_token_ids_str = market.get('clobTokenIds')
+        if not clob_token_ids_str:
+            return []
+        clob_token_ids = json.loads(clob_token_ids_str)
         if clob_token_ids:
             first_token_id = clob_token_ids[0]
-            return market['history'].get(str(first_token_id), [])
+            history = market.get('history', {})
+            return history.get(str(first_token_id), [])
         return []
 
     def parse_daily_time_series(
         self, market: Dict[str, Any], outcomes: List[str]
     ) -> List[Dict[str, float]]:
         """Parse daily time series, only keeping the first outcome (Yes)."""
-        clob_token_ids = json.loads(market['clobTokenIds'])
+        clob_token_ids_str = market.get('clobTokenIds')
+        if not clob_token_ids_str:
+            return []
+        clob_token_ids = json.loads(clob_token_ids_str)
         if clob_token_ids:
             first_token_id = clob_token_ids[0]
-            hourly_data = market['history'].get(str(first_token_id), [])
+            history = market.get('history', {})
+            hourly_data = history.get(str(first_token_id), [])
             return filter_midnight_points(hourly_data)
         return []
 
@@ -146,18 +218,28 @@ class PolyMarketDataConverter:
         event: Dict[str, Any],
     ) -> Optional[PolyMarketData]:
         try:
-            tags = [tag['label'] for tag in event['tags']]
-            tag_ids = [tag['id'] for tag in event['tags']]
+            event_tags = event.get('tags') or []
+            tags = [tag['label'] for tag in event_tags]
+            tag_ids = [tag['id'] for tag in event_tags]
             categories = self.find_categories(tags)
 
             outcome_options = json.loads(market['outcomes'])
-            outcome_prices = json.loads(market['outcomePrices'])
-
-            outcome = self.parse_winning_outcome(outcome_options, outcome_prices)
+            # outcomePrices may be missing for unsettled markets
+            outcome_prices_str = market.get('outcomePrices')
+            if outcome_prices_str:
+                outcome_prices = json.loads(outcome_prices_str)
+                outcome = self.parse_winning_outcome(outcome_options, outcome_prices)
+            else:
+                outcome = None
             start_date = (
-                market['startDate'] if 'startDate' in market else event['startDate']
+                market.get('startDate') or event.get('startDate')
             )
-            end_date = market['endDate'] if 'endDate' in market else event['endDate']
+            end_date = market.get('endDate') or event.get('endDate')
+            
+            # Skip markets without dates
+            if not start_date or not end_date:
+                return None
+            
             start_ts = self.parse_timestamp(start_date)
             end_ts = self.parse_timestamp(end_date)
             time_series = self.parse_time_series(market, outcome_options)
@@ -191,16 +273,16 @@ class PolyMarketDataConverter:
             return None
 
     def convert(self, event: Dict[str, Any]) -> List[PolyMarketData]:
-        try:
-            markets_data = []
-            for market in event['markets']:
-                market_data = self.process_market(market, event)
-                if market_data:
-                    markets_data.append(market_data)
-            return markets_data
-        except KeyError as e:
-            print(f"Error processing event {event.get('id', 'unknown')}: {str(e)}")
+        markets = event.get('markets') or []
+        if not markets:
             return []
+        
+        markets_data = []
+        for market in markets:
+            market_data = self.process_market(market, event)
+            if market_data:
+                markets_data.append(market_data)
+        return markets_data
 
 
 class KalshiDataConverter:
@@ -215,15 +297,43 @@ class KalshiDataConverter:
         data = response.json()
         self.series_ticker_dict = {series['ticker']: series['category'] for series in data['series']}
 
+    def _compute_robust_z_score(
+        self,
+        changes: List[float],
+        current_change: float,
+    ) -> float:
+        """Compute robust z-score using median and MAD (Median Absolute Deviation).
+        
+        Args:
+            changes: List of historical changes (local window)
+            current_change: The change to compute z-score for
+            
+        Returns:
+            Robust z-score value
+        """
+        import statistics
+        
+        if len(changes) < 10:
+            return 0.0
+        
+        median = statistics.median(changes)
+        # MAD = median(|x_i - median|)
+        mad = statistics.median([abs(c - median) for c in changes])
+        # Scale MAD to approximate std (for normal distribution, MAD ≈ 0.6745 * std)
+        scaled_mad = mad * 1.4826
+        scaled_mad = max(scaled_mad, 0.01)  # Avoid division by zero
+        
+        return (current_change - median) / scaled_mad
+
     def find_breakpoints(
         self,
         daily_series: List[Dict[str, float]],
     ) -> List[Dict[str, Any]]:
-        """Detect anomalies in daily time series using Z-score based detection.
+        """Detect anomalies in daily time series using rolling robust Z-score.
         
         Algorithm:
-        1. Calculate mean and std of all consecutive price changes
-        2. Compute Z-score for each change
+        1. For each point, use a rolling window of previous changes
+        2. Compute robust Z-score using median and MAD (Median Absolute Deviation)
         3. Detect changes where Z-score exceeds threshold
         
         Args:
@@ -237,6 +347,7 @@ class KalshiDataConverter:
         
         breakpoints = []
         z_threshold = self.config.z_score_threshold
+        window_size = self.config.rolling_window
         
         # Sort by timestamp
         sorted_series = sorted(daily_series, key=lambda x: x['t'])
@@ -248,39 +359,78 @@ class KalshiDataConverter:
             p2 = sorted_series[i + 1]['p']
             changes.append(abs(p2 - p1))
         
-        # Calculate statistics for Z-score
-        if len(changes) >= 3:
-            import statistics
-            mean_change = statistics.mean(changes)
-            std_change = statistics.stdev(changes) if len(changes) > 1 else 1.0
-            std_change = max(std_change, 0.01)  # Avoid division by zero
-        else:
-            # Not enough data for meaningful statistics
-            return []
+        # Need at least 10 historical changes for meaningful statistics
+        min_history = 10
         
-        # Detect anomalies based on Z-score
-        for i in range(len(sorted_series) - 1):
-            t1, p1 = sorted_series[i]['t'], sorted_series[i]['p']
-            t2, p2 = sorted_series[i + 1]['t'], sorted_series[i + 1]['p']
+        # Detect anomalies using rolling robust z-score
+        for i in range(len(changes)):
+            if i < min_history:
+                # Not enough history yet
+                continue
             
-            change = abs(p2 - p1)
-            z_score = (change - mean_change) / std_change
+            # Use local window: previous changes only (causal)
+            start_idx = max(0, i - window_size)
+            local_changes = changes[start_idx:i]
+            
+            current_change = changes[i]
+            z_score = self._compute_robust_z_score(local_changes, current_change)
             
             if z_score > z_threshold:
+                t1, p1 = sorted_series[i]['t'], sorted_series[i]['p']
+                t2, p2 = sorted_series[i + 1]['t'], sorted_series[i + 1]['p']
+                
+                # Extract window history: points from start_idx to after point (inclusive)
+                window_end_idx = i + 2  # Include both before and after points
+                window_history = [
+                    {'t': float(sorted_series[j]['t']), 'p': round(sorted_series[j]['p'], 4)}
+                    for j in range(start_idx, min(window_end_idx, len(sorted_series)))
+                ]
+                
                 breakpoints.append({
                     'before': {'t': float(t1), 'p': round(p1, 4)},
                     'after': {'t': float(t2), 'p': round(p2, 4)},
-                    'change': round(change, 4),
+                    'change': round(current_change, 4),
                     'z_score': round(z_score, 2),
+                    'window_start': float(sorted_series[start_idx]['t']),
+                    'window_end': float(t2),
+                    'window_history': window_history,
                 })
         
         return breakpoints
 
-    def find_categories(self, event_id: str, question: str) -> List[str]:
-        """Get category from Kalshi series ticker."""
+    def find_categories(self, event_id: str, question: str) -> List[KalshiCategory]:
+        """Get category from Kalshi series ticker.
+        
+        Only returns categories that match the allowed list.
+        Returns empty list if no match found.
+        """
         series_ticker = event_id.split('-')[0]
-        category_str = self.series_ticker_dict.get(series_ticker, 'Other')
-        return [category_str]
+        category_str = self.series_ticker_dict.get(series_ticker, '')
+        
+        # Map API category strings to KalshiCategory enum
+        # Exclude Sports and Climate and Weather
+        category_mapping = {
+            'companies': KalshiCategory.COMPANIES,
+            'crypto': KalshiCategory.CRYPTO,
+            'economics': KalshiCategory.ECONOMICS,
+            'education': KalshiCategory.EDUCATION,
+            'elections': KalshiCategory.ELECTIONS,
+            'entertainment': KalshiCategory.ENTERTAINMENT,
+            'financials': KalshiCategory.FINANCIALS,
+            'health': KalshiCategory.HEALTH,
+            'mentions': KalshiCategory.MENTIONS,
+            'other': KalshiCategory.OTHER,
+            'politics': KalshiCategory.POLITICS,
+            'science and technology': KalshiCategory.SCIENCE_AND_TECH,
+            'social': KalshiCategory.SOCIAL,
+            'transportation': KalshiCategory.TRANSPORTATION,
+            'world': KalshiCategory.WORLD,
+        }
+        
+        category_lower = category_str.lower()
+        if category_lower in category_mapping:
+            return [category_mapping[category_lower]]
+        return []
 
     def parse_time_series(
         self, time_series: List[Dict[str, float]]

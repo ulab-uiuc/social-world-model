@@ -695,9 +695,25 @@ class DailyNewsCrawler:
 class GoogleNewsCrawler:
     """Crawler for Google News search results."""
 
-    def __init__(self, min_delay: float = 2.0, max_delay: float = 6.0):
+    def __init__(
+        self,
+        min_delay: float = 2.0,
+        max_delay: float = 6.0,
+        proxy: Optional[str] = None,
+        proxy_list: Optional[List[str]] = None,
+    ):
+        """
+        Args:
+            min_delay: Minimum delay between requests
+            max_delay: Maximum delay between requests
+            proxy: Single proxy URL (e.g., "http://user:pass@host:port" or "socks5://host:port")
+            proxy_list: List of proxy URLs for rotation
+        """
         self.min_delay = min_delay
         self.max_delay = max_delay
+        self.proxy = proxy
+        self.proxy_list = proxy_list or []
+        self.proxy_index = 0
         self.session = requests.Session()
         self.headers = {
             "User-Agent": (
@@ -709,6 +725,24 @@ class GoogleNewsCrawler:
             "Accept-Language": "en-US,en;q=0.9",
             "Connection": "keep-alive",
         }
+        if proxy:
+            self.session.proxies = {"http": proxy, "https": proxy}
+
+    def _get_next_proxy(self) -> Optional[Dict[str, str]]:
+        """Get next proxy from rotation list."""
+        if not self.proxy_list:
+            return None
+        proxy = self.proxy_list[self.proxy_index % len(self.proxy_list)]
+        self.proxy_index += 1
+        return {"http": proxy, "https": proxy}
+
+    def _rotate_proxy(self):
+        """Rotate to next proxy."""
+        if self.proxy_list:
+            proxies = self._get_next_proxy()
+            if proxies:
+                self.session.proxies = proxies
+                print(f"  🔄 Switched to proxy: {list(proxies.values())[0][:30]}...")
 
     def _random_delay(self):
         import random
@@ -852,7 +886,16 @@ class GoogleNewsCrawler:
             
             cards = soup.select("div.SoaBEf")
             if not cards:
-                break
+                # Debug: check if we got blocked or HTML changed
+                if "captcha" in resp.text.lower() or "unusual traffic" in resp.text.lower():
+                    print("  ⚠️ Google blocked request (CAPTCHA detected)")
+                    self._rotate_proxy()  # Try rotating proxy
+                    continue
+                elif soup.select("div.g"):
+                    print("  ⚠️ HTML structure changed, trying fallback selector")
+                    cards = soup.select("div.g")
+                if not cards:
+                    break
             
             for el in cards:
                 try:
@@ -912,6 +955,166 @@ class GoogleNewsCrawler:
             print("⚠️ Fetching full content (slower)")
         
         results = self.fetch(query, start_date, end_date, max_pages, fetch_full_content)
+        
+        if not results:
+            print("No results found - possible reasons:")
+            print("  1. Google rate limiting (try increasing --min_delay)")
+            print("  2. No news for this query/date range")
+            print("  3. Query too specific (try simpler keywords)")
+            return
+        
+        results = sorted(results, key=lambda x: x["date"], reverse=True)
+        
+        mode = 'a' if os.path.exists(output_file) else 'w'
+        with jsonlines.open(output_file, mode=mode) as writer:
+            writer.write_all(results)
+        
+        print(f"✅ Saved {len(results)} articles to {output_file}")
+
+
+class GNewsCrawler:
+    """
+    Crawler using GNews API (gnews.io).
+    
+    Free tier: 100 requests/day, 10 articles per request.
+    Supports date filtering and multiple languages.
+    
+    Get API key at: https://gnews.io/
+    """
+
+    # Boolean operators that should not be quoted
+    BOOLEAN_OPERATORS = {'AND', 'OR', 'NOT'}
+
+    def __init__(self, api_key: Optional[str] = None):
+        """
+        Args:
+            api_key: GNews API key. If not provided, uses GNEWS_API_KEY env var.
+        """
+        self.api_key = api_key or os.environ.get("GNEWS_API_KEY")
+        if not self.api_key:
+            raise ValueError("GNews API key required. Set GNEWS_API_KEY env var or pass api_key.")
+        self.base_url = "https://gnews.io/api/v4/search"
+
+    def _format_query(self, query: str) -> str:
+        """
+        Format query for GNews API, properly quoting multi-word phrases.
+        
+        Examples:
+            "donald trump OR joe biden" -> '"donald trump" OR "joe biden"'
+            "Bitcoin price" -> '"Bitcoin price"'
+            "Tesla OR SpaceX" -> "Tesla OR SpaceX"
+        """
+        import re
+        
+        # If query already has quotes, return as-is
+        if '"' in query:
+            return query
+        
+        # Split by boolean operators while keeping them
+        # Pattern matches: word OR word, word AND word, NOT word
+        parts = re.split(r'\s+(AND|OR|NOT)\s+', query)
+        
+        formatted_parts = []
+        for part in parts:
+            part = part.strip()
+            if not part:
+                continue
+            # Keep boolean operators as-is
+            if part in self.BOOLEAN_OPERATORS:
+                formatted_parts.append(part)
+            # Quote multi-word phrases
+            elif ' ' in part:
+                formatted_parts.append(f'"{part}"')
+            else:
+                formatted_parts.append(part)
+        
+        return ' '.join(formatted_parts)
+
+    def fetch(
+        self,
+        query: str,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        max_results: int = 10,
+        lang: str = "en",
+        country: str = "us",
+    ) -> List[Dict[str, Any]]:
+        """
+        Fetch news articles from GNews API.
+        
+        Args:
+            query: Search query
+            start_date: Start date (YYYY-MM-DD format)
+            end_date: End date (YYYY-MM-DD format)
+            max_results: Max articles to return (max 100 per request on paid plans)
+            lang: Language code (en, zh, etc.)
+            country: Country code (us, cn, etc.)
+            
+        Returns:
+            List of article dicts with title, description, content, url, publishedAt, source
+        """
+        # Format query to properly quote multi-word phrases
+        formatted_query = self._format_query(query)
+        if formatted_query != query:
+            print(f"  Query formatted: {query} -> {formatted_query}")
+        
+        params = {
+            "q": formatted_query,
+            "token": self.api_key,
+            "lang": lang,
+            "country": country,
+            "max": max_results,  # Free tier: 10, Paid: up to 100
+        }
+        
+        # Add date filters if provided
+        if start_date:
+            params["from"] = f"{start_date}T00:00:00Z"
+        if end_date:
+            params["to"] = f"{end_date}T23:59:59Z"
+        
+        try:
+            response = requests.get(self.base_url, params=params, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+            
+            if "articles" not in data:
+                print(f"  GNews error: {data.get('errors', 'Unknown error')}")
+                return []
+            
+            results = []
+            for article in data["articles"]:
+                results.append({
+                    "title": article.get("title", ""),
+                    "description": article.get("description", ""),
+                    "content": article.get("content", ""),
+                    "link": article.get("url", ""),
+                    "date": article.get("publishedAt", ""),
+                    "source": article.get("source", {}).get("name", ""),
+                    "image": article.get("image", ""),
+                })
+            
+            return results
+            
+        except requests.RequestException as e:
+            print(f"  GNews request failed: {e}")
+            return []
+
+    def crawl(
+        self,
+        query: str,
+        start_date: str,
+        end_date: str,
+        output_file: str,
+        max_results: int = 10,
+        lang: str = "en",
+        country: str = "us",
+    ) -> None:
+        """
+        Crawl news and save to file.
+        """
+        print(f"Fetching news for '{query}' from {start_date} to {end_date}")
+        
+        results = self.fetch(query, start_date, end_date, max_results, lang, country)
         
         if not results:
             print("No results found")
