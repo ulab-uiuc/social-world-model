@@ -15,7 +15,7 @@ from peft import LoraConfig
 from transformers import TrainingArguments
 
 from swm.forecaster import MultiEventForecaster
-from swm.utils.utils import load_polymarket_data, set_seed
+from swm.utils.utils import load_market_data, set_seed
 
 
 def parse_args():
@@ -66,9 +66,9 @@ def main():
     
     # Load data with precomputed attributions
     print(f"Loading training data from {args.train_data_path}...")
-    train_data = load_polymarket_data(args.train_data_path)
+    train_data = load_market_data(args.train_data_path)
     print(f"Loading validation data from {args.valid_data_path}...")
-    valid_data = load_polymarket_data(args.valid_data_path)
+    valid_data = load_market_data(args.valid_data_path)
     
     if args.sanity_check:
         train_data = train_data[:2]

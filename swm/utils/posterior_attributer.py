@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional, Union
 import jsonlines
 import openai
 
-from ..data import DailyNewsData, PolyMarketData
+from ..data import DailyNewsData, MarketData
 from .error_handler import (
     api_calling_error_exponential_backoff,
     parsing_error_exponential_backoff,
@@ -54,7 +54,7 @@ class BasicPosteriorAttributer:
         return key
 
     def _get_historical_data(
-        self, date: datetime, market: PolyMarketData
+        self, date: datetime, market: MarketData
     ) -> List[Dict[str, Any]]:
         """Retrieve historical price data for the specified number of days."""
         if not market.daily_time_series or 'Yes' not in market.daily_time_series:
@@ -113,7 +113,7 @@ class BasicPosteriorAttributer:
         return '\n'.join(formatted_data)
 
     def _get_price_change(
-        self, date: datetime, market: PolyMarketData
+        self, date: datetime, market: MarketData
     ) -> Optional[Dict[str, Any]]:
         """Get price change data for the specified date."""
         if not market.daily_time_series or 'Yes' not in market.daily_time_series:
@@ -150,7 +150,7 @@ class BasicPosteriorAttributer:
         }
 
     def attribute(
-        self, time: Union[str, int], market: PolyMarketData
+        self, time: Union[str, int], market: MarketData
     ) -> List[Dict[str, Any]]:
         """Main attribution method with caching."""
         cache_key = self._get_cache_key(str(time), market.market_id)
@@ -174,7 +174,7 @@ class BasicPosteriorAttributer:
 
     # Keep 'reason' as an alias for backward compatibility
     def reason(
-        self, time: Union[str, int], market: PolyMarketData
+        self, time: Union[str, int], market: MarketData
     ) -> List[Dict[str, Any]]:
         """Alias for attribute() for backward compatibility."""
         return self.attribute(time, market)
@@ -228,7 +228,7 @@ class BasicPosteriorAttributer:
         return filtered_results[: self.max_news_items]
 
     def _compute_attribution(
-        self, time: Union[str, int], market: PolyMarketData
+        self, time: Union[str, int], market: MarketData
     ) -> List[Dict[str, Any]]:
         """Compute attribution results for the given time and market."""
         date = datetime.strptime(convert_to_date(time), '%Y-%m-%d')
@@ -257,7 +257,7 @@ class BasicPosteriorAttributer:
         change: Dict[str, Any],
         date: datetime,
         news: List[DailyNewsData],
-        market: PolyMarketData,
+        market: MarketData,
         historical_data: List[Dict[str, Any]],
     ) -> str:
         """Create a prompt with historical context."""
