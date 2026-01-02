@@ -1,18 +1,20 @@
 #!/usr/bin/env python3
 """
-Merge already-crawled news files into daily_breakpoints.
+Re-merge crawled news files into daily_breakpoints with correct field mapping.
 
-This script reads news from individual files (e.g., {market_id}_{date}_to_{date}.jsonl)
-and embeds them into the corresponding breakpoints in the processed data.
+The crawled news files use:
+- 'link' instead of 'url'
+- 'date' instead of 'published_at'
+
+This script re-reads the news files and correctly maps the fields.
 
 Usage:
-    python merge_crawled_news.py \
+    python remerge_crawled_news.py \
         --input_file ../data/processed_kalshi_v2_0102/kalshi_data_processed.jsonl \
-        --news_dir ../data/kalshi_breakpoint_news_v2_0102 \
-        --output_file ../data/kalshi_with_news.jsonl
+        --news_dir ../data_backup/kalshi_breakpoint_news_v2_0102 \
+        --output_file ../data/processed_kalshi_v2_0102/kalshi_data_processed_with_news.jsonl
 """
 import argparse
-import os
 from datetime import datetime
 from pathlib import Path
 
@@ -22,22 +24,22 @@ from tqdm import tqdm
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description='Merge crawled news files into breakpoints'
+        description='Re-merge crawled news files into breakpoints with correct field mapping'
     )
     parser.add_argument(
         '--input_file',
-        default='../data/processed_polymarket_v2_0102/polymarket_data_processed.jsonl',
+        required=True,
         help='Input JSONL file with processed market data',
     )
     parser.add_argument(
         '--news_dir',
-        default='../data/polymarket_breakpoint_news_v2_0102',
+        required=True,
         help='Directory containing crawled news files',
     )
     parser.add_argument(
         '--output_file',
-        default='../data/polymarket_with_news.jsonl',
-        help='Output JSONL file with news embedded in breakpoints',
+        default=None,
+        help='Output JSONL file. Default: input file with _with_news suffix',
     )
     return parser.parse_args()
 
@@ -77,18 +79,18 @@ def load_news_files(news_dir: str) -> dict:
             market_id = prefix_parts[0]
             before_date = prefix_parts[1]
             
-            # Load news articles
+            # Load news articles with correct field mapping
             with jsonlines.open(f, 'r') as reader:
                 articles = list(reader)
             
-            # Normalize article format
+            # Normalize article format - map 'link' to 'url' and 'date' to 'published_at'
             news_list = []
             for article in articles:
                 news_list.append({
                     'title': article.get('title', ''),
                     'description': article.get('description', ''),
-                    'url': article.get('url', ''),
-                    'published_at': article.get('published_at') or article.get('publishedAt', ''),
+                    'url': article.get('url') or article.get('link', ''),
+                    'published_at': article.get('published_at') or article.get('publishedAt') or article.get('date', ''),
                     'source': article.get('source', {}).get('name', '') if isinstance(article.get('source'), dict) else str(article.get('source', '')),
                 })
             
@@ -106,6 +108,14 @@ def load_news_files(news_dir: str) -> dict:
 def main():
     args = parse_args()
     
+    # Auto-generate output filename if not specified
+    if args.output_file is None:
+        input_path = Path(args.input_file)
+        output_name = input_path.stem + '_with_news' + input_path.suffix
+        args.output_file = str(input_path.parent / output_name)
+    
+    print(f'Output file: {args.output_file}')
+    
     # Load news files
     news_index = load_news_files(args.news_dir)
     if not news_index:
@@ -120,7 +130,6 @@ def main():
     
     # Merge news into breakpoints
     merged_count = 0
-    skipped_count = 0
     empty_count = 0
     
     for market in tqdm(markets, desc="Merging news"):
@@ -131,15 +140,12 @@ def main():
             continue
         
         for bp in breakpoints:
-            # Skip if already has news
-            if bp.get('news'):
-                skipped_count += 1
-                continue
-            
             before_ts = bp.get('before', {}).get('t')
             after_ts = bp.get('after', {}).get('t')
             
             if before_ts is None or after_ts is None:
+                bp['news'] = []
+                empty_count += 1
                 continue
             
             # Convert timestamps to dates
@@ -166,8 +172,7 @@ def main():
     
     print(f"\nDone!")
     print(f"  Merged: {merged_count} breakpoints (with news)")
-    print(f"  Empty: {empty_count} breakpoints (no news found, set to [])")
-    print(f"  Skipped: {skipped_count} (already had news)")
+    print(f"  Empty: {empty_count} breakpoints (no news found)")
     print(f"  Output: {args.output_file}")
 
 

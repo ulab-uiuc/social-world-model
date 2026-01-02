@@ -1,38 +1,29 @@
 #!/bin/bash
-#
-# Precompute posterior attributions for breakpoint news
+# Step 4: Compute posterior attributions for breakpoint news
 #
 # Prerequisites:
-#   1. Run converter to generate breakpoints with window_history
-#   2. Run crawl_breakpoint_news.py to add news to each breakpoint
+#   1. Run step2 converter to generate breakpoints with window_history
+#   2. Run step3 crawl_breakpoint_news to add news to each breakpoint
 #
-# Example:
-#   bash precompute_posterior_attributions.sh
+# Features:
+#   - Incremental writing (saves progress after each market)
+#   - Resume support with --skip_existing
+#   - Auto-generates output filename with _attributed suffix
 
-set -e
-
-cd "$(dirname "$0")"
-
-# Configuration
-INPUT_FILE="${INPUT_FILE:-../data/with_news/train.jsonl}"
-OUTPUT_FILE="${OUTPUT_FILE:-../data/attributed/train.jsonl}"
-MODEL="${MODEL:-gpt-4o-mini}"
-MAX_NEWS="${MAX_NEWS:-10}"
-
-echo "================================"
-echo "Precompute Posterior Attributions"
-echo "================================"
-echo "Input:  $INPUT_FILE"
-echo "Output: $OUTPUT_FILE"
-echo "Model:  $MODEL"
-echo ""
-
-python precompute_posterior_attributions.py \
-    --input_file "$INPUT_FILE" \
-    --output_file "$OUTPUT_FILE" \
-    --model "$MODEL" \
-    --max_news "$MAX_NEWS" \
+# Kalshi
+python step4_compute_posterior_attributions.py \
+    --input_file ../data/processed_kalshi_v2_0102/kalshi_data_processed_with_news.jsonl \
+    --output_file ../data/processed_kalshi_v2_0102/kalshi_data_processed_with_news_attributed.jsonl \
+    --model gpt-4o-mini \
+    --max_news 100 \
+    --batch_size 10 \
     --skip_existing
 
-echo ""
-echo "Done! Attributed data saved to $OUTPUT_FILE"
+# Polymarket
+python step4_compute_posterior_attributions.py \
+    --input_file ../data/processed_polymarket_v2_0102/polymarket_data_processed_with_news.jsonl \
+    --output_file ../data/processed_polymarket_v2_0102/polymarket_data_processed_with_news_attributed.jsonl \
+    --model gpt-4o-mini \
+    --max_news 100 \
+    --batch_size 10 \
+    --skip_existing

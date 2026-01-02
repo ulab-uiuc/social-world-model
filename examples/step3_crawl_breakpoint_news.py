@@ -157,8 +157,8 @@ def crawl_news_for_breakpoint(
             news_list.append({
                 'title': article.get('title', ''),
                 'description': article.get('description', ''),
-                'url': article.get('url', ''),
-                'published_at': article.get('published_at') or article.get('publishedAt', ''),
+                'url': article.get('url') or article.get('link', ''),
+                'published_at': article.get('published_at') or article.get('publishedAt') or article.get('date', ''),
                 'source': article.get('source', {}).get('name', '') if isinstance(article.get('source'), dict) else article.get('source', ''),
             })
         return news_list
@@ -236,64 +236,64 @@ def main():
     write_mode = 'a' if processed_ids else 'w'
     
     with jsonlines.open(args.output_file, mode=write_mode) as writer:
-        for market in tqdm(markets, desc='Processing markets'):
+    for market in tqdm(markets, desc='Processing markets'):
             market_id = str(market.get('market_id', ''))
             
             # Skip if already processed
             if market_id in processed_ids:
                 skipped_markets += 1
-                continue
-            
+            continue
+        
             breakpoints = market.get('daily_breakpoints', [])
-            question = market.get('question') or market.get('title', '')
+        question = market.get('question') or market.get('title', '')
             
             if not breakpoints or not question:
                 # Write market as-is (no breakpoints to process)
                 writer.write(market)
+            continue
+        
+        # Extract keywords if enabled
+        search_query = question
+        if args.use_llm_keywords:
+            keywords = extract_search_keywords(question, model=args.llm_model)
+            if keywords:
+                search_query = keywords
+        
+        # Process each breakpoint
+        for bp in breakpoints:
+            z_score = bp.get('z_score', 0)
+            
+            # Below threshold - set empty news list
+            if z_score < args.z_score_threshold:
+                if 'news' not in bp:
+                    bp['news'] = []
                 continue
             
-            # Extract keywords if enabled
-            search_query = question
-            if args.use_llm_keywords:
-                keywords = extract_search_keywords(question, model=args.llm_model)
-                if keywords:
-                    search_query = keywords
-            
-            # Process each breakpoint
-            for bp in breakpoints:
-                z_score = bp.get('z_score', 0)
-                
-                # Below threshold - set empty news list
-                if z_score < args.z_score_threshold:
-                    if 'news' not in bp:
-                        bp['news'] = []
-                    continue
-                
                 # Skip if already has news in input data
                 if bp.get('news'):
                     skipped_breakpoints += 1
-                    continue
-                
-                before_ts = bp.get('before', {}).get('t')
-                after_ts = bp.get('after', {}).get('t')
-                if before_ts is None or after_ts is None:
-                    bp['news'] = []
-                    continue
-                
-                # Crawl news
-                news = crawl_news_for_breakpoint(
-                    crawler=crawler,
-                    query=search_query,
-                    before_ts=before_ts,
-                    after_ts=after_ts,
-                    days_before=args.days_before,
-                    days_after=args.days_after,
-                    max_results=args.max_results,
-                    use_gnews=args.use_gnews,
-                )
-                
-                # Embed news into breakpoint
-                bp['news'] = news
+                continue
+            
+            before_ts = bp.get('before', {}).get('t')
+            after_ts = bp.get('after', {}).get('t')
+            if before_ts is None or after_ts is None:
+                bp['news'] = []
+                continue
+            
+            # Crawl news
+            news = crawl_news_for_breakpoint(
+                crawler=crawler,
+                query=search_query,
+                before_ts=before_ts,
+                after_ts=after_ts,
+                days_before=args.days_before,
+                days_after=args.days_after,
+                max_results=args.max_results,
+                use_gnews=args.use_gnews,
+            )
+            
+            # Embed news into breakpoint
+            bp['news'] = news
                 tqdm.write(f'Found {len(news)} articles for breakpoint')
 
             writer.write(market)
