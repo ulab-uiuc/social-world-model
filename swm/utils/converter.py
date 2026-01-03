@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from pydantic import ValidationError
 import requests
 
-from ..data import DailyNewsData, KalshiData, MarketData
+from ..data import DailyNewsData, MarketData
 from .utils import filter_midnight_points
 
 
@@ -43,7 +43,7 @@ class TimeSeriesConfig:
     rolling_window: int = 30  # Window size for rolling robust z-score calculation
 
 
-class MarketDataConverter:
+class PolyMarketDataConverter:
     def __init__(self, config: Optional[TimeSeriesConfig] = None):
         self.config = config or TimeSeriesConfig()
         self.datetime_formats = [
@@ -444,7 +444,7 @@ class KalshiDataConverter:
         """Filter to daily (midnight) points."""
         return filter_midnight_points(time_series)
 
-    def process_market(self, market_data: Dict[str, Any]) -> Optional[KalshiData]:
+    def process_market(self, market_data: Dict[str, Any]) -> Optional[MarketData]:
         """Process a single Kalshi market entry."""
         try:
             event_id = market_data.get('event_id', '')
@@ -472,7 +472,7 @@ class KalshiDataConverter:
             elif outcome == 'no':
                 outcome = 'No'
 
-            return KalshiData(
+            return MarketData(
                 event_id=event_id,
                 market_id=market_id,
                 question=question,
@@ -494,10 +494,11 @@ class KalshiDataConverter:
             print(f"Error processing Kalshi market {market_data.get('market_id', 'unknown')}: {e}")
             return None
 
-    def convert(self, market_data: Dict[str, Any]) -> List[KalshiData]:
-        """Convert a single Kalshi market entry to list of KalshiData."""
+    def convert(self, market_data: Dict[str, Any]) -> List[MarketData]:
+        """Convert a single Kalshi market entry to list of MarketData."""
         result = self.process_market(market_data)
         return [result] if result else []
+
 
 
 class DailyNewsConverter:

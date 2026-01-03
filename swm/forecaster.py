@@ -23,7 +23,8 @@ class WeightedTrainer(Trainer):
         acc_pred = 0
 
         group_weights = weights[group_indices]
-        normalized_weights = group_weights / group_weights.sum()
+        # Add epsilon to avoid division by zero
+        normalized_weights = group_weights / (group_weights.sum() + 1e-8)
 
         for i in range(0, group_size, chunk_size):
             chunk_indices = group_indices[i : i + chunk_size]
@@ -104,6 +105,8 @@ class MultiEventForecaster:
         cache_dir: str,
         max_seq_length: int = 512,
         lora_config: Optional[LoraConfig] = None,
+        gradient_checkpointing: bool = False,
+        max_news_per_bp: int = 50,
     ):
         self.model_name = model_name
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -111,12 +114,23 @@ class MultiEventForecaster:
         self.model = None
         self.cache_dir = Path(cache_dir)
         self.lora_config = lora_config
+        self.gradient_checkpointing = gradient_checkpointing
+        self.max_news_per_bp = max_news_per_bp
 
     def setup_model(self) -> None:
         config = LLMRegressorConfig(
             base_model_name_or_path=self.model_name, max_length=self.max_seq_length
         )
         self.model = LLMRegressor(config, lora_config=self.lora_config)
+        
+        # Enable gradient checkpointing to save memory
+        if self.gradient_checkpointing:
+            if hasattr(self.model.llm, 'gradient_checkpointing_enable'):
+                # use_reentrant=False is required for inputs without requires_grad
+                self.model.llm.gradient_checkpointing_enable(
+                    gradient_checkpointing_kwargs={"use_reentrant": False}
+                )
+                print("Gradient checkpointing enabled (use_reentrant=False)")
 
     def _create_collate_fn(self):
         def collate_fn(batch):
@@ -152,7 +166,7 @@ class MultiEventForecaster:
             return {
                 'input_ids': torch.cat(all_input_ids),
                 'attention_mask': torch.cat(all_attention_masks),
-                'labels': torch.cat(all_labels),
+                'labels': torch.stack(all_labels),  # labels are 0-D tensors, use stack
                 'weights': torch.cat(all_weights),
                 'group_ids': torch.cat(all_group_ids),
                 'market_ids': all_market_ids,
@@ -186,11 +200,13 @@ class MultiEventForecaster:
             markets=train_data,
             tokenizer=self.tokenizer,
             cache_dir=self.cache_dir,
+            max_news_per_bp=self.max_news_per_bp,
         )
         valid_dataset = MultiEventForecasterDataset(
             markets=valid_data,
             tokenizer=self.tokenizer,
             cache_dir=self.cache_dir,
+            max_news_per_bp=self.max_news_per_bp,
         )
 
         trainer = WeightedTrainer(
@@ -236,6 +252,7 @@ class MultiEventForecaster:
             markets=markets,
             tokenizer=self.tokenizer,
             cache_dir=self.cache_dir,
+            max_news_per_bp=self.max_news_per_bp,
         )
         dataloader = DataLoader(
             dataset,
