@@ -31,19 +31,11 @@ class MarketData(BaseModel):
     # Time series data
     time_series: Optional[List[Dict[str, Union[int, float]]]] = Field(default=None)
     daily_time_series: Optional[List[Dict[str, Union[int, float]]]] = Field(default=None)
-    window_series: Optional[List[Dict[str, Union[int, float]]]] = Field(default=None)
     
     # Breakpoints with all preprocessing done
     # Each breakpoint contains: before, after, change, z_score, window_history, news, attributions
     daily_breakpoints: Optional[List[Dict[str, Any]]] = Field(default=None)
     
-    # Platform identifier (optional)
-    platform: Optional[str] = Field(default=None)  # "polymarket", "kalshi", etc.
-    
-    # Platform-specific fields (stored as extra, accessible via model_extra)
-    # Kalshi: event_ticker, market_ticker, series_ticker, etc.
-    # Polymarket: clobTokenIds, etc.
-
     @classmethod
     def from_dict(cls, data: Dict) -> 'MarketData':
         """Create MarketData from dictionary, handling legacy field names."""

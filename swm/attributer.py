@@ -16,7 +16,7 @@ from .utils.regressor import LLMRegressor, LLMRegressorConfig
 
 class KLDivergenceTrainer(Trainer):
     def _process_group(
-        self, model, inputs, weights, group_indices, is_prediction=False
+        self, model, inputs, weights, group_indices, device, is_prediction=False
     ):
         group_size = len(group_indices)
         chunk_size = 4
@@ -24,7 +24,7 @@ class KLDivergenceTrainer(Trainer):
 
         group_weights = weights[group_indices]
         p_dist = group_weights / (group_weights.sum() + 1e-8)
-        p_dist = p_dist.to(model.device)
+        p_dist = p_dist.to(device)
 
         for i in range(0, group_size, chunk_size):
             chunk_indices = group_indices[i : i + chunk_size]
@@ -50,39 +50,58 @@ class KLDivergenceTrainer(Trainer):
         all_logits = torch.cat(collected_logits, dim=0)
         q_dist = F.softmax(all_logits / 1.0, dim=0)
 
+        # Add epsilon to both distributions to avoid log(0) = -inf
+        # This prevents NaN when computing p * log(p/q) with p=0
         epsilon = 1e-8
         q_dist = q_dist + epsilon
         q_dist = q_dist / q_dist.sum()
+        p_dist = p_dist + epsilon
+        p_dist = p_dist / p_dist.sum()
 
         kl_loss = torch.sum(p_dist * torch.log(p_dist / q_dist))
 
         return (kl_loss, q_dist, p_dist) if is_prediction else kl_loss
 
+    def _get_device(self, model):
+        """Get device from model, handling DataParallel wrapper."""
+        if hasattr(model, 'device'):
+            return model.device
+        elif hasattr(model, 'module'):
+            return next(model.module.parameters()).device
+        else:
+            return next(model.parameters()).device
+
     def compute_loss(
         self, model, inputs, return_outputs=False, num_items_in_batch=None
     ):
-        weights = inputs.pop('weights').to(model.device)
-        group_ids = inputs.pop('group_ids').to(model.device)
+        device = self._get_device(model)
+        weights = inputs.pop('weights').to(device)
+        group_ids = inputs.pop('group_ids').to(device)
 
-        total_loss = 0.0
-        num_valid_groups = 0
+        losses = []
 
         for group in torch.unique(group_ids):
             group_indices = torch.where(group_ids == group)[0]
             if len(group_indices) < 2:
                 continue
 
-            loss = self._process_group(model, inputs, weights, group_indices)
+            loss = self._process_group(model, inputs, weights, group_indices, device)
             if not torch.isnan(loss) and not torch.isinf(loss):
-                total_loss += loss
-                num_valid_groups += 1
+                losses.append(loss)
 
-        avg_loss = total_loss / max(num_valid_groups, 1)
+        # Ensure we always return a tensor
+        if losses:
+            avg_loss = torch.stack(losses).mean()
+        else:
+            # Return zero tensor with grad if no valid groups
+            avg_loss = torch.tensor(0.0, device=device, requires_grad=True)
+        
         return (avg_loss, None) if return_outputs else avg_loss
 
     def prediction_step(self, model, inputs, prediction_loss_only, ignore_keys=None):
-        weights = inputs.pop('weights').to(model.device)
-        group_ids = inputs.pop('group_ids').to(model.device)
+        device = self._get_device(model)
+        weights = inputs.pop('weights').to(device)
+        group_ids = inputs.pop('group_ids').to(device)
 
         all_losses, all_preds, all_labels = [], [], []
 
@@ -92,7 +111,7 @@ class KLDivergenceTrainer(Trainer):
                 continue
 
             loss, q_dist, p_dist = self._process_group(
-                model, inputs, weights, group_indices, is_prediction=True
+                model, inputs, weights, group_indices, device, is_prediction=True
             )
 
             if not torch.isnan(loss) and not torch.isinf(loss):
@@ -103,11 +122,10 @@ class KLDivergenceTrainer(Trainer):
         if not all_losses:
             return (torch.tensor(0.0), None, None)
 
-        return (
-            torch.stack(all_losses).mean(),
-            torch.stack(all_preds),
-            torch.stack(all_labels),
-        )
+        # Return only loss - can't stack preds/labels as they have different sizes per group
+        # The eval loss is the main metric we care about
+        avg_loss = torch.stack(all_losses).mean()
+        return (avg_loss, None, None)
 
 
 class BasicPriorAttributer:
@@ -117,6 +135,8 @@ class BasicPriorAttributer:
         cache_dir: str,
         max_seq_length: int = 512,
         lora_config: Optional[LoraConfig] = None,
+        gradient_checkpointing: bool = False,
+        max_news_per_bp: int = 50,
     ):
         self.model_name = model_name
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -124,12 +144,23 @@ class BasicPriorAttributer:
         self.model = None
         self.cache_dir = Path(cache_dir)
         self.lora_config = lora_config
+        self.gradient_checkpointing = gradient_checkpointing
+        self.max_news_per_bp = max_news_per_bp
 
     def setup_model(self) -> None:
         config = LLMRegressorConfig(
             base_model_name_or_path=self.model_name, max_length=self.max_seq_length
         )
         self.model = LLMRegressor(config, lora_config=self.lora_config)
+        
+        # Enable gradient checkpointing to save memory
+        if self.gradient_checkpointing:
+            if hasattr(self.model.llm, 'gradient_checkpointing_enable'):
+                # use_reentrant=False is required for inputs without requires_grad
+                self.model.llm.gradient_checkpointing_enable(
+                    gradient_checkpointing_kwargs={"use_reentrant": False}
+                )
+                print("Gradient checkpointing enabled (use_reentrant=False)")
 
     def _create_collate_fn(self):
         def collate_fn(batch):
@@ -199,28 +230,52 @@ class BasicPriorAttributer:
             markets=train_data,
             tokenizer=self.tokenizer,
             cache_dir=self.cache_dir,
+            max_news_per_bp=self.max_news_per_bp,
         )
         valid_dataset = PriorAttributerDataset(
             markets=valid_data,
             tokenizer=self.tokenizer,
             cache_dir=self.cache_dir,
+            max_news_per_bp=self.max_news_per_bp,
         )
 
+        def compute_metrics(eval_pred):
+            """Compute evaluation metrics for KL training."""
+            preds, labels = eval_pred
+            # Since prediction_step returns None for preds/labels (can't stack different sizes),
+            # we can't compute detailed metrics here. The eval_loss is the main metric.
+            if preds is None or labels is None:
+                return {}
+            
+            # preds and labels are flattened distributions
+            # Compute KL divergence: sum(p * log(p/q))
+            epsilon = 1e-8
+            preds = np.clip(preds, epsilon, 1.0)
+            labels = np.clip(labels, epsilon, 1.0)
+            
+            # KL divergence
+            kl_div = np.mean(labels * np.log(labels / preds))
+            
+            # Top-1 accuracy: does the highest predicted match highest true?
+            if len(preds) > 0 and len(labels) > 0:
+                pred_top = np.argmax(preds)
+                label_top = np.argmax(labels)
+                top1_acc = float(pred_top == label_top)
+            else:
+                top1_acc = 0.0
+            
+            return {
+                'kl_div': float(kl_div),
+                'top1_acc': top1_acc,
+            }
+        
         trainer = KLDivergenceTrainer(
             model=self.model,
             args=training_args,
             train_dataset=train_dataset,
             eval_dataset=valid_dataset,
             data_collator=self._create_collate_fn(),
-            compute_metrics=lambda p: {
-                'kl_div': float(
-                    np.mean(
-                        np.sum(
-                            p.label_ids * np.log(p.label_ids / p.predictions), axis=1
-                        )
-                    )
-                )
-            },
+            compute_metrics=compute_metrics,
         )
 
         trainer.train()

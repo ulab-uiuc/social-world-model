@@ -15,7 +15,7 @@ def parse_args():
         default='../data/raw_polymarket/polymarket_merged.jsonl',
     )
     parser.add_argument(
-        '--output_dir', type=str, default='../data/processed_polymarket_v2_0102'
+        '--output_dir', type=str, default='../data/processed_polymarket_v2_0102_test'
     )
     parser.add_argument('--z_score_threshold', type=float, default=2.0)
     parser.add_argument('--rolling_window', type=int, default=15,
