@@ -5,10 +5,11 @@ description = "A package for building social world models"
 authors = ["Haofei Yu <yuhaofei44@gmail.com>"]
 license = "Apache 2.0 License"
 readme = "README.md"
+packages = [{include = "swm"}]
 
 
 [tool.poetry.dependencies]
-python = ">=3.10, <3.12"
+python = ">=3.10, <3.13"
 mypy = "^1.14.1"
 beartype = "*"
 pydantic = "^2.10.6"
@@ -29,6 +30,7 @@ openai = "*"
 litellm = "*"
 kalshi-python = "^2.1.4"
 cryptography = "^46.0.3"
+wandb = "*"
 
 
 [tool.poetry.group.dev.dependencies]

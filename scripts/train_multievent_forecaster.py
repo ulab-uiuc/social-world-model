@@ -54,6 +54,8 @@ def parse_args():
     parser.add_argument('--lora-alpha', type=float, default=32)
     parser.add_argument('--lora-dropout', type=float, default=0.1)
     parser.add_argument('--r', type=int, default=16)
+    parser.add_argument('--target-modules', type=str, default='q_proj,v_proj,k_proj,o_proj',
+                        help='Comma-separated LoRA target modules')
     
     # Other
     parser.add_argument('--seed', type=int, default=42)
@@ -61,12 +63,20 @@ def parse_args():
     parser.add_argument('--max-news-per-bp', type=int, default=30,
                         help='Max news articles per breakpoint (default: 30)')
     
+    # Wandb
+    parser.add_argument('--wandb-project', type=str, default='social-world-model',
+                        help='Wandb project name')
+    
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
     set_seed(args.seed)
+    
+    # Initialize wandb
+    import os
+    os.environ['WANDB_PROJECT'] = args.wandb_project
     
     # Load data with precomputed attributions
     print(f"Loading training data from {args.train_data_path}...")
@@ -103,10 +113,13 @@ def main():
         raise ValueError("No training data has attributions. Run step4_compute_posterior_attributions.py first.")
     
     # Initialize model
+    target_modules = [m.strip() for m in args.target_modules.split(',')]
+    print(f"LoRA config: r={args.r}, target_modules={target_modules}")
+    
     lora_config = LoraConfig(
         r=args.r,
         lora_alpha=args.lora_alpha,
-        target_modules=['q_proj', 'v_proj'],
+        target_modules=target_modules,
         lora_dropout=args.lora_dropout,
         bias='none',
         task_type='CAUSAL_LM',
@@ -141,6 +154,8 @@ def main():
         metric_for_best_model='loss',
         save_safetensors=False,
         remove_unused_columns=False,
+        report_to='wandb',
+        run_name=f"{args.model_name.replace('/', '_')}_{args.output_dir.split('/')[-1]}",
     )
     
     # Train

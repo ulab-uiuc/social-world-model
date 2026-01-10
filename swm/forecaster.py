@@ -16,8 +16,14 @@ from .utils.retriever import SimilarityBasedMarketRetriever
 
 class WeightedTrainer(Trainer):
     def _process_group(
-        self, model, inputs, weights, group_indices, labels, is_prediction=False
+        self, model, inputs, weights, group_indices, group_label, is_prediction=False
     ):
+        """Process a single group and return loss, prediction, and label.
+        
+        Args:
+            group_indices: Indices in the flattened batch for this group
+            group_label: The label for this group (already extracted)
+        """
         group_size = len(group_indices)
         chunk_size = 8
         acc_pred = 0
@@ -43,7 +49,6 @@ class WeightedTrainer(Trainer):
                 chunk_preds = chunk_preds.view(-1)
                 acc_pred += (chunk_preds * chunk_weights).sum()
 
-        group_label = labels[group_indices[0]]
         loss = torch.nn.functional.mse_loss(acc_pred, group_label)
 
         return loss, acc_pred, group_label
@@ -57,10 +62,12 @@ class WeightedTrainer(Trainer):
 
         total_loss = 0
         num_valid_groups = 0
-        for group in torch.unique(group_ids):
+        for group_idx, group in enumerate(torch.unique(group_ids)):
             group_indices = torch.where(group_ids == group)[0]
+            # Use group_idx to get the correct label (labels are ordered by group)
+            group_label = labels[group_idx]
             loss, _, _ = self._process_group(
-                model, inputs, weights, group_indices, labels
+                model, inputs, weights, group_indices, group_label
             )
             if not torch.isnan(loss) and not torch.isinf(loss):
                 total_loss += loss
@@ -74,10 +81,12 @@ class WeightedTrainer(Trainer):
         group_ids = inputs.pop('group_ids')
 
         all_losses, all_preds, all_labels = [], [], []
-        for group in torch.unique(group_ids):
+        for group_idx, group in enumerate(torch.unique(group_ids)):
             group_indices = torch.where(group_ids == group)[0]
+            # Use group_idx to get the correct label
+            group_label = labels[group_idx]
             loss, pred, label = self._process_group(
-                model, inputs, weights, group_indices, labels, is_prediction=True
+                model, inputs, weights, group_indices, group_label, is_prediction=True
             )
 
             if not torch.isnan(loss) and not torch.isinf(loss):
@@ -290,7 +299,7 @@ class MultiEventForecaster:
                             'market_id': batch['market_ids'][group_idx],
                             't': batch['ts'][group_idx],
                             'prediction': weighted_pred.item(),
-                            'ground_truth': labels[group_mask][0].item(),
+                            'ground_truth': labels[group_idx].item(),
                         }
                     )
         return results
@@ -299,32 +308,42 @@ class MultiEventForecaster:
         self, 
         markets: List[MarketData], 
         attributer: Any,
-        window_size: int = 5,
     ) -> List[MarketData]:
-        """Generate attributions for markets using the provided attributer."""
-        for market in tqdm(markets, desc='Generating attributions'):
-            if not market.daily_time_series or 'Yes' not in market.daily_time_series:
-                continue
-                
-            series = market.daily_time_series['Yes']
-            if len(series) <= window_size:
-                continue
-            
-            attributions = {}
-            for start_idx in range(len(series) - window_size):
-                target = series[start_idx + window_size]
-                target_ts = str(target['t'])
-                
-                # Call attributer to get events for this timestamp
-                events = attributer.attribute(target['t'], market)
-                if events:
-                    attributions[target_ts] = [
-                        {'news': e['news'], 'score': e['score']} 
-                        for e in events
-                    ]
-            
-            market.attributions = attributions
+        """
+        Generate attributions for markets using the provided attributer.
         
+        This method updates each breakpoint's 'attributions' field with
+        real-time predictions from the trained PriorAttributer.
+        
+        Args:
+            markets: List of markets with daily_breakpoints containing news
+            attributer: Trained BasicPriorAttributer for real-time attribution
+            
+        Returns:
+            Markets with attributions added to each breakpoint
+        """
+        total_bps = 0
+        for market in tqdm(markets, desc='Generating attributions'):
+            if not market.daily_breakpoints:
+                continue
+            
+            for bp in market.daily_breakpoints:
+                news_list = bp.get('news', [])
+                if not news_list or len(news_list) < 2:
+                    continue
+                
+                # Use attributer to predict attribution scores
+                attributions = attributer.attribute_breakpoint(market, bp)
+                
+                if attributions:
+                    # Store attributions in the format expected by MultiEventForecasterDataset
+                    bp['attributions'] = [
+                        {'news_idx': attr['news_idx'], 'score': attr['score']}
+                        for attr in attributions
+                    ]
+                    total_bps += 1
+        
+        print(f"Generated attributions for {total_bps} breakpoints")
         return markets
 
     def save(self, path: str) -> None:
@@ -503,7 +522,7 @@ class RAGMultiEventForecaster(MultiEventForecaster):
                             'market_id': batch['market_ids'][group_idx],
                             't': batch['ts'][group_idx],
                             'prediction': weighted_pred.item(),
-                            'ground_truth': labels[group_mask][0].item(),
+                            'ground_truth': labels[group_idx].item(),
                         }
                     )
         return results

@@ -70,8 +70,16 @@ def main():
         test_data = test_data[:args.limit]
     print(f"Loaded {len(test_data)} markets")
     
-    # Check if data has attributions
-    data_with_attr = sum(1 for m in test_data if m.attributions)
+    # Check if data has attributions (attributions are inside daily_breakpoints)
+    def has_attributions(market):
+        if not market.daily_breakpoints:
+            return False
+        for bp in market.daily_breakpoints:
+            if bp.get('attributions') and len(bp.get('attributions', [])) > 0:
+                return True
+        return False
+    
+    data_with_attr = sum(1 for m in test_data if has_attributions(m))
     print(f"Markets with precomputed attributions: {data_with_attr}/{len(test_data)}")
     
     # Load forecaster
@@ -118,12 +126,53 @@ def main():
     
     # Compute and print metrics
     if results:
-        mse = sum((r['prediction'] - r['ground_truth'])**2 for r in results) / len(results)
-        mae = sum(abs(r['prediction'] - r['ground_truth']) for r in results) / len(results)
-        print(f"\nMetrics:")
-        print(f"  MSE: {mse:.6f}")
-        print(f"  MAE: {mae:.6f}")
-        print(f"  Predictions: {len(results)}")
+        import numpy as np
+        
+        predictions = np.array([r['prediction'] for r in results])
+        ground_truths = np.array([r['ground_truth'] for r in results])
+        
+        mse = np.mean((predictions - ground_truths) ** 2)
+        rmse = np.sqrt(mse)
+        mae = np.mean(np.abs(predictions - ground_truths))
+        
+        # Correlation
+        if len(results) > 1:
+            corr = np.corrcoef(predictions, ground_truths)[0, 1]
+        else:
+            corr = float('nan')
+        
+        # Direction accuracy (for price movement)
+        # Assuming > 0.5 means "Yes", < 0.5 means "No"
+        pred_direction = predictions > 0.5
+        true_direction = ground_truths > 0.5
+        direction_acc = np.mean(pred_direction == true_direction)
+        
+        print(f"\n{'='*50}")
+        print(f"Evaluation Results")
+        print(f"{'='*50}")
+        print(f"  Model: {args.model_path}")
+        print(f"  Test samples: {len(results)}")
+        print(f"  MSE:  {mse:.6f}")
+        print(f"  RMSE: {rmse:.6f}")
+        print(f"  MAE:  {mae:.6f}")
+        print(f"  Correlation: {corr:.4f}")
+        print(f"  Direction Accuracy: {direction_acc:.2%}")
+        print(f"{'='*50}")
+        
+        # Save metrics to JSON
+        metrics_path = output_path.with_suffix('.metrics.json')
+        metrics = {
+            'model_path': args.model_path,
+            'test_samples': len(results),
+            'mse': float(mse),
+            'rmse': float(rmse),
+            'mae': float(mae),
+            'correlation': float(corr) if not np.isnan(corr) else None,
+            'direction_accuracy': float(direction_acc),
+        }
+        with open(metrics_path, 'w') as f:
+            json.dump(metrics, f, indent=2)
+        print(f"Metrics saved to: {metrics_path}")
 
 
 if __name__ == '__main__':
