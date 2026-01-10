@@ -137,6 +137,7 @@ class BasicPriorAttributer:
         lora_config: Optional[LoraConfig] = None,
         gradient_checkpointing: bool = False,
         max_news_per_bp: int = 50,
+        target_temperature: float = 0.5,  # Lower = sharper target distribution
     ):
         self.model_name = model_name
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -146,6 +147,7 @@ class BasicPriorAttributer:
         self.lora_config = lora_config
         self.gradient_checkpointing = gradient_checkpointing
         self.max_news_per_bp = max_news_per_bp
+        self.target_temperature = target_temperature
 
     def setup_model(self) -> None:
         config = LLMRegressorConfig(
@@ -231,12 +233,14 @@ class BasicPriorAttributer:
             tokenizer=self.tokenizer,
             cache_dir=self.cache_dir,
             max_news_per_bp=self.max_news_per_bp,
+            target_temperature=self.target_temperature,
         )
         valid_dataset = PriorAttributerDataset(
             markets=valid_data,
             tokenizer=self.tokenizer,
             cache_dir=self.cache_dir,
             max_news_per_bp=self.max_news_per_bp,
+            target_temperature=self.target_temperature,
         )
 
         def compute_metrics(eval_pred):
@@ -352,28 +356,120 @@ class BasicPriorAttributer:
 
         return results
     
-    def attribute(
+    def attribute_breakpoint(
         self,
-        timestamp: float,
         market: MarketData,
+        breakpoint: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
         """
-        Generate attributions for a single market at a specific timestamp.
+        Generate attributions for a single breakpoint using the trained model.
         
-        This is used during inference with MultiEventForecaster.
+        This is the real-time inference method used during forecaster prediction.
         
         Args:
-            timestamp: The timestamp to generate attributions for
             market: The market data
+            breakpoint: A breakpoint dict with 'news', 'window_history', 'after' fields
             
         Returns:
-            List of {news, score} dicts
+            List of {news_idx, score, news} dicts with attribution scores
         """
-        # TODO: Implement real-time attribution prediction
-        # For now, return from precomputed if available
-        if market.attributions:
-            return market.attributions.get(str(timestamp), [])
-        return []
+        if self.model is None:
+            raise ValueError("Model not loaded. Call load() first.")
+        
+        news_list = breakpoint.get('news', [])
+        if not news_list or len(news_list) < 2:
+            return []
+        
+        window_history = breakpoint.get('window_history', [])
+        target = breakpoint.get('after', {})
+        
+        # Build prompts for each news item (same as training)
+        all_input_ids = []
+        all_attention_masks = []
+        
+        for news_item in news_list[:self.max_news_per_bp]:
+            prompt = self._build_prompt_with_news(market, window_history, target, news_item)
+            encoding = self.tokenizer(
+                prompt,
+                padding='max_length',
+                truncation=True,
+                max_length=512,
+                return_tensors='pt',
+            )
+            all_input_ids.append(encoding['input_ids'])
+            all_attention_masks.append(encoding['attention_mask'])
+        
+        # Stack and move to device
+        input_ids = torch.cat(all_input_ids, dim=0).to(self.model.llm.device)
+        attention_mask = torch.cat(all_attention_masks, dim=0).to(self.model.llm.device)
+        
+        # Get model predictions
+        self.model.eval()
+        with torch.no_grad():
+            logits = self.model(input_ids=input_ids, attention_mask=attention_mask)
+            if logits.dim() == 2 and logits.size(-1) == 1:
+                logits = logits.squeeze(-1)
+            
+            # Convert to probability distribution
+            scores = F.softmax(logits, dim=0)
+        
+        # Build attribution results
+        attributions = []
+        for idx, (news_item, score) in enumerate(zip(news_list[:self.max_news_per_bp], scores)):
+            attributions.append({
+                'news_idx': idx,
+                'score': score.item(),
+                'news': news_item,
+            })
+        
+        return attributions
+    
+    def _build_prompt_with_news(
+        self,
+        market: MarketData,
+        window_history: List[Dict],
+        target: Dict,
+        news_item: Dict,
+    ) -> str:
+        """Build prompt for attribution prediction (same as training)."""
+        from .utils.utils import unix_to_date
+        
+        lines = [f'Prediction Market: {market.question}']
+        if market.description:
+            desc = market.description[:200] + '...' if len(market.description or '') > 200 else market.description
+            lines.append(f'Description: {desc}')
+        
+        # Show recent price history (BEFORE the breakpoint)
+        target_ts = target.get('t')
+        history_before_target = [
+            day for day in window_history 
+            if day.get('t') != target_ts
+        ]
+        
+        lines.append('\nRecent price history:')
+        for day in history_before_target[-5:]:
+            date = unix_to_date(day['t'])
+            lines.append(f"  {date}: {day['p']:.3f}")
+        
+        # Target date
+        target_date = unix_to_date(target['t'])
+        lines.append(f'\nPredicting for: {target_date}')
+        
+        # Add the news article
+        lines.append('\nNews article:')
+        news_title = news_item.get('title', '')
+        news_desc = news_item.get('description', '') or ''
+        news_date = news_item.get('published_at', '')
+        if news_date:
+            lines.append(f'Date: {news_date}')
+        lines.append(f'Title: {news_title}')
+        if news_desc:
+            desc = news_desc[:300] + '...' if len(news_desc) > 300 else news_desc
+            lines.append(f'Content: {desc}')
+        
+        lines.append('\nHow relevant is this news to the prediction market outcome?')
+        
+        return '\n'.join(lines)
 
     def save(self, path: str) -> None:
         if self.model:

@@ -46,7 +46,7 @@ def parse_args():
     parser.add_argument('--warmup-steps', type=int, default=0)
     parser.add_argument('--max-grad-norm', type=float, default=1.0)
     parser.add_argument('--logging-steps', type=int, default=100)
-    parser.add_argument('--save-steps', type=int, default=500)
+    parser.add_argument('--save-steps', type=int, default=100)
     parser.add_argument('--eval-steps', type=int, default=500)
     parser.add_argument('--fp16', action='store_true')
     parser.add_argument('--gradient-checkpointing', action='store_true',
@@ -56,12 +56,16 @@ def parse_args():
     parser.add_argument('--lora-alpha', type=float, default=32)
     parser.add_argument('--lora-dropout', type=float, default=0.1)
     parser.add_argument('--r', type=int, default=16)
+    parser.add_argument('--target-modules', type=str, default='q_proj,v_proj,k_proj,o_proj',
+                        help='Comma-separated LoRA target modules')
     
     # Other
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--sanity-check', action='store_true')
     parser.add_argument('--max-news-per-bp', type=int, default=50,
                         help='Max news articles per breakpoint (default: 50)')
+    parser.add_argument('--target-temperature', type=float, default=0.5,
+                        help='Temperature for target distribution (lower=sharper, default: 0.5)')
     
     return parser.parse_args()
 
@@ -109,10 +113,13 @@ def main():
         raise ValueError("No training data has attributions. Run step4_compute_posterior_attributions.py first.")
     
     # Initialize model
+    target_modules = [m.strip() for m in args.target_modules.split(',')]
+    print(f"LoRA config: r={args.r}, target_modules={target_modules}")
+    
     lora_config = LoraConfig(
         r=args.r,
         lora_alpha=args.lora_alpha,
-        target_modules=['q_proj', 'v_proj'],
+        target_modules=target_modules,
         lora_dropout=args.lora_dropout,
         bias='none',
         task_type='CAUSAL_LM',
@@ -125,6 +132,7 @@ def main():
         lora_config=lora_config,
         gradient_checkpointing=args.gradient_checkpointing,
         max_news_per_bp=args.max_news_per_bp,
+        target_temperature=args.target_temperature,
     )
     
     # Training arguments

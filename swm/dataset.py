@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import torch
+import torch.nn.functional as F
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import Dataset
 from tqdm import tqdm
@@ -187,8 +188,15 @@ class MultiEventForecasterDataset(BaseDataset):
         if market.description:
             lines.append(f'Description: {market.description}')
         
+        # IMPORTANT: Exclude target point from history to prevent data leakage!
+        target_ts = target.get('t')
+        history_before_target = [
+            day for day in window_history 
+            if day.get('t') != target_ts
+        ]
+        
         lines.append('\nRecent price history:')
-        for day in window_history[-5:]:  # Last 5 days for brevity
+        for day in history_before_target[-5:]:  # Last 5 days for brevity
             date = unix_to_date(day['t'])
             lines.append(f"  {date}: {day['p']:.3f}")
         
@@ -218,11 +226,13 @@ class PriorAttributerDataset(BaseDataset):
         cache_dir: str,
         use_cache: bool = False,
         max_news_per_bp: int = 50,
+        target_temperature: float = 0.5,  # Lower = sharper distribution, higher = more uniform
     ):
         super().__init__(cache_dir=cache_dir, use_cache=use_cache)
         self.markets = markets
         self.tokenizer = tokenizer
         self.max_news_per_bp = max_news_per_bp
+        self.target_temperature = target_temperature
         self.datapoints = self._load_or_create_datapoints()
 
     def _compute_hash(self) -> str:
@@ -275,8 +285,9 @@ class PriorAttributerDataset(BaseDataset):
                 scores = [x[2] for x in filtered_items]
                     
                 scores_tensor = torch.tensor(scores, dtype=torch.float)
-                total = scores_tensor.sum()
-                p_dist = scores_tensor / total if total > 1e-12 else torch.ones_like(scores_tensor) / len(scores_tensor)
+                # Use softmax with temperature to create sharper target distribution
+                # Lower temperature = more concentrated on top items
+                p_dist = F.softmax(scores_tensor / self.target_temperature, dim=0)
                 
                 # Build prompts for each news item
                 # Each prompt includes: question + history + one news article
@@ -428,8 +439,15 @@ class RAGMultiEventForecasterDataset(MultiEventForecasterDataset):
                 if sm.outcome:
                     lines.append(f'  Outcome: {sm.outcome}')
         
+        # IMPORTANT: Exclude target point from history to prevent data leakage!
+        target_ts = target.get('t')
+        history_before_target = [
+            day for day in window_history 
+            if day.get('t') != target_ts
+        ]
+        
         lines.append('\nRecent price history:')
-        for day in window_history[-5:]:
+        for day in history_before_target[-5:]:
             date = unix_to_date(day['t'])
             lines.append(f"  {date}: {day['p']:.3f}")
         

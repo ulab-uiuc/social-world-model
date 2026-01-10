@@ -164,6 +164,7 @@ cython_debug/
 **/saves
 **/*.json
 **/*.jsonl
+**/scripts/wandb/*
 **/.DS_Store
 !**/.gitkeep
 !**/package.json
