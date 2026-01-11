@@ -68,17 +68,18 @@ echo "Kalshi training complete!"
 # ============================================================
 
 # Polymarket 0.6B
-CUDA_VISIBLE_DEVICES=4 python train_multievent_forecaster.py \
+CUDA_VISIBLE_DEVICES=9 python train_multievent_forecaster.py \
     --train-data-path /mnt/data_from_server1/haofeiy2/social-world-model/data/splitted_polymarket_v2_0102/polymarket_data_processed_with_news_attributed_train_2025-11-01.jsonl \
     --valid-data-path /mnt/data_from_server1/haofeiy2/social-world-model/data/splitted_polymarket_v2_0102/polymarket_data_processed_with_news_attributed_test_2025-11-01.jsonl \
     --output-dir ../saves/multievent_forecaster_polymarket \
     --model-name Qwen/Qwen3-0.6B \
-    --train-batch-size 1 \
-    --gradient-accumulation-steps 4 \
+    --train-batch-size 16 \
+    --gradient-accumulation-steps 1 \
     --eval-batch-size 4 \
     --epochs 10 \
     --logging-steps 10 \
     --save-steps 50 \
+    --eval-steps 50 \
     --gradient-checkpointing \
     --learning-rate 5e-5 \
     --r 16 &
