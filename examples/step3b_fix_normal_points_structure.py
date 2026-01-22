@@ -46,6 +46,12 @@ def parse_args():
         default=15,
         help='Window size for window_history (default: 15)',
     )
+    parser.add_argument(
+        '--min_history',
+        type=int,
+        default=15,
+        help='Minimum history points required. Set to 15 to ensure window_history length = 17 (same as breakpoints)',
+    )
     return parser.parse_args()
 
 
@@ -67,11 +73,18 @@ def build_window_history(
     point_idx: int,
     window_size: int,
 ) -> List[Dict]:
-    """Build window_history for a point."""
-    window_start_idx = max(0, point_idx - window_size)
+    """Build window_history for a point.
+    
+    Note: point_idx is the 'after' point index. To match breakpoint logic,
+    we use (point_idx - 1) as the 'before' index for calculating window start.
+    This ensures window_history length = window_size + 2 = 17 when window_size=15.
+    """
+    before_idx = point_idx - 1
+    window_start_idx = max(0, before_idx - window_size)
+    window_end_idx = point_idx + 1  # Include after point
     return [
         {'t': daily_ts[j].get('t'), 'p': daily_ts[j].get('p', daily_ts[j].get('yes_price'))}
-        for j in range(window_start_idx, point_idx + 1)
+        for j in range(window_start_idx, min(window_end_idx, len(daily_ts)))
     ]
 
 
@@ -95,8 +108,14 @@ def fix_normal_point(
     point: Dict,
     daily_ts: List[Dict],
     window_size: int,
+    min_history: int = 10,
 ) -> Optional[Dict]:
-    """Fix a single normal_point to have the same structure as breakpoints."""
+    """Fix a single normal_point to have the same structure as breakpoints.
+    
+    Args:
+        min_history: Minimum number of historical points required (same as breakpoint detection).
+                     This ensures window_history has at least min_history+1 points.
+    """
     # Get timestamp from old format
     timestamp = point.get('timestamp')
     if timestamp is None:
@@ -104,7 +123,8 @@ def fix_normal_point(
     
     # Find the point in daily_time_series
     point_idx = find_point_in_timeseries(daily_ts, timestamp)
-    if point_idx is None or point_idx < 1:
+    if point_idx is None or point_idx < min_history:
+        # Need at least min_history points of history (same as breakpoint detection)
         return None
     
     # Get current and previous points
@@ -179,7 +199,7 @@ def main():
             fixed_points = []
             for point in market.get('normal_points', []):
                 total_points += 1
-                fixed_point = fix_normal_point(point, daily_ts, args.window_size)
+                fixed_point = fix_normal_point(point, daily_ts, args.window_size, args.min_history)
                 if fixed_point:
                     fixed_points.append(fixed_point)
                     fixed_count += 1

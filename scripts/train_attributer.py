@@ -80,6 +80,10 @@ def main():
     args = parse_args()
     set_seed(args.seed)
     
+    # Initialize wandb project
+    import os
+    os.environ['WANDB_PROJECT'] = args.wandb_project
+    
     # Load flat samples and convert to MarketData format
     print(f"Loading training data from {args.train_data_path}...")
     train_data = load_flat_samples_as_markets(args.train_data_path)
@@ -173,7 +177,7 @@ def main():
         fp16=args.fp16,
         metric_for_best_model='eval_loss',
         greater_is_better=False,  # Lower loss is better
-        load_best_model_at_end=True,
+        load_best_model_at_end=False,  # Manual save at end instead
         save_safetensors=False,
         remove_unused_columns=False,
         report_to='wandb',

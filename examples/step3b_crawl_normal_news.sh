@@ -16,9 +16,9 @@ python step3b_crawl_normal_news.py \
 python step3b_crawl_normal_news.py \
     --use_llm_keywords \
     --use_gnews \
-    --samples_per_market 1 \
+    --samples_per_market 3 \
     --min_days_from_breakpoint 3 \
     --llm_model gpt-4o-mini \
     --skip_existing \
     --input_file /mnt/data_from_server1/haofeiy2/social-world-model/data/processed_polymarket_v2_0102/polymarket_data_processed.jsonl \
-    --output_file /mnt/data_from_server1/haofeiy2/social-world-model/data/processed_kalshi_v2_0102/polymarket_normalpoint_with_news.jsonl
+    --output_file /mnt/data_from_server1/haofeiy2/social-world-model/data/processed_polymarket_v2_0102/polymarket_normalpoint_with_news.jsonl
