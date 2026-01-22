@@ -7,7 +7,7 @@ conda activate social-wm
 
 cd /data/haofeiy2/social-world-model/scripts
 
-
+# Forcaster overfit 测试
 CUDA_VISIBLE_DEVICES=5 python train_multievent_forecaster.py \
     --train-data-path /mnt/data_from_server1/haofeiy2/social-world-model/data/splitted_kalshi_v2_0102/kalshi_data_processed_with_news_attributed_train_2025-11-01.jsonl \
     --valid-data-path /mnt/data_from_server1/haofeiy2/social-world-model/data/splitted_kalshi_v2_0102/kalshi_data_processed_with_news_attributed_test_2025-11-01.jsonl \

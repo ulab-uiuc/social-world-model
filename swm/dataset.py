@@ -136,7 +136,7 @@ class MultiEventForecasterDataset(BaseDataset):
                     related_items.sort(key=lambda x: x[1], reverse=True)
                     related_items = related_items[:self.max_news_per_bp]
                 
-                no_news_weight = 0.1
+                no_news_weight = 0.001
                 
                 # Build prompts for each valid news item
                 input_ids_list = []
@@ -323,7 +323,7 @@ class PriorAttributerDataset(BaseDataset):
                     related_items.sort(key=lambda x: x[1], reverse=True)
                     related_items = related_items[:self.max_news_per_bp]
                 
-                no_news_weight = 0.1
+                no_news_weight = 0.001
                 
                 # Build prompts for each news item
                 input_ids_list = []
