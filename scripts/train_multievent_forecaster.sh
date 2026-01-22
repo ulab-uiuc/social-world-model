@@ -47,8 +47,8 @@ CUDA_VISIBLE_DEVICES=3 python train_multievent_forecaster.py \
     --valid-data-path /mnt/data_from_server1/haofeiy2/social-world-model/data/splitted_kalshi_v2_0102/kalshi_data_processed_with_news_attributed_test_2025-11-01.jsonl \
     --output-dir ../saves/multievent_forecaster_kalshi \
     --model-name Qwen/Qwen3-0.6B \
-    --train-batch-size 32 \
-    --gradient-accumulation-steps 1 \
+    --train-batch-size 8 \
+    --gradient-accumulation-steps 4 \
     --eval-batch-size 4 \
     --epochs 10 \
     --logging-steps 10 \

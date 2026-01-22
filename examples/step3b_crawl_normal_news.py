@@ -100,10 +100,10 @@ def parse_args():
         help='Maximum delay between requests (default: 4.0)',
     )
     parser.add_argument(
-        '--z_score_threshold',
+        '--price_change_threshold',
         type=float,
-        default=1.5,
-        help='Maximum z_score for normal points (default: 1.5, below breakpoint threshold)',
+        default=0.05,
+        help='Maximum absolute price change for normal points (default: 0.05, i.e. 5%%)',
     )
     parser.add_argument(
         '--min_days_from_breakpoint',
@@ -160,15 +160,15 @@ def get_breakpoint_timestamps(market: Dict) -> Set[int]:
 def sample_normal_points(
     market: Dict,
     num_samples: int,
-    z_score_threshold: float,
+    price_change_threshold: float,
     min_days_from_breakpoint: int,
     window_size: int = 15,
 ) -> List[Dict]:
     """
     Sample normal points from daily_time_series that are:
-    1. Not breakpoints (z_score below threshold)
+    1. Small price change (below threshold)
     2. At least min_days_from_breakpoint away from any breakpoint
-    3. Have enough history (not at the very start)
+    3. Have enough history (at least window_size points)
     
     Returns points with same structure as breakpoints:
     - before, after, change, z_score, window_start, window_end, window_history
@@ -216,13 +216,14 @@ def sample_normal_points(
         abs_change = abs(price_change)
         
         # We want points with small price changes (normal days)
-        # Using a simple threshold instead of z_score for simplicity
-        if abs_change < 0.05:  # Less than 5% change
+        if abs_change < price_change_threshold:
             # Build window_history (same structure as breakpoints)
+            # Include from start_idx to after point (i+1), so range is [start_idx, i+2)
             window_start_idx = max(0, i - window_size)
+            window_end_idx = i + 2  # Include both before (i) and after (i+1) points
             window_history = [
                 {'t': daily_ts[j].get('t'), 'p': daily_ts[j].get('p', daily_ts[j].get('yes_price'))}
-                for j in range(window_start_idx, i + 1)
+                for j in range(window_start_idx, min(window_end_idx, len(daily_ts)))
             ]
             
             # Calculate a simple z_score based on rolling std
@@ -388,7 +389,7 @@ def main():
             normal_points = sample_normal_points(
                 market=market,
                 num_samples=args.samples_per_market,
-                z_score_threshold=args.z_score_threshold,
+                price_change_threshold=args.price_change_threshold,
                 min_days_from_breakpoint=args.min_days_from_breakpoint,
             )
             
@@ -404,10 +405,12 @@ def main():
             
             # Crawl news for each normal point
             for point in normal_points:
+                # Get timestamp from 'after' field (new format)
+                point_ts = point['after']['t']
                 news = crawl_news_for_point(
                     crawler=crawler,
                     query=search_query,
-                    timestamp=point['timestamp'],
+                    timestamp=point_ts,
                     days_before=args.days_before,
                     days_after=args.days_after,
                     max_results=args.max_results,
@@ -417,7 +420,8 @@ def main():
                 crawled_count += 1
                 
                 if news:
-                    tqdm.write(f'Found {len(news)} articles for normal point on {point["date"]}')
+                    point_date = datetime.fromtimestamp(point_ts).strftime('%Y-%m-%d')
+                    tqdm.write(f'Found {len(news)} articles for normal point on {point_date}')
             
             # Write result
             result = {
