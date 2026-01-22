@@ -162,12 +162,16 @@ def sample_normal_points(
     num_samples: int,
     z_score_threshold: float,
     min_days_from_breakpoint: int,
+    window_size: int = 15,
 ) -> List[Dict]:
     """
     Sample normal points from daily_time_series that are:
     1. Not breakpoints (z_score below threshold)
     2. At least min_days_from_breakpoint away from any breakpoint
     3. Have enough history (not at the very start)
+    
+    Returns points with same structure as breakpoints:
+    - before, after, change, z_score, window_start, window_end, window_history
     """
     daily_ts = market.get('daily_time_series', [])
     if not daily_ts or len(daily_ts) < 5:
@@ -195,36 +199,71 @@ def sample_normal_points(
         if day in excluded_days:
             continue
         
-        # Skip first few days (need some history)
-        if i < 3:
+        # Skip first few days (need some history for window)
+        if i < window_size:
             continue
         
         # Calculate price change from previous day
         prev_point = daily_ts[i - 1]
+        prev_ts = prev_point.get('t')
         prev_price = prev_point.get('p', prev_point.get('yes_price', 0))
         curr_price = point.get('p', point.get('yes_price', 0))
         
-        if prev_price is None or curr_price is None:
+        if prev_price is None or curr_price is None or prev_ts is None:
             continue
         
-        price_change = abs(curr_price - prev_price)
+        price_change = curr_price - prev_price
+        abs_change = abs(price_change)
         
         # We want points with small price changes (normal days)
         # Using a simple threshold instead of z_score for simplicity
-        if price_change < 0.05:  # Less than 5% change
+        if abs_change < 0.05:  # Less than 5% change
+            # Build window_history (same structure as breakpoints)
+            window_start_idx = max(0, i - window_size)
+            window_history = [
+                {'t': daily_ts[j].get('t'), 'p': daily_ts[j].get('p', daily_ts[j].get('yes_price'))}
+                for j in range(window_start_idx, i + 1)
+            ]
+            
+            # Calculate a simple z_score based on rolling std
+            if len(window_history) > 2:
+                prices = [p['p'] for p in window_history if p['p'] is not None]
+                if len(prices) > 2:
+                    import statistics
+                    try:
+                        std = statistics.stdev(prices[:-1])  # Exclude current point
+                        z_score = abs_change / std if std > 0 else 0
+                    except:
+                        z_score = 0
+                else:
+                    z_score = 0
+            else:
+                z_score = 0
+            
             candidates.append({
-                'timestamp': ts,
-                'date': datetime.fromtimestamp(ts).strftime('%Y-%m-%d'),
-                'price': curr_price,
-                'price_change': curr_price - prev_price,
-                'index': i,
+                # Same structure as breakpoints
+                'before': {'t': prev_ts, 'p': prev_price},
+                'after': {'t': ts, 'p': curr_price},
+                'change': price_change,
+                'z_score': z_score,
+                'window_start': window_history[0]['t'] if window_history else prev_ts,
+                'window_end': ts,
+                'window_history': window_history,
+                # Keep index for internal use
+                '_index': i,
             })
     
     # Randomly sample from candidates
     if len(candidates) <= num_samples:
-        return candidates
+        sampled = candidates
+    else:
+        sampled = random.sample(candidates, num_samples)
     
-    return random.sample(candidates, num_samples)
+    # Remove internal fields
+    for point in sampled:
+        point.pop('_index', None)
+    
+    return sampled
 
 
 def crawl_news_for_point(

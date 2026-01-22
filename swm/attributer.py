@@ -59,6 +59,10 @@ class KLDivergenceTrainer(Trainer):
         p_dist = p_dist / p_dist.sum()
 
         kl_loss = torch.sum(p_dist * torch.log(p_dist / q_dist))
+        
+        # Scale loss by group_size to compensate for small gradients when group is large
+        # This ensures consistent learning rate effectiveness across different group sizes
+        kl_loss = kl_loss * group_size
 
         return (kl_loss, q_dist, p_dist) if is_prediction else kl_loss
 
@@ -168,7 +172,7 @@ class BasicPriorAttributer:
         def collate_fn(batch):
             all_input_ids, all_attention_masks = [], []
             all_weights, all_group_ids = [], []
-            all_market_ids, all_event_ids, all_ts, all_news = [], [], [], []
+            all_market_ids, all_event_ids, all_ts = [], [], []
 
             max_len = min(
                 max(item['input_ids'].size(-1) for item in batch), self.max_seq_length
@@ -193,7 +197,6 @@ class BasicPriorAttributer:
                 all_market_ids.append(item['market_id'])
                 all_event_ids.append(item['event_id'])
                 all_ts.append(item['t'])
-                all_news.append(item['news'])
 
             return {
                 'input_ids': torch.cat(all_input_ids, dim=0),
@@ -203,7 +206,6 @@ class BasicPriorAttributer:
                 'market_ids': all_market_ids,
                 'event_ids': all_event_ids,
                 'ts': all_ts,
-                'news': all_news,
             }
 
         return collate_fn
@@ -348,7 +350,6 @@ class BasicPriorAttributer:
                             'event_id': batch['event_ids'][group_idx],
                             'market_id': batch['market_ids'][group_idx],
                             't': batch['ts'][group_idx],
-                            'news': batch['news'][group_idx],
                             'q_dist': q_dist.cpu().numpy().tolist(),
                             'p_dist': group_weights.cpu().numpy().tolist(),
                         }

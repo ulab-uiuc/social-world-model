@@ -128,46 +128,66 @@ def main():
     if results:
         import numpy as np
         
-        predictions = np.array([r['prediction'] for r in results])
-        ground_truths = np.array([r['ground_truth'] for r in results])
+        # Extract delta and price predictions
+        pred_delta = np.array([r['pred_delta'] for r in results])
+        true_delta = np.array([r['true_delta'] for r in results])
+        pred_price = np.array([r['pred_price'] for r in results])
+        true_price = np.array([r['true_price'] for r in results])
         
-        mse = np.mean((predictions - ground_truths) ** 2)
-        rmse = np.sqrt(mse)
-        mae = np.mean(np.abs(predictions - ground_truths))
+        # Delta metrics (what the model directly predicts)
+        delta_mse = np.mean((pred_delta - true_delta) ** 2)
+        delta_rmse = np.sqrt(delta_mse)
+        delta_mae = np.mean(np.abs(pred_delta - true_delta))
+        
+        # Price metrics (after recovering absolute price)
+        price_mse = np.mean((pred_price - true_price) ** 2)
+        price_rmse = np.sqrt(price_mse)
+        price_mae = np.mean(np.abs(pred_price - true_price))
         
         # Correlation
         if len(results) > 1:
-            corr = np.corrcoef(predictions, ground_truths)[0, 1]
+            delta_corr = np.corrcoef(pred_delta, true_delta)[0, 1]
+            price_corr = np.corrcoef(pred_price, true_price)[0, 1]
         else:
-            corr = float('nan')
+            delta_corr = float('nan')
+            price_corr = float('nan')
         
-        # Direction accuracy (for price movement)
-        # Assuming > 0.5 means "Yes", < 0.5 means "No"
-        pred_direction = predictions > 0.5
-        true_direction = ground_truths > 0.5
+        # Direction accuracy (did we predict the direction of price change correctly?)
+        pred_direction = pred_delta > 0  # Predicted price increase
+        true_direction = true_delta > 0  # Actual price increase
         direction_acc = np.mean(pred_direction == true_direction)
         
-        print(f"\n{'='*50}")
+        print(f"\n{'='*60}")
         print(f"Evaluation Results")
-        print(f"{'='*50}")
+        print(f"{'='*60}")
         print(f"  Model: {args.model_path}")
         print(f"  Test samples: {len(results)}")
-        print(f"  MSE:  {mse:.6f}")
-        print(f"  RMSE: {rmse:.6f}")
-        print(f"  MAE:  {mae:.6f}")
-        print(f"  Correlation: {corr:.4f}")
-        print(f"  Direction Accuracy: {direction_acc:.2%}")
-        print(f"{'='*50}")
+        print(f"\n  Delta Metrics (y_t+1 - y_t):")
+        print(f"    MSE:  {delta_mse:.6f}")
+        print(f"    RMSE: {delta_rmse:.6f}")
+        print(f"    MAE:  {delta_mae:.6f}")
+        print(f"    Correlation: {delta_corr:.4f}")
+        print(f"\n  Price Metrics (absolute price):")
+        print(f"    MSE:  {price_mse:.6f}")
+        print(f"    RMSE: {price_rmse:.6f}")
+        print(f"    MAE:  {price_mae:.6f}")
+        print(f"    Correlation: {price_corr:.4f}")
+        print(f"\n  Direction Accuracy: {direction_acc:.2%}")
+        print(f"{'='*60}")
         
         # Save metrics to JSON
         metrics_path = output_path.with_suffix('.metrics.json')
         metrics = {
             'model_path': args.model_path,
             'test_samples': len(results),
-            'mse': float(mse),
-            'rmse': float(rmse),
-            'mae': float(mae),
-            'correlation': float(corr) if not np.isnan(corr) else None,
+            'delta_mse': float(delta_mse),
+            'delta_rmse': float(delta_rmse),
+            'delta_mae': float(delta_mae),
+            'delta_correlation': float(delta_corr) if not np.isnan(delta_corr) else None,
+            'price_mse': float(price_mse),
+            'price_rmse': float(price_rmse),
+            'price_mae': float(price_mae),
+            'price_correlation': float(price_corr) if not np.isnan(price_corr) else None,
             'direction_accuracy': float(direction_acc),
         }
         with open(metrics_path, 'w') as f:

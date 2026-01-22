@@ -7,16 +7,48 @@ conda activate social-wm
 
 cd /data/haofeiy2/social-world-model/scripts
 
+
+CUDA_VISIBLE_DEVICES=5 python train_multievent_forecaster.py \
+    --train-data-path /mnt/data_from_server1/haofeiy2/social-world-model/data/splitted_kalshi_v2_0102/kalshi_data_processed_with_news_attributed_train_2025-11-01.jsonl \
+    --valid-data-path /mnt/data_from_server1/haofeiy2/social-world-model/data/splitted_kalshi_v2_0102/kalshi_data_processed_with_news_attributed_test_2025-11-01.jsonl \
+    --output-dir ../saves/forecaster_overfit \
+    --model-name Qwen/Qwen3-0.6B \
+    --train-batch-size 16 \
+    --gradient-accumulation-steps 2 \
+    --eval-batch-size 4 \
+    --logging-steps 10 \
+    --save-steps 50 \
+    --gradient-checkpointing \
+    --overfit \
+    --overfit-samples 4 \
+    --r 16
+
+# Attributer overfit 测试
+CUDA_VISIBLE_DEVICES=5 python train_attributer.py \
+    --train-data-path /mnt/data_from_server1/haofeiy2/social-world-model/data/splitted_kalshi_v2_0102/kalshi_data_processed_with_news_attributed_train_2025-11-01.jsonl \
+    --valid-data-path /mnt/data_from_server1/haofeiy2/social-world-model/data/splitted_kalshi_v2_0102/kalshi_data_processed_with_news_attributed_test_2025-11-01.jsonl \
+    --output-dir ../saves/attributer_overfit \
+    --model-name Qwen/Qwen3-0.6B \
+    --train-batch-size 16 \
+    --gradient-accumulation-steps 2 \
+    --eval-batch-size 4 \
+    --logging-steps 10 \
+    --save-steps 50 \
+    --gradient-checkpointing \
+    --overfit \
+    --overfit-samples 4 \
+    --r 16
+
 # Kalshi data with attributions
 # 0.6B: smaller LoRA rank (r=16) is fine
 # Effective batch size = train_batch_size * gradient_accumulation_steps = 1 * 8 = 8
-CUDA_VISIBLE_DEVICES=1 python train_multievent_forecaster.py \
+CUDA_VISIBLE_DEVICES=3 python train_multievent_forecaster.py \
     --train-data-path /mnt/data_from_server1/haofeiy2/social-world-model/data/splitted_kalshi_v2_0102/kalshi_data_processed_with_news_attributed_train_2025-11-01.jsonl \
     --valid-data-path /mnt/data_from_server1/haofeiy2/social-world-model/data/splitted_kalshi_v2_0102/kalshi_data_processed_with_news_attributed_test_2025-11-01.jsonl \
     --output-dir ../saves/multievent_forecaster_kalshi \
     --model-name Qwen/Qwen3-0.6B \
-    --train-batch-size 16 \
-    --gradient-accumulation-steps 2 \
+    --train-batch-size 32 \
+    --gradient-accumulation-steps 1 \
     --eval-batch-size 4 \
     --epochs 10 \
     --logging-steps 10 \
@@ -27,20 +59,20 @@ CUDA_VISIBLE_DEVICES=1 python train_multievent_forecaster.py \
 
 # 4B: increase LoRA rank to leverage model capacity
 # Effective batch size = 1 * 8 = 8
-CUDA_VISIBLE_DEVICES=3 python train_multievent_forecaster.py \
+CUDA_VISIBLE_DEVICES=4 python train_multievent_forecaster.py \
     --train-data-path /mnt/data_from_server1/haofeiy2/social-world-model/data/splitted_kalshi_v2_0102/kalshi_data_processed_with_news_attributed_train_2025-11-01.jsonl \
     --valid-data-path /mnt/data_from_server1/haofeiy2/social-world-model/data/splitted_kalshi_v2_0102/kalshi_data_processed_with_news_attributed_test_2025-11-01.jsonl \
     --output-dir ../saves/multievent_forecaster_kalshi_4b \
     --model-name Qwen/Qwen3-4B \
-    --train-batch-size 1 \
-    --gradient-accumulation-steps 8 \
+    --train-batch-size 8 \
+    --gradient-accumulation-steps 4 \
     --eval-batch-size 2 \
     --epochs 10 \
     --logging-steps 10 \
     --save-steps 50 \
     --gradient-checkpointing \
-    --learning-rate 2e-5 \
-    --r 32 &
+    --learning-rate 5e-5 \
+    --r 16 &
 
 # 8B: larger LoRA rank + lower LR for stability
 # Effective batch size = 1 * 16 = 16 (larger for more stable gradients)
@@ -49,14 +81,14 @@ CUDA_VISIBLE_DEVICES=2 python train_multievent_forecaster.py \
     --valid-data-path /mnt/data_from_server1/haofeiy2/social-world-model/data/splitted_kalshi_v2_0102/kalshi_data_processed_with_news_attributed_test_2025-11-01.jsonl \
     --output-dir ../saves/multievent_forecaster_kalshi_8b \
     --model-name Qwen/Qwen3-8B \
-    --train-batch-size 1 \
+    --train-batch-size 2 \
     --gradient-accumulation-steps 16 \
     --eval-batch-size 1 \
     --epochs 10 \
     --logging-steps 10 \
     --save-steps 50 \
     --gradient-checkpointing \
-    --learning-rate 1e-5 \
+    --learning-rate 5e-5 \
     --r 64 &
 
 wait
@@ -97,7 +129,7 @@ CUDA_VISIBLE_DEVICES=3 python train_multievent_forecaster.py \
     --logging-steps 10 \
     --save-steps 50 \
     --gradient-checkpointing \
-    --learning-rate 2e-5 \
+    --learning-rate 5e-5 \
     --r 32 &
 
 # Polymarket 8B
@@ -113,7 +145,7 @@ CUDA_VISIBLE_DEVICES=2 python train_multievent_forecaster.py \
     --logging-steps 10 \
     --save-steps 50 \
     --gradient-checkpointing \
-    --learning-rate 1e-5 \
+    --learning-rate 5e-5 \
     --r 64 &
 
 wait
