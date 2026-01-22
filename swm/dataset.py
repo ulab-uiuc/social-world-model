@@ -103,17 +103,24 @@ class MultiEventForecasterDataset(BaseDataset):
                 continue
             
             for bp in market.daily_breakpoints:
-                # Skip breakpoints without news/attributions
+                # Skip if no news list
                 news_list = bp.get('news', [])
                 attributions = bp.get('attributions', [])
-                if not news_list or not attributions:
+                if not news_list:
                     continue
                 
                 window_history = bp.get('window_history', [])
+                before = bp.get('before', {})
                 target = bp.get('after', {})
                 
-                # First: Filter out zero-score news and collect valid items
-                valid_items = []
+                # Calculate price change (delta) as label instead of absolute price
+                before_price = before.get('p', 0.5)
+                after_price = target.get('p', 0.5)
+                price_delta = after_price - before_price  # Can be positive or negative
+                
+                # Collect news items with positive scores
+                related_items = []
+                total_news_weight = 0.0
                 for attr in attributions:
                     news_idx = attr.get('news_idx', 0)
                     score = attr.get('score')
@@ -122,39 +129,49 @@ class MultiEventForecasterDataset(BaseDataset):
                     if score <= 0 or news_idx >= len(news_list):
                         continue
                     
-                    valid_items.append((news_list[news_idx], score))
+                    related_items.append((news_list[news_idx], score))
                 
-                # Skip if fewer than 2 valid items
-                if len(valid_items) < 2:
-                    continue
+                # Limit to max_news_per_bp (keep top scored)
+                if len(related_items) > self.max_news_per_bp:
+                    related_items.sort(key=lambda x: x[1], reverse=True)
+                    related_items = related_items[:self.max_news_per_bp]
                 
-                # Then: Limit to max_news_per_bp (keep top scored)
-                if len(valid_items) > self.max_news_per_bp:
-                    valid_items.sort(key=lambda x: x[1], reverse=True)
-                    valid_items = valid_items[:self.max_news_per_bp]
+                no_news_weight = 0.1
                 
                 # Build prompts for each valid news item
                 input_ids_list = []
                 attention_mask_list = []
                 weights_list = []
                 
-                for news, score in valid_items:
+                for news, score in related_items:
                     prompt = self._build_prompt(market, window_history, target, news)
-                    
                     encoding = self.tokenizer(
                         prompt,
                         padding=True,
                         truncation=True,
-                        max_length=512,
+                        max_length=1024,
                         return_tensors='pt',
                     )
-                    
                     input_ids_list.append(encoding['input_ids'].squeeze(0))
                     attention_mask_list.append(encoding['attention_mask'].squeeze(0))
                     weights_list.append(score)
                 
-                if len(input_ids_list) < 2:
-                    continue
+                # Always add "no news" option (represents prediction from history only)
+                no_news_prompt = self._build_no_news_prompt(market, window_history, target)
+                no_news_encoding = self.tokenizer(
+                    no_news_prompt,
+                    padding=True,
+                    truncation=True,
+                    max_length=1024,
+                    return_tensors='pt',
+                )
+                input_ids_list.append(no_news_encoding['input_ids'].squeeze(0))
+                attention_mask_list.append(no_news_encoding['attention_mask'].squeeze(0))
+                weights_list.append(no_news_weight)
+
+                # softmax on the weight list
+                weights_tensor = torch.tensor(weights_list, dtype=torch.float)
+                weights_tensor = F.softmax(weights_tensor, dim=0)
                 
                 # Pad sequences
                 input_ids_tensor = pad_sequence(
@@ -164,12 +181,13 @@ class MultiEventForecasterDataset(BaseDataset):
                 attention_mask_tensor = pad_sequence(
                     attention_mask_list, batch_first=True, padding_value=0
                 )
-                
                 datapoints.append({
                     'input_ids': input_ids_tensor,
                     'attention_mask': attention_mask_tensor,
-                    'weights': torch.tensor(weights_list, dtype=torch.float),
-                    'label': torch.tensor(target.get('p', 0.5), dtype=torch.float),
+                    'weights': weights_tensor,
+                    'label': torch.tensor(price_delta, dtype=torch.float),  # Price change (y_t+1 - y_t)
+                    'before_price': torch.tensor(before_price, dtype=torch.float),  # For recovering absolute price
+                    'after_price': torch.tensor(after_price, dtype=torch.float),  # Ground truth absolute price
                     'market_id': market.market_id,
                     'event_id': market.event_id,
                     't': target.get('t'),
@@ -207,6 +225,36 @@ class MultiEventForecasterDataset(BaseDataset):
         lines.append(f'\nNews: {news_title}')
         if news_desc:
             lines.append(f'{news_desc}')
+        lines.append(f'\nPredict the probability on {target_date}:')
+        
+        return '\n'.join(lines)
+
+    def _build_no_news_prompt(
+        self,
+        market: MarketData,
+        window_history: List[Dict],
+        target: Dict,
+    ) -> str:
+        """Build prompt for "no news" option - predict based on history only."""
+        lines = [f'Event: {market.question}']
+        if market.description:
+            lines.append(f'Description: {market.description}')
+        
+        # IMPORTANT: Exclude target point from history to prevent data leakage!
+        target_ts = target.get('t')
+        history_before_target = [
+            day for day in window_history 
+            if day.get('t') != target_ts
+        ]
+        
+        lines.append('\nRecent price history:')
+        for day in history_before_target[-5:]:  # Last 5 days for brevity
+            date = unix_to_date(day['t'])
+            lines.append(f"  {date}: {day['p']:.3f}")
+        
+        target_date = unix_to_date(target['t'])
+        
+        lines.append(f'\nNews: No relevant news.')
         lines.append(f'\nPredict the probability on {target_date}:')
         
         return '\n'.join(lines)
@@ -252,70 +300,79 @@ class PriorAttributerDataset(BaseDataset):
             for bp in market.daily_breakpoints:
                 news_list = bp.get('news', [])
                 attributions = bp.get('attributions', [])
-                if not news_list or not attributions:
-                    continue
-                
-                # Ensure attributions match news count
-                if len(attributions) != len(news_list):
+                if not news_list:
                     continue
                 
                 window_history = bp.get('window_history', [])
                 target = bp.get('after', {})
                 
-                # First: Filter out zero-score news items to avoid wasting resources
-                filtered_items = []
-                for news, attr in zip(news_list, attributions):
+                # Collect news items with positive scores (same as MultiEventForecasterDataset)
+                related_items = []
+                for attr in attributions:
+                    news_idx = attr.get('news_idx', 0)
                     score = attr.get('score')
                     score = float(score) if score is not None else 0.0
-                    if score > 0:
-                        filtered_items.append((news, attr, score))
-                
-                # Skip if fewer than 2 non-zero scores
-                if len(filtered_items) < 2:
-                    continue
-                
-                # Then: Limit to max_news_per_bp (keep top scored)
-                if len(filtered_items) > self.max_news_per_bp:
-                    filtered_items.sort(key=lambda x: x[2], reverse=True)
-                    filtered_items = filtered_items[:self.max_news_per_bp]
-                
-                # Extract filtered news and attributions
-                news_list = [x[0] for x in filtered_items]
-                attributions = [x[1] for x in filtered_items]
-                scores = [x[2] for x in filtered_items]
                     
-                scores_tensor = torch.tensor(scores, dtype=torch.float)
-                # Use softmax with temperature to create sharper target distribution
-                # Lower temperature = more concentrated on top items
-                p_dist = F.softmax(scores_tensor / self.target_temperature, dim=0)
+                    if score <= 0 or news_idx >= len(news_list):
+                        continue
+                    
+                    related_items.append((news_list[news_idx], score))
+                
+                # Limit to max_news_per_bp (keep top scored)
+                if len(related_items) > self.max_news_per_bp:
+                    related_items.sort(key=lambda x: x[1], reverse=True)
+                    related_items = related_items[:self.max_news_per_bp]
+                
+                no_news_weight = 0.1
                 
                 # Build prompts for each news item
-                # Each prompt includes: question + history + one news article
-                all_input_ids = []
-                all_attention_masks = []
+                input_ids_list = []
+                attention_mask_list = []
+                weights_list = []
                 
-                for news_item in news_list:
-                    prompt = self._build_prompt_with_news(market, window_history, target, news_item)
+                for news, score in related_items:
+                    prompt = self._build_prompt_with_news(market, window_history, target, news)
                     encoding = self.tokenizer(
                         prompt,
-                        padding='max_length',
+                        padding=True,
                         truncation=True,
-                        max_length=512,
+                        max_length=1024,
                         return_tensors='pt',
                     )
-                    all_input_ids.append(encoding['input_ids'])
-                    all_attention_masks.append(encoding['attention_mask'])
+                    input_ids_list.append(encoding['input_ids'].squeeze(0))
+                    attention_mask_list.append(encoding['attention_mask'].squeeze(0))
+                    weights_list.append(score)
                 
-                # Stack to create 2D tensors: (num_news, seq_len)
-                input_ids_stacked = torch.cat(all_input_ids, dim=0)
-                attention_mask_stacked = torch.cat(all_attention_masks, dim=0)
+                # Always add "no news" option
+                no_news_prompt = self._build_no_news_prompt(market, window_history, target)
+                no_news_encoding = self.tokenizer(
+                    no_news_prompt,
+                    padding=True,
+                    truncation=True,
+                    max_length=1024,
+                    return_tensors='pt',
+                )
+                input_ids_list.append(no_news_encoding['input_ids'].squeeze(0))
+                attention_mask_list.append(no_news_encoding['attention_mask'].squeeze(0))
+                weights_list.append(no_news_weight)
+                
+                # Softmax on the weight list (same as MultiEventForecasterDataset)
+                weights_tensor = torch.tensor(weights_list, dtype=torch.float)
+                p_dist = F.softmax(weights_tensor, dim=0)
+                
+                # Pad sequences (same as MultiEventForecasterDataset)
+                input_ids_tensor = pad_sequence(
+                    input_ids_list, batch_first=True, 
+                    padding_value=self.tokenizer.pad_token_id or 0
+                )
+                attention_mask_tensor = pad_sequence(
+                    attention_mask_list, batch_first=True, padding_value=0
+                )
                 
                 datapoints.append({
-                    'input_ids': input_ids_stacked,  # (num_news, seq_len)
-                    'attention_mask': attention_mask_stacked,  # (num_news, seq_len)
+                    'input_ids': input_ids_tensor,  # (num_news, seq_len)
+                    'attention_mask': attention_mask_tensor,  # (num_news, seq_len)
                     'p_dist': p_dist,  # Target distribution (num_news,)
-                    'news': news_list,  # For reference
-                    'label': torch.tensor(target.get('p', 0.5), dtype=torch.float),
                     'market_id': market.market_id,
                     'event_id': market.event_id,
                     't': target.get('t'),
@@ -370,6 +427,38 @@ class PriorAttributerDataset(BaseDataset):
             lines.append(f'Content: {desc}')
         
         # Prior task: predict relevance WITHOUT knowing price outcome
+        lines.append('\nHow relevant is this news to the prediction market outcome?')
+        
+        return '\n'.join(lines)
+
+    def _build_no_news_prompt(
+        self,
+        market: MarketData,
+        window_history: List[Dict],
+        target: Dict,
+    ) -> str:
+        """Build PRIOR prompt for "no news" option."""
+        lines = [f'Prediction Market: {market.question}']
+        if market.description:
+            desc = market.description[:200] + '...' if len(market.description or '') > 200 else market.description
+            lines.append(f'Description: {desc}')
+        
+        # Show recent price history (BEFORE the breakpoint, not after)
+        target_ts = target.get('t')
+        history_before_target = [
+            day for day in window_history 
+            if day.get('t') != target_ts
+        ]
+        
+        lines.append('\nRecent price history:')
+        for day in history_before_target[-5:]:
+            date = unix_to_date(day['t'])
+            lines.append(f"  {date}: {day['p']:.3f}")
+        
+        target_date = unix_to_date(target['t'])
+        lines.append(f'\nPredicting for: {target_date}')
+        
+        lines.append('\nNews article: No relevant news available.')
         lines.append('\nHow relevant is this news to the prediction market outcome?')
         
         return '\n'.join(lines)

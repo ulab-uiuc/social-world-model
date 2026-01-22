@@ -12,8 +12,8 @@
 
 # Kalshi
 python step4_compute_posterior_attributions.py \
-    --input_file ../data/processed_kalshi_v2_0102/kalshi_data_processed_with_news.jsonl \
-    --output_file ../data/processed_kalshi_v2_0102/kalshi_data_processed_with_news_attributed.jsonl \
+    --input_file /mnt/data_from_server1/haofeiy2/social-world-model/data/processed_kalshi_v2_0102/kalshi_data_processed_with_news.jsonl \
+    --output_file /mnt/data_from_server1/haofeiy2/social-world-model/data/processed_kalshi_v2_0102/kalshi_data_processed_with_news_attributed.jsonl \
     --model gpt-4o-mini \
     --max_news 100 \
     --batch_size 10 \
@@ -21,8 +21,8 @@ python step4_compute_posterior_attributions.py \
 
 # Polymarket
 python step4_compute_posterior_attributions.py \
-    --input_file ../data/processed_polymarket_v2_0102/polymarket_data_processed_with_news.jsonl \
-    --output_file ../data/processed_polymarket_v2_0102/polymarket_data_processed_with_news_attributed.jsonl \
+    --input_file /mnt/data_from_server1/haofeiy2/social-world-model/data/processed_polymarket_v2_0102/polymarket_data_processed_with_news.jsonl \
+    --output_file /mnt/data_from_server1/haofeiy2/social-world-model/data/processed_polymarket_v2_0102/polymarket_data_processed_with_news_attributed.jsonl \
     --model gpt-4o-mini \
     --max_news 100 \
     --batch_size 10 \

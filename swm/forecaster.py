@@ -50,6 +50,10 @@ class WeightedTrainer(Trainer):
                 acc_pred += (chunk_preds * chunk_weights).sum()
 
         loss = torch.nn.functional.mse_loss(acc_pred, group_label)
+        
+        # Scale loss by group_size to compensate for small weights after softmax
+        # Without this, gradients are scaled down by ~1/group_size due to weight normalization
+        loss = loss * group_size
 
         return loss, acc_pred, group_label
 
@@ -76,28 +80,36 @@ class WeightedTrainer(Trainer):
         return total_loss / max(num_valid_groups, 1)
 
     def prediction_step(self, model, inputs, prediction_loss_only, ignore_keys=None):
-        labels = inputs.pop('labels')
+        labels = inputs.pop('labels')  # Price delta (y_t+1 - y_t)
         weights = inputs.pop('weights')
         group_ids = inputs.pop('group_ids')
+        before_prices = inputs.pop('before_prices')
+        after_prices = inputs.pop('after_prices')
 
         all_losses, all_preds, all_labels = [], [], []
         for group_idx, group in enumerate(torch.unique(group_ids)):
             group_indices = torch.where(group_ids == group)[0]
             # Use group_idx to get the correct label
             group_label = labels[group_idx]
-            loss, pred, label = self._process_group(
+            loss, pred_delta, true_delta = self._process_group(
                 model, inputs, weights, group_indices, group_label, is_prediction=True
             )
 
             if not torch.isnan(loss) and not torch.isinf(loss):
                 all_losses.append(loss)
-                all_preds.append(pred)
-                all_labels.append(label)
+                # Return both delta and absolute price for comprehensive evaluation
+                # predictions: [pred_delta, pred_price]
+                # labels: [true_delta, true_price]
+                before_price = before_prices[group_idx]
+                pred_price = before_price + pred_delta
+                true_price = after_prices[group_idx]
+                all_preds.append(torch.stack([pred_delta, pred_price]))
+                all_labels.append(torch.stack([true_delta, true_price]))
 
         return (
             torch.stack(all_losses).mean(),
-            torch.stack(all_preds),
-            torch.stack(all_labels),
+            torch.stack(all_preds),  # Shape: (batch, 2) - [delta, price]
+            torch.stack(all_labels),  # Shape: (batch, 2) - [delta, price]
         )
 
 
@@ -155,6 +167,8 @@ class MultiEventForecaster:
             all_market_ids = []
             all_event_ids = []
             all_ts = []
+            all_before_prices = []
+            all_after_prices = []
 
             for group_idx, item in enumerate(batch):
                 padded_inputs = torch.nn.functional.pad(
@@ -171,16 +185,20 @@ class MultiEventForecaster:
                 all_market_ids.append(item['market_id'])
                 all_event_ids.append(item['event_id'])
                 all_ts.append(item['t'])
+                all_before_prices.append(item['before_price'])
+                all_after_prices.append(item['after_price'])
 
             return {
                 'input_ids': torch.cat(all_input_ids),
                 'attention_mask': torch.cat(all_attention_masks),
-                'labels': torch.stack(all_labels),  # labels are 0-D tensors, use stack
+                'labels': torch.stack(all_labels),  # Price delta (y_t+1 - y_t)
                 'weights': torch.cat(all_weights),
                 'group_ids': torch.cat(all_group_ids),
                 'market_ids': all_market_ids,
                 'event_ids': all_event_ids,
                 'ts': all_ts,
+                'before_prices': torch.stack(all_before_prices),  # For recovering absolute price
+                'after_prices': torch.stack(all_after_prices),  # Ground truth absolute price
             }
 
         return collate_fn
@@ -218,15 +236,26 @@ class MultiEventForecaster:
             max_news_per_bp=self.max_news_per_bp,
         )
 
+        def compute_metrics(eval_pred):
+            """Compute both delta MSE and absolute price MSE."""
+            predictions, labels = eval_pred
+            # predictions/labels shape: (batch, 2) - [delta, price]
+            pred_delta = predictions[:, 0]
+            pred_price = predictions[:, 1]
+            true_delta = labels[:, 0]
+            true_price = labels[:, 1]
+            return {
+                'delta_mse': mean_squared_error(true_delta, pred_delta),
+                'price_mse': mean_squared_error(true_price, pred_price),
+            }
+
         trainer = WeightedTrainer(
             model=self.model,
             args=training_args,
             train_dataset=train_dataset,
             eval_dataset=valid_dataset,
             data_collator=self._create_collate_fn(),
-            compute_metrics=lambda p: {
-                'mse': mean_squared_error(p.label_ids, p.predictions)
-            },
+            compute_metrics=compute_metrics,
         )
 
         trainer.train()
@@ -275,9 +304,11 @@ class MultiEventForecaster:
             for batch in tqdm(dataloader, desc='Predicting Batches'):
                 input_ids = batch['input_ids'].to(self.model.llm.device)
                 attention_mask = batch['attention_mask'].to(self.model.llm.device)
-                labels = batch['labels'].to(self.model.llm.device)
+                labels = batch['labels'].to(self.model.llm.device)  # Price delta
                 weights = batch['weights'].to(self.model.llm.device)
                 group_ids = batch['group_ids'].to(self.model.llm.device)
+                before_prices = batch['before_prices'].to(self.model.llm.device)
+                after_prices = batch['after_prices'].to(self.model.llm.device)
 
                 for group_idx in range(len(batch['event_ids'])):
                     group_mask = group_ids == group_idx
@@ -291,15 +322,24 @@ class MultiEventForecaster:
                     group_weights = weights[group_mask]
                     group_weights = group_weights / group_weights.sum()
 
-                    weighted_pred = (group_preds * group_weights).sum()
+                    pred_delta = (group_preds * group_weights).sum()
+                    
+                    # Recover absolute price from predicted delta
+                    before_price = before_prices[group_idx].item()
+                    pred_price = before_price + pred_delta.item()
+                    true_price = after_prices[group_idx].item()
+                    true_delta = labels[group_idx].item()
 
                     results.append(
                         {
                             'event_id': batch['event_ids'][group_idx],
                             'market_id': batch['market_ids'][group_idx],
                             't': batch['ts'][group_idx],
-                            'prediction': weighted_pred.item(),
-                            'ground_truth': labels[group_idx].item(),
+                            'pred_delta': pred_delta.item(),  # Predicted price change
+                            'true_delta': true_delta,  # True price change
+                            'pred_price': pred_price,  # Predicted absolute price
+                            'true_price': true_price,  # True absolute price
+                            'before_price': before_price,  # Price before change
                         }
                     )
         return results
@@ -439,15 +479,26 @@ class RAGMultiEventForecaster(MultiEventForecaster):
             cache_dir=self.cache_dir,
         )
 
+        def compute_metrics(eval_pred):
+            """Compute both delta MSE and absolute price MSE."""
+            predictions, labels = eval_pred
+            # predictions/labels shape: (batch, 2) - [delta, price]
+            pred_delta = predictions[:, 0]
+            pred_price = predictions[:, 1]
+            true_delta = labels[:, 0]
+            true_price = labels[:, 1]
+            return {
+                'delta_mse': mean_squared_error(true_delta, pred_delta),
+                'price_mse': mean_squared_error(true_price, pred_price),
+            }
+
         trainer = WeightedTrainer(
             model=self.model,
             args=training_args,
             train_dataset=train_dataset,
             eval_dataset=valid_dataset,
             data_collator=self._create_collate_fn(),
-            compute_metrics=lambda p: {
-                'mse': mean_squared_error(p.label_ids, p.predictions)
-            },
+            compute_metrics=compute_metrics,
         )
 
         trainer.train()

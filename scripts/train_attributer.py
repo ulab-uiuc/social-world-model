@@ -17,7 +17,7 @@ from peft import LoraConfig
 from transformers import TrainingArguments
 
 from swm.attributer import BasicPriorAttributer
-from swm.utils.utils import load_market_data, set_seed
+from swm.utils.utils import load_flat_samples_as_markets, set_seed
 
 
 def parse_args():
@@ -62,10 +62,16 @@ def parse_args():
     # Other
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--sanity-check', action='store_true')
+    parser.add_argument('--overfit', action='store_true',
+                        help='Overfit on a tiny subset to verify model can learn')
+    parser.add_argument('--overfit-samples', type=int, default=4,
+                        help='Number of samples to use for overfit test (default: 4)')
     parser.add_argument('--max-news-per-bp', type=int, default=50,
                         help='Max news articles per breakpoint (default: 50)')
     parser.add_argument('--target-temperature', type=float, default=0.5,
                         help='Temperature for target distribution (lower=sharper, default: 0.5)')
+    parser.add_argument('--wandb-project', type=str, default='social-world-model',
+                        help='Wandb project name (default: social-world-model)')
     
     return parser.parse_args()
 
@@ -74,15 +80,27 @@ def main():
     args = parse_args()
     set_seed(args.seed)
     
-    # Load data with precomputed attributions
+    # Load flat samples and convert to MarketData format
     print(f"Loading training data from {args.train_data_path}...")
-    train_data = load_market_data(args.train_data_path)
+    train_data = load_flat_samples_as_markets(args.train_data_path)
     print(f"Loading validation data from {args.valid_data_path}...")
-    valid_data = load_market_data(args.valid_data_path)
+    valid_data = load_flat_samples_as_markets(args.valid_data_path)
     
     if args.sanity_check:
         train_data = train_data[:2]
         valid_data = valid_data[:2]
+    
+    # Overfit mode: use tiny subset, same data for train/valid
+    if args.overfit:
+        print(f"[OVERFIT MODE] Using {args.overfit_samples} samples for overfitting test")
+        train_data = train_data[:args.overfit_samples]
+        valid_data = train_data  # Same data for train and valid
+        args.epochs = 100  # Many epochs to overfit
+        args.eval_steps = 10
+        args.logging_steps = 1
+        args.save_steps = 50
+        args.learning_rate = 1e-4  # Higher learning rate
+        args.lora_dropout = 0.0  # No dropout for overfitting
     
     # Helper to check if market has attributions in any breakpoint
     def has_attributions(market):

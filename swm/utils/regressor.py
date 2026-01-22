@@ -35,6 +35,7 @@ class LLMRegressor(PreTrainedModel):
         self.llm = AutoModelForCausalLM.from_pretrained(config.base_model_name_or_path)
         hidden_size = self.llm.config.hidden_size
         self.regression_head = nn.Sequential(
+            nn.LayerNorm(hidden_size),  # Normalize hidden states for consistent init
             nn.Linear(hidden_size, 256),
             nn.ReLU(),
             nn.Dropout(0.1),

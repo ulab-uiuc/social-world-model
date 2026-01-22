@@ -10,7 +10,7 @@ python step3b_crawl_normal_news.py \
     --llm_model gpt-4o-mini \
     --skip_existing \
     --input_file /mnt/data_from_server1/haofeiy2/social-world-model/data/processed_kalshi_v2_0102/kalshi_data_processed.jsonl \
-    --output_file /mnt/data_from_server1/haofeiy2/social-world-model/data/kalshi_normal_points_with_news.jsonl
+    --output_file /mnt/data_from_server1/haofeiy2/social-world-model/data/processed_kalshi_v2_0102/kalshi_normalpoint_with_news.jsonl
 
 # Polymarket
 python step3b_crawl_normal_news.py \
@@ -21,4 +21,4 @@ python step3b_crawl_normal_news.py \
     --llm_model gpt-4o-mini \
     --skip_existing \
     --input_file /mnt/data_from_server1/haofeiy2/social-world-model/data/processed_polymarket_v2_0102/polymarket_data_processed.jsonl \
-    --output_file /mnt/data_from_server1/haofeiy2/social-world-model/data/polymarket_normal_points_with_news.jsonl
+    --output_file /mnt/data_from_server1/haofeiy2/social-world-model/data/processed_kalshi_v2_0102/polymarket_normalpoint_with_news.jsonl

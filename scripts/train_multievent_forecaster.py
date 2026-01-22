@@ -15,7 +15,7 @@ from peft import LoraConfig
 from transformers import TrainingArguments
 
 from swm.forecaster import MultiEventForecaster
-from swm.utils.utils import load_market_data, set_seed
+from swm.utils.utils import load_flat_samples_as_markets, set_seed
 
 
 def parse_args():
@@ -60,6 +60,10 @@ def parse_args():
     # Other
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--sanity-check', action='store_true')
+    parser.add_argument('--overfit', action='store_true',
+                        help='Overfit on a tiny subset to verify model can learn')
+    parser.add_argument('--overfit-samples', type=int, default=4,
+                        help='Number of samples to use for overfit test (default: 4)')
     parser.add_argument('--max-news-per-bp', type=int, default=30,
                         help='Max news articles per breakpoint (default: 30)')
     
@@ -78,39 +82,47 @@ def main():
     import os
     os.environ['WANDB_PROJECT'] = args.wandb_project
     
-    # Load data with precomputed attributions
+    # Load flat samples and convert to MarketData format
     print(f"Loading training data from {args.train_data_path}...")
-    train_data = load_market_data(args.train_data_path)
+    train_data = load_flat_samples_as_markets(args.train_data_path)
     print(f"Loading validation data from {args.valid_data_path}...")
-    valid_data = load_market_data(args.valid_data_path)
+    valid_data = load_flat_samples_as_markets(args.valid_data_path)
     
     if args.sanity_check:
         train_data = train_data[:2]
         valid_data = valid_data[:2]
     
-    # Check attributions are present (attributions are stored in breakpoints, not on market directly)
-    def count_bp_with_attr(markets):
-        total_markets = 0
-        total_bps = 0
+    # Overfit mode: use tiny subset, same data for train/valid
+    if args.overfit:
+        print(f"[OVERFIT MODE] Using {args.overfit_samples} samples for overfitting test")
+        train_data = train_data[:args.overfit_samples]
+        valid_data = train_data  # Same data for train and valid
+        args.epochs = 100  # Many epochs to overfit
+        args.eval_steps = 10
+        args.logging_steps = 1
+        args.save_steps = 50
+        args.learning_rate = 1e-4  # Higher learning rate
+        args.lora_dropout = 0.0  # No dropout for overfitting
+    
+    # Check attributions are present (flat format: each market = one sample)
+    def count_samples_with_attr(markets):
+        """Count samples with attributions. In flat format, each market has one breakpoint."""
+        total = 0
         for m in markets:
             if not m.daily_breakpoints:
                 continue
-            has_attr = False
-            for bp in m.daily_breakpoints:
-                if bp.get('attributions'):
-                    total_bps += 1
-                    has_attr = True
-            if has_attr:
-                total_markets += 1
-        return total_markets, total_bps
+            bp = m.daily_breakpoints[0]
+            if bp.get('attributions'):
+                total += 1
+        return total
     
-    train_markets, train_bps = count_bp_with_attr(train_data)
-    valid_markets, valid_bps = count_bp_with_attr(valid_data)
-    print(f"Train: {train_markets}/{len(train_data)} markets have attributions ({train_bps} breakpoints)")
-    print(f"Valid: {valid_markets}/{len(valid_data)} markets have attributions ({valid_bps} breakpoints)")
+    train_with_attr = count_samples_with_attr(train_data)
+    valid_with_attr = count_samples_with_attr(valid_data)
+    print(f"Train: {train_with_attr}/{len(train_data)} samples have attributions")
+    print(f"Valid: {valid_with_attr}/{len(valid_data)} samples have attributions")
     
-    if train_bps == 0:
-        raise ValueError("No training data has attributions. Run step4_compute_posterior_attributions.py first.")
+    if train_with_attr == 0:
+        raise ValueError("No training data has attributions. Run step4_fix_attributions_to_flat.py first.")
     
     # Initialize model
     target_modules = [m.strip() for m in args.target_modules.split(',')]
