@@ -124,7 +124,7 @@ class KLDivergenceTrainer(Trainer):
                 all_labels.append(p_dist)
 
         if not all_losses:
-            return (torch.tensor(0.0), None, None)
+            return (torch.tensor(0.0, device=device), None, None)
 
         # Return only loss - can't stack preds/labels as they have different sizes per group
         # The eval loss is the main metric we care about

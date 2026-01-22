@@ -10,12 +10,12 @@ conda activate social-wm
 
 # Kalshi data
 # 0.6B: smaller LoRA rank, effective batch size = 1 * 8 = 8
-CUDA_VISIBLE_DEVICES=0 python train_attributer.py \
+CUDA_VISIBLE_DEVICES=4 python train_attributer.py \
     --train-data-path /mnt/data_from_server1/haofeiy2/social-world-model/data/splitted_kalshi_v2_0102/kalshi_data_processed_with_news_attributed_train_2025-11-01.jsonl \
     --valid-data-path /mnt/data_from_server1/haofeiy2/social-world-model/data/splitted_kalshi_v2_0102/kalshi_data_processed_with_news_attributed_test_2025-11-01.jsonl \
     --output-dir ../saves/prior_attributer_kalshi_06b \
     --model-name Qwen/Qwen3-0.6B \
-    --eval-steps 50 \
+    --eval-steps 500 \
     --save-steps 50 \
     --train-batch-size 1 \
     --gradient-accumulation-steps 8 \
@@ -69,7 +69,7 @@ echo "Kalshi attributer training complete!"
 # ============================================================
 
 # Polymarket 0.6B
-CUDA_VISIBLE_DEVICES=8 python train_attributer.py \
+CUDA_VISIBLE_DEVICES=2 python train_attributer.py \
     --train-data-path /mnt/data_from_server1/haofeiy2/social-world-model/data/splitted_polymarket_v2_0102/polymarket_data_processed_with_news_attributed_train_2025-11-01.jsonl \
     --valid-data-path /mnt/data_from_server1/haofeiy2/social-world-model/data/splitted_polymarket_v2_0102/polymarket_data_processed_with_news_attributed_test_2025-11-01.jsonl \
     --output-dir ../saves/prior_attributer_polymarket_06b \

@@ -25,6 +25,7 @@ python step3b_crawl_normal_news.py \
     --samples_per_market 3 \
     --min_days_from_breakpoint 3 \
     --price_change_threshold 0.05 \
+    --skip_existing \
     --llm_model gpt-4o-mini \
     --input_file "${DATA_DIR}/processed_polymarket_v2_0102/polymarket_data_processed.jsonl" \
     --output_file "${DATA_DIR}/processed_polymarket_v2_0102/polymarket_data_processed_normalpoint_with_news.jsonl"
