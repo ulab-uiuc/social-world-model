@@ -214,7 +214,7 @@ class MultiEventForecasterDataset(BaseDataset):
         ]
         
         lines.append('\nRecent price history:')
-        for day in history_before_target[-5:]:  # Last 5 days for brevity
+        for day in history_before_target:  # Last 5 days for brevity
             date = unix_to_date(day['t'])
             lines.append(f"  {date}: {day['p']:.3f}")
         
@@ -248,7 +248,7 @@ class MultiEventForecasterDataset(BaseDataset):
         ]
         
         lines.append('\nRecent price history:')
-        for day in history_before_target[-5:]:  # Last 5 days for brevity
+        for day in history_before_target:  # Last 5 days for brevity
             date = unix_to_date(day['t'])
             lines.append(f"  {date}: {day['p']:.3f}")
         
@@ -406,7 +406,7 @@ class PriorAttributerDataset(BaseDataset):
         ]
         
         lines.append('\nRecent price history:')
-        for day in history_before_target[-5:]:
+        for day in history_before_target:
             date = unix_to_date(day['t'])
             lines.append(f"  {date}: {day['p']:.3f}")
         
@@ -451,7 +451,7 @@ class PriorAttributerDataset(BaseDataset):
         ]
         
         lines.append('\nRecent price history:')
-        for day in history_before_target[-5:]:
+        for day in history_before_target:
             date = unix_to_date(day['t'])
             lines.append(f"  {date}: {day['p']:.3f}")
         
@@ -475,7 +475,7 @@ class PriorAttributerDataset(BaseDataset):
             lines.append(f'Description: {market.description}')
         
         lines.append('\nRecent price history:')
-        for day in window_history[-5:]:
+        for day in window_history:
             date = unix_to_date(day['t'])
             lines.append(f"  {date}: {day['p']:.3f}")
         
@@ -536,7 +536,7 @@ class RAGMultiEventForecasterDataset(MultiEventForecasterDataset):
         ]
         
         lines.append('\nRecent price history:')
-        for day in history_before_target[-5:]:
+        for day in history_before_target:
             date = unix_to_date(day['t'])
             lines.append(f"  {date}: {day['p']:.3f}")
         

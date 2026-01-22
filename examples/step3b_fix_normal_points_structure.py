@@ -115,7 +115,24 @@ def fix_normal_point(
     Args:
         min_history: Minimum number of historical points required (same as breakpoint detection).
                      This ensures window_history has at least min_history+1 points.
+    
+    Returns:
+        Fixed point dict, or None if point should be skipped.
+        If point already has correct structure, returns it as-is (with validation).
     """
+    # Check if point already has correct structure (from new crawl script)
+    if all(k in point for k in ['before', 'after', 'window_history']):
+        window_history = point.get('window_history', [])
+        # Validate window_history length (should be window_size + 2 = 17 when window_size=15)
+        expected_len = window_size + 2
+        if len(window_history) >= expected_len:
+            # Already correct format, return as-is
+            return point
+        else:
+            # window_history too short, skip this point
+            return None
+    
+    # Old format: need to fix
     # Get timestamp from old format
     timestamp = point.get('timestamp')
     if timestamp is None:
