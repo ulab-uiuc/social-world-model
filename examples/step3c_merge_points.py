@@ -59,6 +59,12 @@ def parse_args():
         default=None,
         help='Output JSONL file with flat format (one sample per line)',
     )
+    parser.add_argument(
+        '--min_window_history',
+        type=int,
+        default=17,
+        help='Minimum window_history length required (default: 17). Samples with shorter window_history will be filtered out.',
+    )
     return parser.parse_args()
 
 
@@ -94,6 +100,7 @@ def main():
     
     # Prepare flat output
     flat_samples = []
+    filtered_short_window = 0  # Count samples filtered due to short window_history
     
     # Prepare nested output writer if needed
     nested_writer = None
@@ -113,10 +120,14 @@ def main():
             'categories': market.get('categories', []),
         }
         
-        # Add breakpoints as flat samples (only if has news)
+        # Add breakpoints as flat samples (only if has news and sufficient window_history)
         for bp in market.get('daily_breakpoints', []):
             news = bp.get('news', [])
             if not news:  # Skip if no news
+                continue
+            window_history = bp.get('window_history', [])
+            if len(window_history) < args.min_window_history:
+                filtered_short_window += 1
                 continue
             flat_sample = {
                 **market_info,
@@ -127,7 +138,7 @@ def main():
                 'z_score': bp.get('z_score'),
                 'window_start': bp.get('window_start'),
                 'window_end': bp.get('window_end'),
-                'window_history': bp.get('window_history', []),
+                'window_history': window_history,
                 'news': news,
             }
             flat_samples.append(flat_sample)
@@ -137,11 +148,15 @@ def main():
             market['normal_points'] = normal_points_map[market_id]
             merged_count += 1
             
-            # Add normal points as flat samples (only if has news)
+            # Add normal points as flat samples (only if has news and sufficient window_history)
             # Normal points now have same structure as breakpoints
             for np in normal_points_map[market_id]:
                 news = np.get('news', [])
                 if not news:  # Skip if no news
+                    continue
+                window_history = np.get('window_history', [])
+                if len(window_history) < args.min_window_history:
+                    filtered_short_window += 1
                     continue
                 flat_sample = {
                     **market_info,
@@ -152,7 +167,7 @@ def main():
                     'z_score': np.get('z_score'),
                     'window_start': np.get('window_start'),
                     'window_end': np.get('window_end'),
-                    'window_history': np.get('window_history', []),
+                    'window_history': window_history,
                     'news': news,
                 }
                 flat_samples.append(flat_sample)
@@ -187,10 +202,11 @@ def main():
     breakpoint_count = sum(1 for s in flat_samples if s['sample_type'] == 'breakpoint')
     normal_count = sum(1 for s in flat_samples if s['sample_type'] == 'normal_point')
     
-    print(f'\nSample statistics (only samples with news):')
+    print(f'\nSample statistics (only samples with news and window_history >= {args.min_window_history}):')
     print(f'  Breakpoints (positive): {breakpoint_count}')
     print(f'  Normal points (negative): {normal_count}')
     print(f'  Total flat samples: {len(flat_samples)}')
+    print(f'  Filtered (short window_history): {filtered_short_window}')
 
 
 if __name__ == '__main__':

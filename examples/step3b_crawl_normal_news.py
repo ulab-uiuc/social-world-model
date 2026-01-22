@@ -432,6 +432,7 @@ def main():
                 'normal_points': normal_points,
             }
             writer.write(result)
+            writer._fp.flush()  # Flush to disk immediately
             markets_with_samples += 1
     
     print(f'\nDone!')
