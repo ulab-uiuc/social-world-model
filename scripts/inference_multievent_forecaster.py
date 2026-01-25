@@ -20,13 +20,58 @@ Usage with PriorAttributer:
 """
 import argparse
 import json
+from datetime import datetime
 from pathlib import Path
+from typing import Any, Dict, List
 
 import jsonlines
 
 from swm.forecaster import MultiEventForecaster
 from swm.attributer import BasicPriorAttributer
-from swm.utils.utils import load_market_data, set_seed
+from swm.utils.utils import load_flat_samples_as_markets, set_seed
+
+
+def unix_to_date(ts: int) -> str:
+    """Convert Unix timestamp to date string."""
+    return datetime.utcfromtimestamp(ts).strftime('%Y-%m-%d')
+
+
+def build_prompt_for_display(
+    question: str,
+    description: str,
+    window_history: List[Dict],
+    target: Dict,
+    news_items: List[Dict],
+) -> str:
+    """Build a human-readable prompt for the output JSON."""
+    lines = [f'Event: {question}']
+    if description:
+        lines.append(f'Description: {description}')
+    
+    # Exclude target point from history
+    target_ts = target.get('t')
+    history_before_target = [
+        day for day in window_history 
+        if day.get('t') != target_ts
+    ]
+    
+    lines.append('\nRecent price history:')
+    for day in history_before_target:
+        date = unix_to_date(day['t'])
+        lines.append(f"  {date}: {day['p']:.3f}")
+    
+    target_date = unix_to_date(target['t'])
+    
+    # Add news items
+    if news_items:
+        lines.append('\nRelevant news:')
+        for i, news in enumerate(news_items[:5], 1):  # Limit to top 5 for display
+            news_title = news.get('title', '')
+            lines.append(f"  [{i}] {news_title}")
+    
+    lines.append(f'\nPredict the probability on {target_date}:')
+    
+    return '\n'.join(lines)
 
 
 def parse_args():
@@ -46,7 +91,7 @@ def parse_args():
                         help='Path to trained PriorAttributer (optional)')
     
     # Model config
-    parser.add_argument('--model-name', type=str, default='Qwen/Qwen2.5-0.5B-Instruct')
+    parser.add_argument('--model-name', type=str, default='Qwen/Qwen3-0.6B')
     parser.add_argument('--cache-dir', type=str, default='./cache')
     parser.add_argument('--max-seq-length', type=int, default=1024)
     parser.add_argument('--batch-size', type=int, default=8)
@@ -65,7 +110,7 @@ def main():
     
     # Load test data
     print(f"Loading test data from {args.test_data_path}...")
-    test_data = load_market_data(args.test_data_path)
+    test_data = load_flat_samples_as_markets(args.test_data_path)
     if args.limit:
         test_data = test_data[:args.limit]
     print(f"Loaded {len(test_data)} markets")
@@ -107,6 +152,26 @@ def main():
             "Either use data with attributions or provide --attributer-path"
         )
     
+    # Build lookup dict from (market_id, t) to original market data for enriching results
+    market_lookup = {}
+    for market in test_data:
+        if not market.daily_breakpoints:
+            continue
+        for bp in market.daily_breakpoints:
+            after = bp.get('after', {})
+            t = after.get('t')
+            if t is not None:
+                key = (market.market_id, t)
+                market_lookup[key] = {
+                    'question': market.question,
+                    'description': market.description or '',
+                    'window_history': bp.get('window_history', []),
+                    'before': bp.get('before', {}),
+                    'after': after,
+                    'news': bp.get('news', []),
+                    'attributions': bp.get('attributions', []),
+                }
+    
     # Run inference
     print("Running inference...")
     results = forecaster.predict(
@@ -115,24 +180,96 @@ def main():
         batch_size=args.batch_size,
     )
     
+    # Enrich results with additional information
+    print("Enriching results with detailed information...")
+    enriched_results = []
+    for result in results:
+        key = (result['market_id'], result['t'])
+        market_info = market_lookup.get(key, {})
+        
+        # Get related news items (those with positive attribution scores)
+        news_list = market_info.get('news', [])
+        attributions = market_info.get('attributions', [])
+        related_news = []
+        for attr in attributions:
+            news_idx = attr.get('news_idx', 0)
+            score = attr.get('score') or 0
+            if score > 0 and news_idx < len(news_list):
+                news_item = news_list[news_idx].copy()
+                news_item['attribution_score'] = score
+                related_news.append(news_item)
+        # Sort by attribution score descending
+        related_news.sort(key=lambda x: x.get('attribution_score', 0), reverse=True)
+        
+        # Build input prompt for display
+        input_prompt = build_prompt_for_display(
+            question=market_info.get('question', ''),
+            description=market_info.get('description', ''),
+            window_history=market_info.get('window_history', []),
+            target=market_info.get('after', {}),
+            news_items=related_news,
+        )
+        
+        # Calculate errors
+        delta_error = result['pred_delta'] - result['true_delta']
+        price_error = result['pred_price'] - result['true_price']
+        abs_delta_error = abs(delta_error)
+        abs_price_error = abs(price_error)
+        
+        enriched_result = {
+            # Original fields
+            'event_id': result['event_id'],
+            'market_id': result['market_id'],
+            't': result['t'],
+            'date': unix_to_date(result['t']) if result['t'] else None,
+            
+            # Question and context
+            'question': market_info.get('question', ''),
+            
+            # Window history
+            'window_history': market_info.get('window_history', []),
+            
+            # Input prompt
+            'input_prompt': input_prompt,
+            
+            # Related news used for prediction
+            'related_news': related_news[:10],  # Limit to top 10
+            
+            # Predictions
+            'pred_delta': result['pred_delta'],
+            'pred_price': result['pred_price'],
+            
+            # Ground truth
+            'true_delta': result['true_delta'],
+            'true_price': result['true_price'],
+            'before_price': result['before_price'],
+            
+            # Errors
+            'delta_error': delta_error,
+            'price_error': price_error,
+            'abs_delta_error': abs_delta_error,
+            'abs_price_error': abs_price_error,
+        }
+        enriched_results.append(enriched_result)
+    
     # Save results
     output_path = Path(args.output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
-    print(f"Saving {len(results)} predictions to {args.output_path}...")
+    print(f"Saving {len(enriched_results)} predictions to {args.output_path}...")
     with jsonlines.open(output_path, mode='w') as writer:
-        for result in results:
+        for result in enriched_results:
             writer.write(result)
     
     # Compute and print metrics
-    if results:
+    if enriched_results:
         import numpy as np
         
         # Extract delta and price predictions
-        pred_delta = np.array([r['pred_delta'] for r in results])
-        true_delta = np.array([r['true_delta'] for r in results])
-        pred_price = np.array([r['pred_price'] for r in results])
-        true_price = np.array([r['true_price'] for r in results])
+        pred_delta = np.array([r['pred_delta'] for r in enriched_results])
+        true_delta = np.array([r['true_delta'] for r in enriched_results])
+        pred_price = np.array([r['pred_price'] for r in enriched_results])
+        true_price = np.array([r['true_price'] for r in enriched_results])
         
         # Delta metrics (what the model directly predicts)
         delta_mse = np.mean((pred_delta - true_delta) ** 2)
@@ -145,7 +282,7 @@ def main():
         price_mae = np.mean(np.abs(pred_price - true_price))
         
         # Correlation
-        if len(results) > 1:
+        if len(enriched_results) > 1:
             delta_corr = np.corrcoef(pred_delta, true_delta)[0, 1]
             price_corr = np.corrcoef(pred_price, true_price)[0, 1]
         else:
@@ -161,7 +298,7 @@ def main():
         print(f"Evaluation Results")
         print(f"{'='*60}")
         print(f"  Model: {args.model_path}")
-        print(f"  Test samples: {len(results)}")
+        print(f"  Test samples: {len(enriched_results)}")
         print(f"\n  Delta Metrics (y_t+1 - y_t):")
         print(f"    MSE:  {delta_mse:.6f}")
         print(f"    RMSE: {delta_rmse:.6f}")
@@ -179,7 +316,7 @@ def main():
         metrics_path = output_path.with_suffix('.metrics.json')
         metrics = {
             'model_path': args.model_path,
-            'test_samples': len(results),
+            'test_samples': len(enriched_results),
             'delta_mse': float(delta_mse),
             'delta_rmse': float(delta_rmse),
             'delta_mae': float(delta_mae),

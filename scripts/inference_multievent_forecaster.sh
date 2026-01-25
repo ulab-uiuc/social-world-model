@@ -13,9 +13,9 @@ cd /home/haofeiy2/social-world-model/scripts
 # ============================================================
 
 # Kalshi 0.6B with precomputed attributions
-CUDA_VISIBLE_DEVICES=0 python inference_multievent_forecaster.py \
+CUDA_VISIBLE_DEVICES=1 python inference_multievent_forecaster.py \
     --test-data-path /mnt/data_from_server1/haofeiy2/social-world-model/data/splitted_kalshi_v2_0102/kalshi_data_processed_with_news_attributed_test_2025-11-01.jsonl \
-    --model-path ../saves/multievent_forecaster_kalshi/checkpoint-500 \
+    --model-path ../saves/multievent_forecaster_kalshi/checkpoint-550 \
     --model-name Qwen/Qwen3-0.6B \
     --output-path ../results/forecaster_kalshi_0.6b_precomputed.jsonl \
     --batch-size 4 &
@@ -48,8 +48,8 @@ echo "Kalshi precomputed evaluations complete!"
 # Kalshi 0.6B end-to-end
 CUDA_VISIBLE_DEVICES=4 python inference_multievent_forecaster.py \
     --test-data-path /mnt/data_from_server1/haofeiy2/social-world-model/data/splitted_kalshi_v2_0102/kalshi_data_processed_with_news_test_2025-11-01.jsonl \
-    --model-path ../saves/multievent_forecaster_kalshi/checkpoint-500 \
-    --attributer-path ../saves/prior_attributer_kalshi_06b/checkpoint-500 \
+    --model-path ../saves/multievent_forecaster_kalshi/checkpoint-550 \
+    --attributer-path ../saves/prior_attributer_kalshi_06b/checkpoint-3450 \
     --model-name Qwen/Qwen3-0.6B \
     --output-path ../results/forecaster_kalshi_0.6b_e2e.jsonl \
     --batch-size 4 &
