@@ -81,11 +81,13 @@ class MultiEventForecasterDataset(BaseDataset):
         cache_dir: str,
         use_cache: bool = False,
         max_news_per_bp: int = 50,
+        max_history_len: int = None,  # Max number of history points to use (None = use all)
     ):
         super().__init__(cache_dir=cache_dir, use_cache=use_cache)
         self.markets = markets
         self.tokenizer = tokenizer
         self.max_news_per_bp = max_news_per_bp
+        self.max_history_len = max_history_len
         self.datapoints = self._load_or_create_datapoints()
 
     def _compute_hash(self) -> str:
@@ -213,8 +215,12 @@ class MultiEventForecasterDataset(BaseDataset):
             if day.get('t') != target_ts
         ]
         
+        # Truncate history if max_history_len is set (keep most recent)
+        if self.max_history_len is not None and len(history_before_target) > self.max_history_len:
+            history_before_target = history_before_target[-self.max_history_len:]
+        
         lines.append('\nRecent price history:')
-        for day in history_before_target:  # Last 5 days for brevity
+        for day in history_before_target:
             date = unix_to_date(day['t'])
             lines.append(f"  {date}: {day['p']:.3f}")
         
@@ -247,8 +253,12 @@ class MultiEventForecasterDataset(BaseDataset):
             if day.get('t') != target_ts
         ]
         
+        # Truncate history if max_history_len is set (keep most recent)
+        if self.max_history_len is not None and len(history_before_target) > self.max_history_len:
+            history_before_target = history_before_target[-self.max_history_len:]
+        
         lines.append('\nRecent price history:')
-        for day in history_before_target:  # Last 5 days for brevity
+        for day in history_before_target:
             date = unix_to_date(day['t'])
             lines.append(f"  {date}: {day['p']:.3f}")
         

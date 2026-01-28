@@ -95,6 +95,10 @@ def parse_args():
     parser.add_argument('--cache-dir', type=str, default='./cache')
     parser.add_argument('--max-seq-length', type=int, default=1024)
     parser.add_argument('--batch-size', type=int, default=8)
+    parser.add_argument('--max-news-per-bp', type=int, default=30,
+                        help='Max news articles per breakpoint')
+    parser.add_argument('--max-history-len', type=int, default=None,
+                        help='Max history points to use (None = use all)')
     
     # Other
     parser.add_argument('--seed', type=int, default=42)
@@ -133,6 +137,8 @@ def main():
         model_name=args.model_name,
         cache_dir=args.cache_dir,
         max_seq_length=args.max_seq_length,
+        max_news_per_bp=args.max_news_per_bp,
+        max_history_len=args.max_history_len,
     )
     forecaster.load(args.model_path)
     
@@ -152,7 +158,15 @@ def main():
             "Either use data with attributions or provide --attributer-path"
         )
     
-    # Build lookup dict from (market_id, t) to original market data for enriching results
+    # Run inference (this may generate attributions if attributer is provided)
+    print("Running inference...")
+    results = forecaster.predict(
+        markets=test_data,
+        attributer=attributer,
+        batch_size=args.batch_size,
+    )
+    
+    # Build lookup dict AFTER predict, so it includes any newly generated attributions
     market_lookup = {}
     for market in test_data:
         if not market.daily_breakpoints:
@@ -171,14 +185,6 @@ def main():
                     'news': bp.get('news', []),
                     'attributions': bp.get('attributions', []),
                 }
-    
-    # Run inference
-    print("Running inference...")
-    results = forecaster.predict(
-        markets=test_data,
-        attributer=attributer,
-        batch_size=args.batch_size,
-    )
     
     # Enrich results with additional information
     print("Enriching results with detailed information...")
@@ -232,7 +238,11 @@ def main():
             # Input prompt
             'input_prompt': input_prompt,
             
-            # Related news used for prediction
+            # All news and attributions (for reproducibility)
+            'news': news_list,
+            'attributions': attributions,
+            
+            # Related news used for prediction (filtered by positive score)
             'related_news': related_news[:10],  # Limit to top 10
             
             # Predictions

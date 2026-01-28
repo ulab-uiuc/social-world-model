@@ -128,6 +128,7 @@ class MultiEventForecaster:
         lora_config: Optional[LoraConfig] = None,
         gradient_checkpointing: bool = False,
         max_news_per_bp: int = 50,
+        max_history_len: int = None,  # Max number of history points (None = use all)
     ):
         self.model_name = model_name
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -137,6 +138,7 @@ class MultiEventForecaster:
         self.lora_config = lora_config
         self.gradient_checkpointing = gradient_checkpointing
         self.max_news_per_bp = max_news_per_bp
+        self.max_history_len = max_history_len
 
     def setup_model(self) -> None:
         config = LLMRegressorConfig(
@@ -228,12 +230,14 @@ class MultiEventForecaster:
             tokenizer=self.tokenizer,
             cache_dir=self.cache_dir,
             max_news_per_bp=self.max_news_per_bp,
+            max_history_len=self.max_history_len,
         )
         valid_dataset = MultiEventForecasterDataset(
             markets=valid_data,
             tokenizer=self.tokenizer,
             cache_dir=self.cache_dir,
             max_news_per_bp=self.max_news_per_bp,
+            max_history_len=self.max_history_len,
         )
 
         def compute_metrics(eval_pred):
@@ -291,6 +295,7 @@ class MultiEventForecaster:
             tokenizer=self.tokenizer,
             cache_dir=self.cache_dir,
             max_news_per_bp=self.max_news_per_bp,
+            max_history_len=self.max_history_len,
         )
         dataloader = DataLoader(
             dataset,
@@ -300,6 +305,7 @@ class MultiEventForecaster:
         )
         self.model.eval()
         results = []
+        chunk_size = 8  # Same as training for consistency
         with torch.no_grad():
             for batch in tqdm(dataloader, desc='Predicting Batches'):
                 input_ids = batch['input_ids'].to(self.model.llm.device)
@@ -312,17 +318,27 @@ class MultiEventForecaster:
 
                 for group_idx in range(len(batch['event_ids'])):
                     group_mask = group_ids == group_idx
-                    group_inputs = {
-                        'input_ids': input_ids[group_mask],
-                        'attention_mask': attention_mask[group_mask],
-                    }
-
-                    group_preds = self.model(**group_inputs).view(-1)
-
+                    group_indices = torch.where(group_mask)[0]
+                    group_size = len(group_indices)
+                    
+                    # Normalize weights with epsilon (same as training)
                     group_weights = weights[group_mask]
-                    group_weights = group_weights / group_weights.sum()
-
-                    pred_delta = (group_preds * group_weights).sum()
+                    normalized_weights = group_weights / (group_weights.sum() + 1e-8)
+                    
+                    # Process in chunks (same as training) for memory efficiency
+                    acc_pred = 0.0
+                    for i in range(0, group_size, chunk_size):
+                        chunk_indices = group_indices[i : i + chunk_size]
+                        chunk_inputs = {
+                            'input_ids': input_ids[chunk_indices],
+                            'attention_mask': attention_mask[chunk_indices],
+                        }
+                        chunk_weights = normalized_weights[i : i + chunk_size]
+                        
+                        chunk_preds = self.model(**chunk_inputs).view(-1)
+                        acc_pred += (chunk_preds * chunk_weights).sum()
+                    
+                    pred_delta = acc_pred
                     
                     # Recover absolute price from predicted delta
                     before_price = before_prices[group_idx].item()
@@ -547,6 +563,7 @@ class RAGMultiEventForecaster(MultiEventForecaster):
         
         self.model.eval()
         results = []
+        chunk_size = 8  # Same as training for consistency
         with torch.no_grad():
             for batch in tqdm(dataloader, desc='Predicting Batches'):
                 input_ids = batch['input_ids'].to(self.model.llm.device)
@@ -554,26 +571,49 @@ class RAGMultiEventForecaster(MultiEventForecaster):
                 labels = batch['labels'].to(self.model.llm.device)
                 weights = batch['weights'].to(self.model.llm.device)
                 group_ids = batch['group_ids'].to(self.model.llm.device)
+                before_prices = batch['before_prices'].to(self.model.llm.device)
+                after_prices = batch['after_prices'].to(self.model.llm.device)
 
                 for group_idx in range(len(batch['event_ids'])):
                     group_mask = group_ids == group_idx
-                    group_inputs = {
-                        'input_ids': input_ids[group_mask],
-                        'attention_mask': attention_mask[group_mask],
-                    }
-
-                    group_preds = self.model(**group_inputs).view(-1)
+                    group_indices = torch.where(group_mask)[0]
+                    group_size = len(group_indices)
+                    
+                    # Normalize weights with epsilon (same as training)
                     group_weights = weights[group_mask]
-                    group_weights = group_weights / group_weights.sum()
-                    weighted_pred = (group_preds * group_weights).sum()
+                    normalized_weights = group_weights / (group_weights.sum() + 1e-8)
+                    
+                    # Process in chunks (same as training) for memory efficiency
+                    acc_pred = 0.0
+                    for i in range(0, group_size, chunk_size):
+                        chunk_indices = group_indices[i : i + chunk_size]
+                        chunk_inputs = {
+                            'input_ids': input_ids[chunk_indices],
+                            'attention_mask': attention_mask[chunk_indices],
+                        }
+                        chunk_weights = normalized_weights[i : i + chunk_size]
+                        
+                        chunk_preds = self.model(**chunk_inputs).view(-1)
+                        acc_pred += (chunk_preds * chunk_weights).sum()
+                    
+                    pred_delta = acc_pred
+                    
+                    # Recover absolute price from predicted delta
+                    before_price = before_prices[group_idx].item()
+                    pred_price = before_price + pred_delta.item()
+                    true_price = after_prices[group_idx].item()
+                    true_delta = labels[group_idx].item()
 
                     results.append(
                         {
                             'event_id': batch['event_ids'][group_idx],
                             'market_id': batch['market_ids'][group_idx],
                             't': batch['ts'][group_idx],
-                            'prediction': weighted_pred.item(),
-                            'ground_truth': labels[group_idx].item(),
+                            'pred_delta': pred_delta.item(),
+                            'true_delta': true_delta,
+                            'pred_price': pred_price,
+                            'true_price': true_price,
+                            'before_price': before_price,
                         }
                     )
         return results

@@ -107,6 +107,8 @@ def parse_args():
                         help='Number of samples to use for overfit test (default: 4)')
     parser.add_argument('--max-news-per-bp', type=int, default=30,
                         help='Max news articles per breakpoint (default: 30)')
+    parser.add_argument('--max-history-len', type=int, default=None,
+                        help='Max history points to use (default: None = use all)')
     
     # Wandb
     parser.add_argument('--wandb-project', type=str, default='social-world-model',
@@ -192,6 +194,7 @@ def main():
         lora_config=lora_config,
         gradient_checkpointing=args.gradient_checkpointing,
         max_news_per_bp=args.max_news_per_bp,
+        max_history_len=args.max_history_len,
     )
     
     # Training arguments

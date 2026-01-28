@@ -400,20 +400,32 @@ class BasicPriorAttributer:
             all_input_ids.append(encoding['input_ids'])
             all_attention_masks.append(encoding['attention_mask'])
         
-        # Stack and move to device
-        input_ids = torch.cat(all_input_ids, dim=0).to(self.model.llm.device)
-        attention_mask = torch.cat(all_attention_masks, dim=0).to(self.model.llm.device)
+        # Stack tensors
+        input_ids = torch.cat(all_input_ids, dim=0)
+        attention_mask = torch.cat(all_attention_masks, dim=0)
         
-        # Get model predictions
+        # Get model predictions in chunks to avoid OOM
         self.model.eval()
+        chunk_size = 8  # Process 8 news items at a time
+        all_logits = []
+        
         with torch.no_grad():
-            logits = self.model(input_ids=input_ids, attention_mask=attention_mask)
-            if logits.dim() == 2 and logits.size(-1) == 1:
-                logits = logits.squeeze(-1)
+            for i in range(0, input_ids.size(0), chunk_size):
+                chunk_input_ids = input_ids[i:i+chunk_size].to(self.model.llm.device)
+                chunk_attention_mask = attention_mask[i:i+chunk_size].to(self.model.llm.device)
+                
+                chunk_logits = self.model(
+                    input_ids=chunk_input_ids, 
+                    attention_mask=chunk_attention_mask
+                )
+                if chunk_logits.dim() == 2 and chunk_logits.size(-1) == 1:
+                    chunk_logits = chunk_logits.squeeze(-1)
+                all_logits.append(chunk_logits.cpu())
+            
+            logits = torch.cat(all_logits, dim=0).to(self.model.llm.device)
             
             # Convert to probability distribution
             scores = F.softmax(logits, dim=0)
-        
         # Build attribution results
         attributions = []
         for idx, (news_item, score) in enumerate(zip(news_list[:self.max_news_per_bp], scores)):
@@ -422,6 +434,7 @@ class BasicPriorAttributer:
                 'score': score.item(),
                 'news': news_item,
             })
+        print(attributions[0])
         
         return attributions
     
