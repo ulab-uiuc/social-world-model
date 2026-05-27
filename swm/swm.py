@@ -11,7 +11,7 @@ from tqdm import tqdm
 from transformers import AutoTokenizer, Trainer, TrainingArguments
 
 from .data import MarketData
-from .dataset import BasicMarketDataset, RAGMarketDataset
+from .dataset import MultiEventForecasterDataset, RAGMultiEventForecasterDataset
 from .utils.regressor import LLMRegressor, LLMRegressorConfig
 from .utils.retriever import SimilarityBasedMarketRetriever
 
@@ -56,7 +56,7 @@ class SocialWorldModel:
             market_ids = [x['market_id'] for x in batch]
             event_ids = [x['event_id'] for x in batch]
             ts = [x['t'] for x in batch]
-            outcomes = [x['outcome'] for x in batch]
+            outcomes = [x.get('outcome') for x in batch]
             return {
                 'input_ids': input_ids,
                 'attention_mask': attention_mask,
@@ -77,11 +77,17 @@ class SocialWorldModel:
         if self.model is None:
             self.setup_model()
 
-        train_dataset = BasicMarketDataset(
-            train_data, self.tokenizer, self.cache_dir
+        train_dataset = MultiEventForecasterDataset(
+            train_data,
+            self.tokenizer,
+            self.cache_dir,
+            max_seq_length=self.max_seq_length,
         )
-        valid_dataset = BasicMarketDataset(
-            valid_data, self.tokenizer, self.cache_dir
+        valid_dataset = MultiEventForecasterDataset(
+            valid_data,
+            self.tokenizer,
+            self.cache_dir,
+            max_seq_length=self.max_seq_length,
         )
 
         trainer = Trainer(
@@ -95,14 +101,21 @@ class SocialWorldModel:
             },
         )
         trainer.train()
-        best_model_dir = Path(training_args.output_dir) / 'checkpoint-best'
-        trainer.save_model(best_model_dir)
-        return str(best_model_dir)
+        if trainer.state.best_model_checkpoint:
+            return trainer.state.best_model_checkpoint
+        final_model_dir = Path(training_args.output_dir) / 'final-model'
+        trainer.save_model(final_model_dir)
+        return str(final_model_dir)
 
     def predict(
         self, markets: List[MarketData], batch_size: int = 8
     ) -> Dict[str, Dict[str, float]]:
-        dataset = BasicMarketDataset(markets, self.tokenizer, self.cache_dir)
+        dataset = MultiEventForecasterDataset(
+            markets,
+            self.tokenizer,
+            self.cache_dir,
+            max_seq_length=self.max_seq_length,
+        )
         results = {}
         dataloader = DataLoader(
             dataset,
@@ -201,11 +214,19 @@ class RAGSocialWorldModel(SocialWorldModel):
         valid_similar = {
             m.market_id: self.retriever.find_similar(m) for m in valid_data
         }
-        train_dataset = RAGMarketDataset(
-            train_data, train_similar, self.tokenizer, self.cache_dir
+        train_dataset = RAGMultiEventForecasterDataset(
+            train_data,
+            train_similar,
+            self.tokenizer,
+            self.cache_dir,
+            max_seq_length=self.max_seq_length,
         )
-        valid_dataset = RAGMarketDataset(
-            valid_data, valid_similar, self.tokenizer, self.cache_dir
+        valid_dataset = RAGMultiEventForecasterDataset(
+            valid_data,
+            valid_similar,
+            self.tokenizer,
+            self.cache_dir,
+            max_seq_length=self.max_seq_length,
         )
 
         trainer = Trainer(
@@ -220,17 +241,22 @@ class RAGSocialWorldModel(SocialWorldModel):
         )
 
         trainer.train()
-
-        best_model_dir = Path(training_args.output_dir) / 'checkpoint-best'
-        trainer.save_model(best_model_dir)
-        return str(best_model_dir)
+        if trainer.state.best_model_checkpoint:
+            return trainer.state.best_model_checkpoint
+        final_model_dir = Path(training_args.output_dir) / 'final-model'
+        trainer.save_model(final_model_dir)
+        return str(final_model_dir)
 
     def predict(
         self, markets: List[MarketData], batch_size: int = 8
     ) -> List[Dict[str, Union[str, float]]]:
         similar_markets = {m.market_id: self.retriever.find_similar(m) for m in markets}
-        dataset = RAGMarketDataset(
-            markets, similar_markets, self.tokenizer, self.cache_dir
+        dataset = RAGMultiEventForecasterDataset(
+            markets,
+            similar_markets,
+            self.tokenizer,
+            self.cache_dir,
+            max_seq_length=self.max_seq_length,
         )
         dataloader = DataLoader(
             dataset,

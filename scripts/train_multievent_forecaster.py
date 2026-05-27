@@ -83,6 +83,8 @@ def parse_args():
     parser.add_argument('--weight-decay', type=float, default=0.01)
     parser.add_argument('--warmup-steps', type=int, default=0)
     parser.add_argument('--max-grad-norm', type=float, default=1.0)
+    parser.add_argument('--lr-scheduler-type', type=str, default='linear',
+                        help='LR scheduler type (linear, cosine, cosine_with_restarts)')
     parser.add_argument('--logging-steps', type=int, default=100)
     parser.add_argument('--save-steps', type=int, default=100)
     parser.add_argument('--eval-steps', type=int, default=500)
@@ -97,6 +99,13 @@ def parse_args():
                         help='LoRA rank (renamed from --r to avoid torchrun conflict)')
     parser.add_argument('--target-modules', type=str, default='q_proj,v_proj,k_proj,o_proj',
                         help='Comma-separated LoRA target modules')
+    parser.add_argument('--no-lora', action='store_true',
+                        help='Full fine-tuning without LoRA')
+    parser.add_argument('--pooling-method', type=str, default='last_token',
+                        choices=['last_token', 'mean'],
+                        help='Pooling method for hidden states')
+    parser.add_argument('--target-modules-all', action='store_true',
+                        help='Apply LoRA to all linear layers (not just attention)')
     
     # Other
     parser.add_argument('--seed', type=int, default=42)
@@ -107,7 +116,44 @@ def parse_args():
                         help='Number of samples to use for overfit test (default: 4)')
     parser.add_argument('--max-news-per-bp', type=int, default=30,
                         help='Max news articles per breakpoint (default: 30)')
-    
+    parser.add_argument('--max-history-len', type=int, default=None,
+                        help='Max history points to use (default: None = use all)')
+    parser.add_argument('--predict-absolute-price', action='store_true',
+                        help='Predict absolute price instead of delta')
+    parser.add_argument('--min-positive-attributions', type=int, default=0,
+                        help='Min positive attributions to include sample (default: 0 = include all)')
+    parser.add_argument('--individual-loss', action='store_true',
+                        help='Use per-item loss instead of group weighted-sum loss')
+    parser.add_argument('--loss-type', type=str, default='mse',
+                        choices=['mse', 'huber'],
+                        help='Loss function type (mse or huber)')
+    parser.add_argument('--head-lr-multiplier', type=float, default=20.0,
+                        help='LR multiplier for regression head (default: 20x base LR)')
+    parser.add_argument('--min-max-attribution-score', type=float, default=0.0,
+                        help='Only include breakpoints where max attribution score >= this (default: 0.0 = include all)')
+    parser.add_argument('--weight-temperature', type=float, default=1.0,
+                        help='Temperature for softmax on attribution weights (lower = sharper, default: 1.0)')
+    parser.add_argument('--direction-loss-weight', type=float, default=0.0,
+                        help='Weight for direction classification loss (0 = off, try 0.5-2.0)')
+    parser.add_argument('--null-subsample-ratio', type=float, default=1.0,
+                        help='Fraction of null events (no positive attributions) to keep in TRAIN dataset. '
+                             '1.0=keep all (default), <1.0 rebalances toward has-news to fix under-react bias. '
+                             'Valid set always keeps ratio=1.0.')
+    parser.add_argument('--direction-only', action='store_true',
+                        help='Pure direction classifier (BCE on sign of Δ for |Δ|>=0.02 events). '
+                             'Skips MSE regression entirely. Use with --null-subsample-ratio 0.0.')
+    parser.add_argument('--only-null', action='store_true',
+                        help='Train ONLY on null events (no news). Time-series LM baseline.')
+    parser.add_argument('--window-std-threshold', type=float, default=0.0,
+                        help='Drop events whose pre-BP window price std < this (illiquid filter).'
+                             ' 0.02 = drops ~28%% events on illiquid markets.')
+    parser.add_argument('--null-max-delta', type=float, default=0.0,
+                        help='Drop null events with |Δp|>this (filters retrieval-failure noise).')
+    parser.add_argument('--null-exclude-breakpoint', action='store_true',
+                        help='Drop null events whose sample_type=="breakpoint" (oracle false-neg).')
+    parser.add_argument('--flip-augment', action='store_true',
+                        help='For each event, also emit a 1-p mirror copy (binary market symmetry debias).')
+
     # Wandb
     parser.add_argument('--wandb-project', type=str, default='social-world-model',
                         help='Wandb project name')
@@ -173,17 +219,26 @@ def main():
         raise ValueError("No training data has attributions. Run step4_fix_attributions_to_flat.py first.")
     
     # Initialize model
-    target_modules = [m.strip() for m in args.target_modules.split(',')]
-    print_main(f"LoRA config: r={args.lora_r}, target_modules={target_modules}")
-    
-    lora_config = LoraConfig(
-        r=args.lora_r,
-        lora_alpha=args.lora_alpha,
-        target_modules=target_modules,
-        lora_dropout=args.lora_dropout,
-        bias='none',
-        task_type='CAUSAL_LM',
-    )
+    if args.no_lora:
+        lora_config = None
+        print_main("Full fine-tuning mode (no LoRA)")
+    else:
+        if args.target_modules_all:
+            # Apply LoRA to all linear layers for stronger adaptation
+            from peft.utils import TRANSFORMERS_MODELS_TO_LORA_TARGET_MODULES_MAPPING
+            target_modules = 'all-linear'
+            print_main(f"LoRA config: r={args.lora_r}, target_modules=all-linear")
+        else:
+            target_modules = [m.strip() for m in args.target_modules.split(',')]
+            print_main(f"LoRA config: r={args.lora_r}, target_modules={target_modules}")
+        lora_config = LoraConfig(
+            r=args.lora_r,
+            lora_alpha=args.lora_alpha,
+            target_modules=target_modules,
+            lora_dropout=args.lora_dropout,
+            bias='none',
+            task_type='CAUSAL_LM',
+        )
     
     forecaster = MultiEventForecaster(
         model_name=args.model_name,
@@ -192,7 +247,33 @@ def main():
         lora_config=lora_config,
         gradient_checkpointing=args.gradient_checkpointing,
         max_news_per_bp=args.max_news_per_bp,
+        max_history_len=args.max_history_len,
+        predict_absolute_price=args.predict_absolute_price,
+        min_positive_attributions=args.min_positive_attributions,
+        individual_loss=args.individual_loss,
+        loss_type=args.loss_type,
+        head_lr_multiplier=args.head_lr_multiplier,
+        min_max_attribution_score=args.min_max_attribution_score,
+        weight_temperature=args.weight_temperature,
+        pooling_method=args.pooling_method,
+        direction_loss_weight=args.direction_loss_weight,
+        null_subsample_ratio=args.null_subsample_ratio,
+        direction_only=args.direction_only,
+        only_null=args.only_null,
+        window_std_threshold=args.window_std_threshold,
+        null_max_delta=args.null_max_delta,
+        null_exclude_breakpoint=args.null_exclude_breakpoint,
+        flip_augment=args.flip_augment,
     )
+
+    # HF constraint: load_best_model_at_end=True requires save_steps to be
+    # a round multiple of eval_steps.
+    if args.eval_steps > 0 and args.save_steps % args.eval_steps != 0:
+        print_main(
+            f"Adjusting save_steps from {args.save_steps} to {args.eval_steps} "
+            "to satisfy load_best_model_at_end requirement."
+        )
+        args.save_steps = args.eval_steps
     
     # Training arguments
     training_args = TrainingArguments(
@@ -204,6 +285,7 @@ def main():
         learning_rate=args.learning_rate,
         weight_decay=args.weight_decay,
         warmup_steps=args.warmup_steps,
+        lr_scheduler_type=args.lr_scheduler_type,
         max_grad_norm=args.max_grad_norm,
         logging_steps=args.logging_steps,
         save_steps=args.save_steps,
@@ -211,7 +293,9 @@ def main():
         eval_strategy='steps',
         save_strategy='steps',
         fp16=args.fp16,
-        metric_for_best_model='loss',
+        metric_for_best_model='eval_loss',
+        greater_is_better=False,
+        load_best_model_at_end=True,
         save_safetensors=False,
         remove_unused_columns=False,
         report_to='wandb' if is_main_process() else 'none',
@@ -242,4 +326,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

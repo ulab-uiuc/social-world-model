@@ -85,6 +85,8 @@ def parse_args():
     parser.add_argument('--weight-decay', type=float, default=0.01)
     parser.add_argument('--warmup-steps', type=int, default=0)
     parser.add_argument('--max-grad-norm', type=float, default=1.0)
+    parser.add_argument('--lr-scheduler-type', type=str, default='linear',
+                        help='LR scheduler type (linear, cosine, cosine_with_restarts)')
     parser.add_argument('--logging-steps', type=int, default=100)
     parser.add_argument('--save-steps', type=int, default=100)
     parser.add_argument('--eval-steps', type=int, default=500)
@@ -111,9 +113,13 @@ def parse_args():
                         help='Max news articles per breakpoint (default: 50)')
     parser.add_argument('--target-temperature', type=float, default=0.5,
                         help='Temperature for target distribution (lower=sharper, default: 0.5)')
+    parser.add_argument('--loss-type', type=str, default='kl', choices=['kl', 'mse_rank'],
+                        help='Loss type: kl (KL divergence on softmax) or mse_rank (MSE + ranking)')
     parser.add_argument('--wandb-project', type=str, default='social-world-model',
                         help='Wandb project name (default: social-world-model)')
-    
+    parser.add_argument('--resume-from-checkpoint', type=str, default=None, nargs='?', const='True',
+                        help='Resume from checkpoint. Pass path or use flag alone for auto-detect.')
+
     return parser.parse_args()
 
 
@@ -203,7 +209,17 @@ def main():
         gradient_checkpointing=args.gradient_checkpointing,
         max_news_per_bp=args.max_news_per_bp,
         target_temperature=args.target_temperature,
+        loss_type=args.loss_type,
     )
+
+    # HF constraint: load_best_model_at_end=True requires save_steps to be
+    # a round multiple of eval_steps.
+    if args.eval_steps > 0 and args.save_steps % args.eval_steps != 0:
+        print_main(
+            f"Adjusting save_steps from {args.save_steps} to {args.eval_steps} "
+            "to satisfy load_best_model_at_end requirement."
+        )
+        args.save_steps = args.eval_steps
     
     # Training arguments
     training_args = TrainingArguments(
@@ -217,6 +233,7 @@ def main():
         weight_decay=args.weight_decay,
         warmup_steps=args.warmup_steps,
         max_grad_norm=args.max_grad_norm,
+        lr_scheduler_type=args.lr_scheduler_type,
         logging_steps=args.logging_steps,
         save_steps=args.save_steps,
         eval_steps=args.eval_steps,
@@ -225,7 +242,7 @@ def main():
         fp16=args.fp16,
         metric_for_best_model='eval_loss',
         greater_is_better=False,  # Lower loss is better
-        load_best_model_at_end=False,  # Manual save at end instead
+        load_best_model_at_end=True,
         save_safetensors=False,
         remove_unused_columns=False,
         report_to='wandb' if is_main_process() else 'none',
@@ -237,10 +254,14 @@ def main():
     )
     
     # Train using precomputed attributions (no need to pass posterior_attributer)
+    resume_ckpt = args.resume_from_checkpoint
+    if resume_ckpt == 'True':
+        resume_ckpt = True  # Auto-detect latest checkpoint
     best_checkpoint = attributer.train(
         train_data=train_data,
         valid_data=valid_data,
         training_args=training_args,
+        resume_from_checkpoint=resume_ckpt,
     )
     
     print_main(f"Best model saved to: {best_checkpoint}")
@@ -256,4 +277,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
