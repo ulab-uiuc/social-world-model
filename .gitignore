@@ -169,3 +169,14 @@ cython_debug/
 !**/.gitkeep
 !**/package.json
 !**/package-lock.json
+.worktrees/
+
+# Backup of side experiments + dead-end scripts (kept locally, not versioned)
+scripts/backup_plan/
+
+# Local results / logs / saves
+results/
+logs/
+saves/
+*.log
+wandb/

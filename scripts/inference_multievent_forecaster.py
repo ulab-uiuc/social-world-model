@@ -48,11 +48,11 @@ def build_prompt_for_display(
     if description:
         lines.append(f'Description: {description}')
     
-    # Exclude target point from history
+    # Exclude target point AND future points from history to prevent data leakage
     target_ts = target.get('t')
     history_before_target = [
         day for day in window_history 
-        if day.get('t') != target_ts
+        if day.get('t') < target_ts
     ]
     
     lines.append('\nRecent price history:')
@@ -89,9 +89,27 @@ def parse_args():
     # Optional: use attributer for on-the-fly attribution
     parser.add_argument('--attributer-path', type=str, default=None,
                         help='Path to trained PriorAttributer (optional)')
+    parser.add_argument('--attributer-loss-type', type=str, default='kl',
+                        choices=['kl', 'mse_rank'],
+                        help='Loss the attributer was trained with. MUST match '
+                             'training: mse_rank -> sigmoid scoring, kl -> softmax. '
+                             'Mismatch silently corrupts attribution scores.')
+    parser.add_argument('--null-gate', action='store_true',
+                        help='Two-stage routing: also score the trained "no '
+                             'relevant news" option; if it wins (or exceeds '
+                             '--null-gate-threshold) treat the breakpoint as '
+                             'null (no-news prompt). Else fall back to '
+                             '--score-threshold on the news.')
+    parser.add_argument('--null-gate-threshold', type=float, default=None,
+                        help='If set, null when no-news score >= this. If '
+                             'unset, parameter-free rule: null when the '
+                             'no-news option ranks #1.')
     
     # Model config
     parser.add_argument('--model-name', type=str, default='Qwen/Qwen3-0.6B')
+    parser.add_argument('--attributer-model-name', type=str, default=None,
+                        help='Base model for the attributer (defaults to --model-name). '
+                             'Lets you pair e.g. a 4B attributer with a 0.6B forecaster.')
     parser.add_argument('--cache-dir', type=str, default='./cache')
     parser.add_argument('--max-seq-length', type=int, default=1024)
     parser.add_argument('--batch-size', type=int, default=8)
@@ -100,6 +118,23 @@ def parse_args():
     parser.add_argument('--max-history-len', type=int, default=None,
                         help='Max history points to use (None = use all)')
     
+    # Compatibility
+    parser.add_argument('--predict-absolute-price', action='store_true',
+                        help='Use old checkpoint format that predicts absolute price (not delta)')
+    parser.add_argument('--only-null', action='store_true',
+                        help='Score ONLY null events (no oracle-positive news). For v43-style baselines.')
+    parser.add_argument('--pooling-method', type=str, default=None,
+                        choices=['mean', 'last_token'],
+                        help='Override pooling method (auto-detected from checkpoint by default)')
+
+    # Attribution filtering
+    parser.add_argument('--score-threshold', type=float, default=0.0,
+                        help='Drop news with attribution score below this (e.g. 0.1)')
+    parser.add_argument('--top-k', type=int, default=0,
+                        help='Keep only top-k news by attribution score (0 = keep all)')
+    parser.add_argument('--weight-temperature', type=float, default=1.0,
+                        help='Temperature for softmax on attribution weights (lower = sharper, default: 1.0)')
+
     # Other
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--limit', type=int, default=None,
@@ -139,6 +174,8 @@ def main():
         max_seq_length=args.max_seq_length,
         max_news_per_bp=args.max_news_per_bp,
         max_history_len=args.max_history_len,
+        predict_absolute_price=args.predict_absolute_price,
+        only_null=args.only_null,
     )
     forecaster.load(args.model_path)
     
@@ -147,11 +184,17 @@ def main():
     if args.attributer_path:
         print(f"Loading attributer from {args.attributer_path}...")
         attributer = BasicPriorAttributer(
-            model_name=args.model_name,
+            model_name=args.attributer_model_name or args.model_name,
             cache_dir=args.cache_dir,
             max_seq_length=args.max_seq_length,
+            loss_type=args.attributer_loss_type,
         )
         attributer.load(args.attributer_path)
+        attributer.null_gate = args.null_gate
+        attributer.null_gate_threshold = args.null_gate_threshold
+        if args.null_gate:
+            print(f"Null gate ON (threshold="
+                  f"{args.null_gate_threshold if args.null_gate_threshold is not None else 'argmax/parameter-free'})")
     elif data_with_attr == 0:
         raise ValueError(
             "No precomputed attributions found and no attributer provided. "
@@ -164,6 +207,9 @@ def main():
         markets=test_data,
         attributer=attributer,
         batch_size=args.batch_size,
+        score_threshold=args.score_threshold,
+        top_k=args.top_k,
+        weight_temperature=args.weight_temperature,
     )
     
     # Build lookup dict AFTER predict, so it includes any newly generated attributions
