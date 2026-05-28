@@ -20,11 +20,10 @@ import os
 
 import torch
 import torch.distributed as dist
-from peft import LoraConfig
 from transformers import TrainingArguments
 
 from swm.forecaster import MultiEventForecaster
-from swm.utils.utils import load_flat_samples_as_markets, set_seed
+from swm.utils.utils import load_records, set_seed
 
 
 def is_main_process():
@@ -70,7 +69,6 @@ def parse_args():
     
     # Model config
     parser.add_argument('--model-name', type=str, default='Qwen/Qwen3-0.6B')
-    parser.add_argument('--cache-dir', type=str, default='./cache')
     parser.add_argument('--output-dir', type=str, default='./output')
     parser.add_argument('--max-seq-length', type=int, default=1024)
     
@@ -92,21 +90,11 @@ def parse_args():
     parser.add_argument('--gradient-checkpointing', action='store_true',
                         help='Enable gradient checkpointing to save memory')
     
-    # LoRA config
-    parser.add_argument('--lora-alpha', type=float, default=32)
-    parser.add_argument('--lora-dropout', type=float, default=0.1)
-    parser.add_argument('--lora-r', type=int, default=16,
-                        help='LoRA rank (renamed from --r to avoid torchrun conflict)')
-    parser.add_argument('--target-modules', type=str, default='q_proj,v_proj,k_proj,o_proj',
-                        help='Comma-separated LoRA target modules')
-    parser.add_argument('--no-lora', action='store_true',
-                        help='Full fine-tuning without LoRA')
     parser.add_argument('--pooling-method', type=str, default='last_token',
                         choices=['last_token', 'mean'],
                         help='Pooling method for hidden states')
-    parser.add_argument('--target-modules-all', action='store_true',
-                        help='Apply LoRA to all linear layers (not just attention)')
-    
+
+
     # Other
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--sanity-check', action='store_true')
@@ -114,45 +102,17 @@ def parse_args():
                         help='Overfit on a tiny subset to verify model can learn')
     parser.add_argument('--overfit-samples', type=int, default=4,
                         help='Number of samples to use for overfit test (default: 4)')
-    parser.add_argument('--max-news-per-bp', type=int, default=30,
-                        help='Max news articles per breakpoint (default: 30)')
-    parser.add_argument('--max-history-len', type=int, default=None,
-                        help='Max history points to use (default: None = use all)')
-    parser.add_argument('--predict-absolute-price', action='store_true',
-                        help='Predict absolute price instead of delta')
-    parser.add_argument('--min-positive-attributions', type=int, default=0,
-                        help='Min positive attributions to include sample (default: 0 = include all)')
-    parser.add_argument('--individual-loss', action='store_true',
-                        help='Use per-item loss instead of group weighted-sum loss')
-    parser.add_argument('--loss-type', type=str, default='mse',
-                        choices=['mse', 'huber'],
-                        help='Loss function type (mse or huber)')
+    parser.add_argument('--max-news', type=int, default=30,
+                        help='Max news articles per record (default: 30)')
     parser.add_argument('--head-lr-multiplier', type=float, default=20.0,
                         help='LR multiplier for regression head (default: 20x base LR)')
-    parser.add_argument('--min-max-attribution-score', type=float, default=0.0,
-                        help='Only include breakpoints where max attribution score >= this (default: 0.0 = include all)')
-    parser.add_argument('--weight-temperature', type=float, default=1.0,
-                        help='Temperature for softmax on attribution weights (lower = sharper, default: 1.0)')
-    parser.add_argument('--direction-loss-weight', type=float, default=0.0,
-                        help='Weight for direction classification loss (0 = off, try 0.5-2.0)')
     parser.add_argument('--null-subsample-ratio', type=float, default=1.0,
                         help='Fraction of null events (no positive attributions) to keep in TRAIN dataset. '
-                             '1.0=keep all (default), <1.0 rebalances toward has-news to fix under-react bias. '
+                             '1.0=keep all (default), <1.0 rebalances toward has-news. '
                              'Valid set always keeps ratio=1.0.')
-    parser.add_argument('--direction-only', action='store_true',
-                        help='Pure direction classifier (BCE on sign of Δ for |Δ|>=0.02 events). '
-                             'Skips MSE regression entirely. Use with --null-subsample-ratio 0.0.')
-    parser.add_argument('--only-null', action='store_true',
-                        help='Train ONLY on null events (no news). Time-series LM baseline.')
     parser.add_argument('--window-std-threshold', type=float, default=0.0,
-                        help='Drop events whose pre-BP window price std < this (illiquid filter).'
-                             ' 0.02 = drops ~28%% events on illiquid markets.')
-    parser.add_argument('--null-max-delta', type=float, default=0.0,
-                        help='Drop null events with |Δp|>this (filters retrieval-failure noise).')
-    parser.add_argument('--null-exclude-breakpoint', action='store_true',
-                        help='Drop null events whose sample_type=="breakpoint" (oracle false-neg).')
-    parser.add_argument('--flip-augment', action='store_true',
-                        help='For each event, also emit a 1-p mirror copy (binary market symmetry debias).')
+                        help='Drop records whose history price std < this (illiquid filter).'
+                             ' 0.02 = drops ~28%% records on illiquid markets.')
 
     # Wandb
     parser.add_argument('--wandb-project', type=str, default='social-world-model',
@@ -176,94 +136,44 @@ def main():
     
     print_main(f"Distributed training: rank={rank}, world_size={world_size}, local_rank={local_rank}")
     
-    # Load flat samples and convert to MarketData format
     print_main(f"Loading training data from {args.train_data_path}...")
-    train_data = load_flat_samples_as_markets(args.train_data_path)
+    train_records = load_records(args.train_data_path)
     print_main(f"Loading validation data from {args.valid_data_path}...")
-    valid_data = load_flat_samples_as_markets(args.valid_data_path)
-    
+    valid_records = load_records(args.valid_data_path)
+
     if args.sanity_check:
-        train_data = train_data[:2]
-        valid_data = valid_data[:2]
-    
-    # Overfit mode: use tiny subset, same data for train/valid
+        train_records = train_records[:2]
+        valid_records = valid_records[:2]
+
     if args.overfit:
-        print_main(f"[OVERFIT MODE] Using {args.overfit_samples} samples for overfitting test")
-        train_data = train_data[:args.overfit_samples]
-        valid_data = train_data  # Same data for train and valid
-        args.epochs = 100  # Many epochs to overfit
+        print_main(f"[OVERFIT MODE] Using {args.overfit_samples} records for overfitting test")
+        train_records = train_records[:args.overfit_samples]
+        valid_records = train_records
+        args.epochs = 100
         args.eval_steps = 10
         args.logging_steps = 1
         args.save_steps = 50
-        args.learning_rate = 1e-4  # Higher learning rate
-        args.lora_dropout = 0.0  # No dropout for overfitting
-    
-    # Check attributions are present (flat format: each market = one sample)
-    def count_samples_with_attr(markets):
-        """Count samples with attributions. In flat format, each market has one breakpoint."""
-        total = 0
-        for m in markets:
-            if not m.daily_breakpoints:
-                continue
-            bp = m.daily_breakpoints[0]
-            if bp.get('attributions'):
-                total += 1
-        return total
-    
-    train_with_attr = count_samples_with_attr(train_data)
-    valid_with_attr = count_samples_with_attr(valid_data)
-    print_main(f"Train: {train_with_attr}/{len(train_data)} samples have attributions")
-    print_main(f"Valid: {valid_with_attr}/{len(valid_data)} samples have attributions")
-    
+        args.learning_rate = 1e-4
+
+    train_with_attr = sum(1 for r in train_records if r.attributions)
+    valid_with_attr = sum(1 for r in valid_records if r.attributions)
+    print_main(f"Train: {train_with_attr}/{len(train_records)} records have attributions")
+    print_main(f"Valid: {valid_with_attr}/{len(valid_records)} records have attributions")
+
     if train_with_attr == 0:
-        raise ValueError("No training data has attributions. Run step4_fix_attributions_to_flat.py first.")
+        raise ValueError("No training records have attributions.")
     
-    # Initialize model
-    if args.no_lora:
-        lora_config = None
-        print_main("Full fine-tuning mode (no LoRA)")
-    else:
-        if args.target_modules_all:
-            # Apply LoRA to all linear layers for stronger adaptation
-            from peft.utils import TRANSFORMERS_MODELS_TO_LORA_TARGET_MODULES_MAPPING
-            target_modules = 'all-linear'
-            print_main(f"LoRA config: r={args.lora_r}, target_modules=all-linear")
-        else:
-            target_modules = [m.strip() for m in args.target_modules.split(',')]
-            print_main(f"LoRA config: r={args.lora_r}, target_modules={target_modules}")
-        lora_config = LoraConfig(
-            r=args.lora_r,
-            lora_alpha=args.lora_alpha,
-            target_modules=target_modules,
-            lora_dropout=args.lora_dropout,
-            bias='none',
-            task_type='CAUSAL_LM',
-        )
-    
+    print_main("Full fine-tuning mode (no LoRA)")
+
     forecaster = MultiEventForecaster(
         model_name=args.model_name,
-        cache_dir=args.cache_dir,
         max_seq_length=args.max_seq_length,
-        lora_config=lora_config,
         gradient_checkpointing=args.gradient_checkpointing,
-        max_news_per_bp=args.max_news_per_bp,
-        max_history_len=args.max_history_len,
-        predict_absolute_price=args.predict_absolute_price,
-        min_positive_attributions=args.min_positive_attributions,
-        individual_loss=args.individual_loss,
-        loss_type=args.loss_type,
+        max_news=args.max_news,
         head_lr_multiplier=args.head_lr_multiplier,
-        min_max_attribution_score=args.min_max_attribution_score,
-        weight_temperature=args.weight_temperature,
         pooling_method=args.pooling_method,
-        direction_loss_weight=args.direction_loss_weight,
         null_subsample_ratio=args.null_subsample_ratio,
-        direction_only=args.direction_only,
-        only_null=args.only_null,
         window_std_threshold=args.window_std_threshold,
-        null_max_delta=args.null_max_delta,
-        null_exclude_breakpoint=args.null_exclude_breakpoint,
-        flip_augment=args.flip_augment,
     )
 
     # HF constraint: load_best_model_at_end=True requires save_steps to be
@@ -306,10 +216,9 @@ def main():
         local_rank=local_rank if world_size > 1 else -1,
     )
     
-    # Train
     best_checkpoint = forecaster.train(
-        train_data=train_data,
-        valid_data=valid_data,
+        train_records=train_records,
+        valid_records=valid_records,
         training_args=training_args,
     )
     

@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""
+"""!!! NEEDS v6 PORT !!!
+
+This script is still wired to the old daily_breakpoints / load_flat_samples_as_markets
+shape (see collect_bps and the attribute_breakpoint call sites). It will fail to
+import until ported to the v6 Record API (use load_records, drop the bp loop —
+one record == one example).
+
 Fast end-to-end inference using vLLM for the LLM backbone.
 
 Architecture:
@@ -49,7 +55,13 @@ from tqdm import tqdm
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from swm.utils.utils import load_flat_samples_as_markets, set_seed, unix_to_date
+raise NotImplementedError(
+    "inference_vllm.py is wired to the old daily_breakpoints / "
+    "load_flat_samples_as_markets shape. Port to the v6 Record API "
+    "(use load_records, drop the bp loop — one record == one example) "
+    "before running."
+)
+from swm.utils.utils import load_records, set_seed, unix_to_date  # pylint: disable=unreachable
 
 
 def parse_args():

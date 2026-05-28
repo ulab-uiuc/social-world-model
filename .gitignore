@@ -180,3 +180,10 @@ logs/
 saves/
 *.log
 wandb/
+data/vllm_attributed/backup_plan/
+
+# Local data dumps (HF-hosted; not versioned)
+data/v6/
+
+# Claude session state
+.claude/scheduled_tasks.lock

@@ -1,24 +1,22 @@
-"""Generate PriorAttributer attributions for training/test data.
+"""Generate PriorAttributer attributions for v6 records.
 
-This script runs a trained PriorAttributer on data that has news but may not
-have attributions (or has GPT attributions we want to replace). The output is
-a JSONL file with PriorAttributer-generated attributions.
+Runs a trained PriorAttributer on a v6 jsonl file and writes a copy whose
+`attributions` field has been replaced with the attributer's output.
 
 Usage:
-    python generate_prior_attributions.py \
-        --data-path /path/to/data.jsonl \
+    python inference_prior_attribution.py \
+        --data-path /path/to/v6.jsonl \
         --attributer-path /path/to/prior_attributer/checkpoint \
         --model-name Qwen/Qwen3-0.6B \
         --output-path /path/to/output.jsonl
 """
 import argparse
-import json
 
 import jsonlines
 from tqdm import tqdm
 
 from swm.attributer import BasicPriorAttributer
-from swm.utils.utils import load_flat_samples_as_markets, set_seed
+from swm.utils.utils import load_records, set_seed
 
 
 def parse_args():
@@ -37,12 +35,10 @@ def main():
     args = parse_args()
     set_seed(args.seed)
 
-    # Load data as markets
     print(f"Loading data from {args.data_path}...")
-    markets = load_flat_samples_as_markets(args.data_path)
-    print(f"Loaded {len(markets)} markets")
+    records = load_records(args.data_path)
+    print(f"Loaded {len(records)} records")
 
-    # Load attributer
     print(f"Loading attributer from {args.attributer_path}...")
     attributer = BasicPriorAttributer(
         model_name=args.model_name,
@@ -51,46 +47,23 @@ def main():
     )
     attributer.load(args.attributer_path)
 
-    # Generate attributions for each breakpoint
-    total_bps = 0
-    for market in tqdm(markets, desc='Generating attributions'):
-        if not market.daily_breakpoints:
+    updated = 0
+    for record in tqdm(records, desc='Generating attributions'):
+        if not record.news or len(record.news) < 2:
             continue
-        for bp in market.daily_breakpoints:
-            news_list = bp.get('news', [])
-            if not news_list or len(news_list) < 2:
-                continue
-            attributions = attributer.attribute_breakpoint(market, bp)
-            if attributions:
-                bp['attributions'] = [
-                    {'news_idx': attr['news_idx'], 'score': attr['score']}
-                    for attr in attributions
-                ]
-                total_bps += 1
+        attributions = attributer.attribute_record(record)
+        if attributions:
+            record.attributions = [
+                {'news_idx': a['news_idx'], 'score': a['score']} for a in attributions
+            ]
+            updated += 1
 
-    print(f"Generated attributions for {total_bps} breakpoints")
+    print(f"Generated attributions for {updated} records")
 
-    # Write back as flat samples (one per breakpoint, same format as input)
     print(f"Writing output to {args.output_path}...")
     with jsonlines.open(args.output_path, mode='w') as writer:
-        for market in markets:
-            if not market.daily_breakpoints:
-                continue
-            for bp in market.daily_breakpoints:
-                sample = {
-                    'event_id': market.event_id,
-                    'market_id': market.market_id,
-                    'question': market.question,
-                    'description': market.description,
-                    'category': getattr(market, 'category', None),
-                    'sample_type': bp.get('sample_type', 'breakpoint'),
-                    'before': bp.get('before', {}),
-                    'after': bp.get('after', {}),
-                    'window_history': bp.get('window_history', []),
-                    'news': bp.get('news', []),
-                    'attributions': bp.get('attributions', []),
-                }
-                writer.write(sample)
+        for r in records:
+            writer.write(r.model_dump())
 
     print(f"Done! Output: {args.output_path}")
 
