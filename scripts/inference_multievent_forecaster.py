@@ -112,11 +112,8 @@ def main():
     print(f"Loading forecaster from {args.model_path}...")
     forecaster_kwargs = {
         'model_name': args.model_name,
-        'cache_dir': args.cache_dir,
         'max_seq_length': args.max_seq_length,
         'max_news': args.max_news,
-        'max_history_len': args.max_history_len,
-        'only_null': args.only_null,
     }
     if args.pooling_method is not None:
         forecaster_kwargs['pooling_method'] = args.pooling_method
@@ -128,7 +125,6 @@ def main():
         print(f"Loading attributer from {args.attributer_path}...")
         attributer = BasicPriorAttributer(
             model_name=args.attributer_model_name or args.model_name,
-            cache_dir=args.cache_dir,
             max_seq_length=args.max_seq_length,
         )
         attributer.load(args.attributer_path)
@@ -150,7 +146,6 @@ def main():
         batch_size=args.batch_size,
         score_threshold=args.score_threshold,
         top_k=args.top_k,
-        weight_temperature=args.weight_temperature,
     )
 
     # Build lookup AFTER predict so it includes any newly generated attributions.
