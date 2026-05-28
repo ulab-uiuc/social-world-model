@@ -48,9 +48,15 @@ def _fast_from_pretrained(*args, **kwargs):
 
 AutoModelForCausalLM.from_pretrained = _fast_from_pretrained
 
-from swm.attributer import BasicPriorAttributer  # noqa: E402
-from swm.forecaster import MultiEventForecaster  # noqa: E402
-from swm.utils.utils import load_flat_samples_as_markets, set_seed  # noqa: E402
+raise NotImplementedError(
+    "inference_fast.py is wired to the old daily_breakpoints / "
+    "load_flat_samples_as_markets shape. Port to the v6 Record API "
+    "(use load_records, drop the bp loop — one record == one example) "
+    "before running."
+)
+from swm.attributer import BasicPriorAttributer  # noqa: E402  pylint: disable=unreachable
+from swm.forecaster import MultiEventForecaster  # noqa: E402  pylint: disable=unreachable
+from swm.utils.utils import load_records, set_seed  # noqa: E402  pylint: disable=unreachable
 
 
 def parse_args():

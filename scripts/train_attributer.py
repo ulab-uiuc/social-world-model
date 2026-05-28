@@ -22,11 +22,10 @@ import os
 
 import torch
 import torch.distributed as dist
-from peft import LoraConfig
 from transformers import TrainingArguments
 
 from swm.attributer import BasicPriorAttributer
-from swm.utils.utils import load_flat_samples_as_markets, set_seed
+from swm.utils.utils import load_records, set_seed
 
 
 def is_main_process():
@@ -72,7 +71,6 @@ def parse_args():
     
     # Model config
     parser.add_argument('--model-name', type=str, default='Qwen/Qwen3-0.6B')
-    parser.add_argument('--cache-dir', type=str, default='./cache')
     parser.add_argument('--output-dir', type=str, default='./output')
     parser.add_argument('--max-seq-length', type=int, default=1024)
     
@@ -94,14 +92,6 @@ def parse_args():
     parser.add_argument('--gradient-checkpointing', action='store_true',
                         help='Enable gradient checkpointing to save memory')
     
-    # LoRA config
-    parser.add_argument('--lora-alpha', type=float, default=32)
-    parser.add_argument('--lora-dropout', type=float, default=0.1)
-    parser.add_argument('--lora-r', type=int, default=16,
-                        help='LoRA rank (renamed from --r to avoid torchrun conflict)')
-    parser.add_argument('--target-modules', type=str, default='q_proj,v_proj,k_proj,o_proj',
-                        help='Comma-separated LoRA target modules')
-    
     # Other
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--sanity-check', action='store_true')
@@ -109,12 +99,13 @@ def parse_args():
                         help='Overfit on a tiny subset to verify model can learn')
     parser.add_argument('--overfit-samples', type=int, default=4,
                         help='Number of samples to use for overfit test (default: 4)')
-    parser.add_argument('--max-news-per-bp', type=int, default=50,
-                        help='Max news articles per breakpoint (default: 50)')
+    parser.add_argument('--max-news', type=int, default=50,
+                        help='Max news articles per record (default: 50)')
     parser.add_argument('--target-temperature', type=float, default=0.5,
                         help='Temperature for target distribution (lower=sharper, default: 0.5)')
-    parser.add_argument('--loss-type', type=str, default='kl', choices=['kl', 'mse_rank'],
-                        help='Loss type: kl (KL divergence on softmax) or mse_rank (MSE + ranking)')
+    parser.add_argument('--null-subsample-ratio', type=float, default=1.0,
+                        help='Fraction of null records (no positive attributions) to keep in TRAIN dataset. '
+                             '1.0=keep all (default), <1.0 dilutes null supervision. Valid set always keeps ratio=1.0.')
     parser.add_argument('--wandb-project', type=str, default='social-world-model',
                         help='Wandb project name (default: social-world-model)')
     parser.add_argument('--resume-from-checkpoint', type=str, default=None, nargs='?', const='True',
@@ -138,78 +129,42 @@ def main():
     
     print_main(f"Distributed training: rank={rank}, world_size={world_size}, local_rank={local_rank}")
     
-    # Load flat samples and convert to MarketData format
     print_main(f"Loading training data from {args.train_data_path}...")
-    train_data = load_flat_samples_as_markets(args.train_data_path)
+    train_records = load_records(args.train_data_path)
     print_main(f"Loading validation data from {args.valid_data_path}...")
-    valid_data = load_flat_samples_as_markets(args.valid_data_path)
-    
+    valid_records = load_records(args.valid_data_path)
+
     if args.sanity_check:
-        train_data = train_data[:2]
-        valid_data = valid_data[:2]
-    
-    # Overfit mode: use tiny subset, same data for train/valid
+        train_records = train_records[:2]
+        valid_records = valid_records[:2]
+
     if args.overfit:
-        print_main(f"[OVERFIT MODE] Using {args.overfit_samples} samples for overfitting test")
-        train_data = train_data[:args.overfit_samples]
-        valid_data = train_data  # Same data for train and valid
-        args.epochs = 100  # Many epochs to overfit
+        print_main(f"[OVERFIT MODE] Using {args.overfit_samples} records for overfitting test")
+        train_records = train_records[:args.overfit_samples]
+        valid_records = train_records
+        args.epochs = 100
         args.eval_steps = 10
         args.logging_steps = 1
         args.save_steps = 50
-        args.learning_rate = 1e-4  # Higher learning rate
-        args.lora_dropout = 0.0  # No dropout for overfitting
-    
-    # Helper to check if market has attributions in any breakpoint
-    def has_attributions(market):
-        if not market.daily_breakpoints:
-            return False
-        for bp in market.daily_breakpoints:
-            if bp.get('attributions') and len(bp.get('attributions', [])) > 0:
-                return True
-        return False
-    
-    # Count breakpoints with attributions
-    def count_breakpoints_with_attr(market):
-        if not market.daily_breakpoints:
-            return 0
-        return sum(1 for bp in market.daily_breakpoints 
-                   if bp.get('attributions') and len(bp.get('attributions', [])) > 0)
-    
-    # Check attributions are present
-    train_with_attr = sum(1 for m in train_data if has_attributions(m))
-    valid_with_attr = sum(1 for m in valid_data if has_attributions(m))
-    train_bp_with_attr = sum(count_breakpoints_with_attr(m) for m in train_data)
-    valid_bp_with_attr = sum(count_breakpoints_with_attr(m) for m in valid_data)
-    
-    print_main(f"Train: {train_with_attr}/{len(train_data)} markets have attributions ({train_bp_with_attr} breakpoints)")
-    print_main(f"Valid: {valid_with_attr}/{len(valid_data)} markets have attributions ({valid_bp_with_attr} breakpoints)")
-    
+        args.learning_rate = 1e-4
+
+    train_with_attr = sum(1 for r in train_records if r.attributions)
+    valid_with_attr = sum(1 for r in valid_records if r.attributions)
+    print_main(f"Train: {train_with_attr}/{len(train_records)} records have attributions")
+    print_main(f"Valid: {valid_with_attr}/{len(valid_records)} records have attributions")
+
     if train_with_attr == 0:
-        raise ValueError("No training data has attributions. Run step4_compute_posterior_attributions.py first.")
+        raise ValueError("No training records have attributions.")
     
-    # Initialize model
-    target_modules = [m.strip() for m in args.target_modules.split(',')]
-    print_main(f"LoRA config: r={args.lora_r}, target_modules={target_modules}")
-    
-    lora_config = LoraConfig(
-        r=args.lora_r,
-        lora_alpha=args.lora_alpha,
-        target_modules=target_modules,
-        lora_dropout=args.lora_dropout,
-        bias='none',
-        task_type='CAUSAL_LM',
-    )
-    
+    print_main("Full fine-tuning mode (no LoRA)")
+
     attributer = BasicPriorAttributer(
         model_name=args.model_name,
-        cache_dir=args.cache_dir,
         max_seq_length=args.max_seq_length,
-        lora_config=lora_config,
         gradient_checkpointing=args.gradient_checkpointing,
-        max_news_per_bp=args.max_news_per_bp,
+        max_news=args.max_news,
         target_temperature=args.target_temperature,
-        loss_type=args.loss_type,
+        null_subsample_ratio=args.null_subsample_ratio,
     )
 
     # HF constraint: load_best_model_at_end=True requires save_steps to be
@@ -258,8 +213,8 @@ def main():
     if resume_ckpt == 'True':
         resume_ckpt = True  # Auto-detect latest checkpoint
     best_checkpoint = attributer.train(
-        train_data=train_data,
-        valid_data=valid_data,
+        train_records=train_records,
+        valid_records=valid_records,
         training_args=training_args,
         resume_from_checkpoint=resume_ckpt,
     )

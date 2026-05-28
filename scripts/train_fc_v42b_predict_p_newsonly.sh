@@ -16,9 +16,8 @@ CUDA_VISIBLE_DEVICES=$GPU python -u train_multievent_forecaster.py \
     --cache-dir /mnt/data_from_server1/haofeiy2/social-world-model/cache \
     --train-batch-size 2 --gradient-accumulation-steps 8 --eval-batch-size 2 \
     --learning-rate 5e-5 --lora-r 16 --lora-alpha 32 --head-lr-multiplier 5 \
-    --epochs 3 --max-news-per-bp 30 --max-seq-length 1024 \
+    --epochs 3 --max-news 30 --max-seq-length 1024 \
     --eval-steps 250 --save-steps 250 --logging-steps 10 --gradient-checkpointing \
-    --predict-absolute-price \
     --null-subsample-ratio 0.0 \
     > /home/haofeiy2/social-world-model/logs/fc_v42b_predict_p_newsonly.log 2>&1
 echo "v42b done"

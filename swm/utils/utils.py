@@ -7,7 +7,7 @@ import jsonlines
 import numpy as np
 import torch
 
-from ..data import DailyNewsData, MarketData
+from ..data import Record
 
 
 def extract_search_keywords(question: str, model: str = "gpt-4o-mini") -> Optional[str]:
@@ -115,72 +115,10 @@ def set_seed(seed: int = 42):
         torch.cuda.manual_seed_all(seed)
 
 
-def load_market_data(data_path):
-    """Load market data (works for both Polymarket and Kalshi)."""
+def load_records(data_path) -> List[Record]:
+    """Load v6 jsonl records. One line == one training example."""
     with jsonlines.open(data_path, 'r') as reader:
-        dataset = list(reader)
-        return [MarketData.from_dict(d) for d in dataset]
-
-
-def load_flat_samples_as_markets(data_path):
-    """Load flat sample data and convert to MarketData format.
-    
-    Flat format (one sample per line):
-    {
-        "sample_type": "breakpoint" or "normal_point",
-        "market_id": "...",
-        "event_id": "...",
-        "question": "...",
-        "before": {"t": ..., "p": ...},
-        "after": {"t": ..., "p": ...},
-        "change": ...,
-        "z_score": ...,
-        "window_history": [...],
-        "news": [...],
-        "attributions": [...]
-    }
-    
-    Each flat sample becomes a MarketData with one daily_breakpoint.
-    """
-    markets = []
-    with jsonlines.open(data_path, 'r') as reader:
-        for sample in reader:
-            # Build the breakpoint dict from flat sample fields
-            breakpoint = {
-                'before': sample.get('before'),
-                'after': sample.get('after'),
-                'change': sample.get('change'),
-                'z_score': sample.get('z_score'),
-                'window_start': sample.get('window_start'),
-                'window_end': sample.get('window_end'),
-                'window_history': sample.get('window_history', []),
-                'news': sample.get('news', []),
-                'attributions': sample.get('attributions', []),
-                'sample_type': sample.get('sample_type', 'breakpoint'),
-            }
-            
-            # Create MarketData with this single breakpoint
-            market_dict = {
-                'market_id': sample.get('market_id', ''),
-                'event_id': sample.get('event_id', ''),
-                'question': sample.get('question', ''),
-                'description': sample.get('description'),
-                'daily_breakpoints': [breakpoint],
-            }
-            
-            markets.append(MarketData.from_dict(market_dict))
-    
-    return markets
-
-
-# Backward compatibility
-load_polymarket_data = load_market_data
-
-
-def load_dailynews_data(data_path):
-    with jsonlines.open(data_path, 'r') as reader:
-        metadata = list(reader)
-        return [DailyNewsData.from_dict(d) for d in metadata]
+        return [Record.from_dict(d) for d in reader]
 
 
 def convert_to_date(time: Union[float, int, str]) -> str:
