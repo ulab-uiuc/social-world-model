@@ -80,12 +80,21 @@ def parse_args():
     parser.add_argument('--max-seq-length', type=int, default=1024)
     parser.add_argument('--batch-size', type=int, default=8)
     parser.add_argument('--max-news', type=int, default=30)
+    parser.add_argument('--force-max-news', type=int, default=None,
+                        help='Ablation: override max_news AFTER loading the checkpoint '
+                             '(load() normally restores the trained value). Caps how many '
+                             'top-scored attributed news the forecaster averages over.')
     parser.add_argument('--max-history-len', type=int, default=None)
     parser.add_argument('--only-null', action='store_true',
                         help='Score ONLY null records (no oracle-positive news).')
     parser.add_argument('--pooling-method', type=str, default=None,
                         choices=['mean', 'last_token'],
                         help='Override pooling method (auto-detected from checkpoint by default).')
+    parser.add_argument('--predict-delta', action=argparse.BooleanOptionalAction,
+                        default=True,
+                        help='Must match training: the model outputs a delta off '
+                             'before_price (default) vs an absolute price. Use '
+                             '--no-predict-delta only for absolute-price checkpoints.')
 
     parser.add_argument('--score-threshold', type=float, default=0.0)
     parser.add_argument('--top-k', type=int, default=0)
@@ -93,6 +102,10 @@ def parse_args():
 
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--limit', type=int, default=None)
+    parser.add_argument('--read-all', action='store_true',
+                        help='Joint-read all candidate news in one prompt (must match training).')
+    parser.add_argument('--num-shards', type=int, default=1, help='Split data into N shards for parallel multi-GPU inference.')
+    parser.add_argument('--shard-idx', type=int, default=0, help='Which shard (0..N-1) this process handles.')
     return parser.parse_args()
 
 
@@ -104,7 +117,30 @@ def main():
     records = load_records(args.test_data_path)
     if args.limit:
         records = records[:args.limit]
+    if args.num_shards>1:
+        records=[r for i,r in enumerate(records) if i%args.num_shards==args.shard_idx]
+        print(f"[shard {args.shard_idx}/{args.num_shards}] -> {len(records)} records")
     print(f"Loaded {len(records)} records")
+
+    def _has_positive_attr(r) -> bool:
+        n = len(r.news or [])
+        return any(
+            0 <= a.get('news_idx', -1) < n and float(a.get('score') or 0) > 0
+            for a in (r.attributions or [])
+        )
+
+    if args.only_null:
+        before = len(records)
+        records = [r for r in records if not _has_positive_attr(r)]
+        print(f"--only-null: kept {len(records)}/{before} null records "
+              "(no oracle-positive attributions)")
+
+    # Trim each record's history to the most recent N days. Keeps the tail so
+    # before_price (= history[-1].p) is unchanged.
+    if args.max_history_len:
+        for r in records:
+            if r.history and len(r.history) > args.max_history_len:
+                r.history = r.history[-args.max_history_len:]
 
     data_with_attr = sum(1 for r in records if r.attributions)
     print(f"Records with precomputed attributions: {data_with_attr}/{len(records)}")
@@ -112,23 +148,24 @@ def main():
     print(f"Loading forecaster from {args.model_path}...")
     forecaster_kwargs = {
         'model_name': args.model_name,
-        'cache_dir': args.cache_dir,
         'max_seq_length': args.max_seq_length,
         'max_news': args.max_news,
-        'max_history_len': args.max_history_len,
-        'only_null': args.only_null,
+        'predict_delta': args.predict_delta,
+        'read_all': args.read_all,
     }
     if args.pooling_method is not None:
         forecaster_kwargs['pooling_method'] = args.pooling_method
     forecaster = MultiEventForecaster(**forecaster_kwargs)
     forecaster.load(args.model_path)
+    if args.force_max_news is not None:
+        forecaster.max_news = args.force_max_news
+        print(f"[ablation] forced max_news={args.force_max_news} (overriding checkpoint value)")
 
     attributer = None
     if args.attributer_path:
         print(f"Loading attributer from {args.attributer_path}...")
         attributer = BasicPriorAttributer(
             model_name=args.attributer_model_name or args.model_name,
-            cache_dir=args.cache_dir,
             max_seq_length=args.max_seq_length,
         )
         attributer.load(args.attributer_path)
@@ -233,26 +270,43 @@ def main():
     price_mse = float(np.mean((pred_price - true_price) ** 2))
     delta_corr = float(np.corrcoef(pred_delta, true_delta)[0, 1]) if len(enriched) > 1 else float('nan')
     price_corr = float(np.corrcoef(pred_price, true_price)[0, 1]) if len(enriched) > 1 else float('nan')
-    direction_acc = float(np.mean((pred_delta > 0) == (true_delta > 0)))
+
+    # "Predict no change" baseline = always output delta 0 (i.e. copy the last
+    # price). The forecaster only adds value if delta_mse beats this.
+    baseline_delta_mse = float(np.mean(true_delta ** 2))
+    skill = 1.0 - delta_mse / baseline_delta_mse if baseline_delta_mse > 0 else float('nan')
+
+    # Direction accuracy only over records that actually moved; true_delta≈0
+    # (common for null records) has no meaningful direction to predict.
+    moved = np.abs(true_delta) > 1e-6
+    direction_acc = (
+        float(np.mean((pred_delta[moved] > 0) == (true_delta[moved] > 0)))
+        if moved.any() else float('nan')
+    )
 
     print(f"\n{'=' * 60}")
     print(f"Evaluation Results")
     print(f"{'=' * 60}")
     print(f"  Model: {args.model_path}")
-    print(f"  Test records: {len(enriched)}")
+    print(f"  Test records: {len(enriched)}  (moved: {int(moved.sum())})")
     print(f"  Delta MSE: {delta_mse:.6f}  RMSE: {delta_mse ** 0.5:.6f}  corr: {delta_corr:.4f}")
+    print(f"  Baseline (no-change) Delta MSE: {baseline_delta_mse:.6f}  "
+          f"skill vs baseline: {skill:+.4f}")
     print(f"  Price MSE: {price_mse:.6f}  RMSE: {price_mse ** 0.5:.6f}  corr: {price_corr:.4f}")
-    print(f"  Direction Accuracy: {direction_acc:.2%}")
+    print(f"  Direction Accuracy (moved only): {direction_acc:.2%}")
     print(f"{'=' * 60}")
 
     metrics = {
         'model_path': args.model_path,
         'test_records': len(enriched),
+        'moved_records': int(moved.sum()),
         'delta_mse': delta_mse,
+        'baseline_delta_mse': baseline_delta_mse,
+        'skill_vs_baseline': None if np.isnan(skill) else skill,
         'price_mse': price_mse,
         'delta_correlation': None if np.isnan(delta_corr) else delta_corr,
         'price_correlation': None if np.isnan(price_corr) else price_corr,
-        'direction_accuracy': direction_acc,
+        'direction_accuracy': None if np.isnan(direction_acc) else direction_acc,
     }
     with open(output_path.with_suffix('.metrics.json'), 'w') as f:
         json.dump(metrics, f, indent=2)

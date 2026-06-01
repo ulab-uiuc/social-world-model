@@ -27,7 +27,11 @@ def parse_args():
     parser.add_argument('--model-name', type=str, default='Qwen/Qwen3-0.6B')
     parser.add_argument('--cache-dir', type=str, default='./cache')
     parser.add_argument('--max-seq-length', type=int, default=1024)
+    parser.add_argument('--max-news', type=int, default=30,
+                        help='Cap candidate news scored per record. MUST cover all candidates (>=forecaster max-news=30) or tail news get silently dropped (default attributer used 20).')
     parser.add_argument('--seed', type=int, default=42)
+    parser.add_argument('--num-shards', type=int, default=1, help='Split data into N shards for parallel multi-GPU inference.')
+    parser.add_argument('--shard-idx', type=int, default=0, help='Which shard (0..N-1) this process handles.')
     return parser.parse_args()
 
 
@@ -37,19 +41,28 @@ def main():
 
     print(f"Loading data from {args.data_path}...")
     records = load_records(args.data_path)
+    if args.num_shards>1:
+        records=[r for i,r in enumerate(records) if i%args.num_shards==args.shard_idx]
+        print(f'[shard {args.shard_idx}/{args.num_shards}] -> {len(records)} records')
     print(f"Loaded {len(records)} records")
 
     print(f"Loading attributer from {args.attributer_path}...")
     attributer = BasicPriorAttributer(
         model_name=args.model_name,
-        cache_dir=args.cache_dir,
         max_seq_length=args.max_seq_length,
     )
     attributer.load(args.attributer_path)
+    attributer.max_news = args.max_news
+    print(f'[fix] attributer.max_news forced to {attributer.max_news} (score ALL candidate news, no tail truncation)')
 
     updated = 0
     for record in tqdm(records, desc='Generating attributions'):
-        if not record.news or len(record.news) < 2:
+        # CRITICAL: clear any precomputed (posterior/oracle) attributions first
+        # so the output carries ONLY this prior attributer's scores — otherwise
+        # records the prior skips would silently leak posterior labels into the
+        # "prior" file. Mirrors MultiEventForecaster._generate_attributions.
+        record.attributions = []
+        if not record.news:
             continue
         attributions = attributer.attribute_record(record)
         if attributions:

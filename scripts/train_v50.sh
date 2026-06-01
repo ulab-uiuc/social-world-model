@@ -49,7 +49,6 @@ CUDA_VISIBLE_DEVICES=$FC_GPUS torchrun --nproc_per_node=2 --master_port=$FC_PORT
     --epochs 3 --max-news 30 --max-seq-length 1024 \
     --eval-steps 250 --save-steps 250 --logging-steps 10 --gradient-checkpointing \
     --null-subsample-ratio 0.5 \
-    --window-std-threshold 0.02 \
     > $LOG/fc_v50_06b.log 2>&1 &
 FC_PID=$!
 echo "forecaster v50 0.6B  PID=$FC_PID  GPUS=$FC_GPUS  log=$LOG/fc_v50_06b.log"
