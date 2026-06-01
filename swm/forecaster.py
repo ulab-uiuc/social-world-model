@@ -1,13 +1,14 @@
 from pathlib import Path
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Optional, Union
 
 import torch
+from peft import LoraConfig
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from transformers import AutoTokenizer, Trainer, TrainingArguments
 
 from .data import Record
-from .dataset import MultiEventForecasterDataset
+from .dataset import MultiEventForecasterDataset, collate_padded_groups
 from .utils.regressor import LLMRegressor, LLMRegressorConfig
 
 
@@ -25,31 +26,48 @@ class WeightedTrainer(Trainer):
     used to desync NCCL ALLREDUCE.
     """
 
-    def __init__(self, *args, head_lr_multiplier: float = 1.0, **kwargs):
+    def __init__(self, *args, head_lr_multiplier: float = 1.0,
+                 delta_weighted: bool = False, delta_weight_floor: float = 0.0,
+                 vol_normalized: bool = False, vol_floor: float = 0.01, mae_loss: bool = False, huber_loss: bool = False, huber_beta: float = 0.05, per_news_loss: bool = False, **kwargs):
         super().__init__(*args, **kwargs)
         self.head_lr_multiplier = head_lr_multiplier
+        self.delta_weighted = delta_weighted
+        self.delta_weight_floor = delta_weight_floor
+        self.vol_normalized = vol_normalized
+        self.vol_floor = vol_floor
+        self.mae_loss = mae_loss
+        self.huber_loss = huber_loss
+        self.huber_beta = huber_beta
+        self.per_news_loss = per_news_loss
 
     def create_optimizer(self):
         if self.optimizer is not None:
             return self.optimizer
 
-        head_params, other_params = [], []
+        base_lr = self.args.learning_rate
+        decay = self.args.weight_decay
+        # Four groups: {head, backbone} x {decay, no-decay}. Biases and 1-D
+        # params (LayerNorm/RMSNorm weights) get no weight decay, matching HF's
+        # default split — the old code applied decay to all params indiscriminately.
+        groups = {
+            'head_decay': {'params': [], 'lr': base_lr * self.head_lr_multiplier, 'weight_decay': decay},
+            'head_nodecay': {'params': [], 'lr': base_lr * self.head_lr_multiplier, 'weight_decay': 0.0},
+            'other_decay': {'params': [], 'lr': base_lr, 'weight_decay': decay},
+            'other_nodecay': {'params': [], 'lr': base_lr, 'weight_decay': 0.0},
+        }
         for name, param in self.model.named_parameters():
             if not param.requires_grad:
                 continue
-            if 'regression_head' in name:
-                head_params.append(param)
-            else:
-                other_params.append(param)
+            is_head = 'regression_head' in name
+            no_decay = param.ndim <= 1 or name.endswith('.bias')
+            key = ('head' if is_head else 'other') + ('_nodecay' if no_decay else '_decay')
+            groups[key]['params'].append(param)
 
-        base_lr = self.args.learning_rate
-        groups = [
-            {'params': other_params, 'lr': base_lr},
-            {'params': head_params, 'lr': base_lr * self.head_lr_multiplier},
-        ]
+        group_list = [g for g in groups.values() if g['params']]
         optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(self.args)
         optimizer_kwargs.pop('lr', None)
-        self.optimizer = optimizer_cls(groups, **optimizer_kwargs)
+        optimizer_kwargs.pop('weight_decay', None)  # set per-group above
+        self.optimizer = optimizer_cls(group_list, **optimizer_kwargs)
         return self.optimizer
 
     @staticmethod
@@ -68,14 +86,62 @@ class WeightedTrainer(Trainer):
         labels = inputs.pop('labels')
         weights = inputs.pop('weights')
         group_ids = inputs.pop('group_ids')
+        vols = inputs.pop('vols', None)
 
         preds = model(
             input_ids=inputs['input_ids'],
             attention_mask=inputs['attention_mask'],
         ).view(-1)
         acc_pred = self._aggregate(preds, weights, group_ids, labels.size(0))
-        loss = torch.nn.functional.mse_loss(acc_pred, labels.to(acc_pred.dtype))
-        return loss, acc_pred, labels.to(acc_pred.dtype)
+        labels = labels.to(acc_pred.dtype)
+        if self.per_news_loss:
+            # Responsibility-weighted (mixture-of-experts) loss matching the paper's
+            # L_wm = E_{Z~pi}[-log P_theta(.|e^Z)]: score EACH news against the move,
+            # then weight by its attribution -- vs the default "error of the weighted
+            # mean". The expectation is inside the per-news squared error, so a
+            # candidate can't hide behind the average -> every attributed news must
+            # itself explain the shift. Removes the averaging ceiling / mean-collapse
+            # escape route.
+            gid = group_ids.long()
+            wsum = torch.zeros(labels.size(0), device=weights.device, dtype=weights.dtype)
+            wsum.scatter_add_(0, gid, weights)
+            norm_w = (weights / (wsum[gid] + 1e-8)).to(preds.dtype)
+            lbl_pn = labels[gid]
+            se = (preds - lbl_pn) ** 2                       # per-news squared error
+            inner = torch.zeros(labels.size(0), device=preds.device, dtype=preds.dtype)
+            inner.scatter_add_(0, gid, norm_w * se)          # Sum_i pi_i (mu_i - delta)^2 per record
+            if self.vol_normalized and vols is not None:
+                vc = torch.clamp(vols.to(preds.dtype), min=self.vol_floor)
+                wg = 1.0 / (vc * vc)
+                loss = (wg * inner).sum() / (wg.sum() + 1e-8)
+            else:
+                loss = inner.mean()
+            return loss, acc_pred, labels
+        if self.huber_loss:
+            loss = torch.nn.functional.smooth_l1_loss(acc_pred, labels, beta=self.huber_beta)
+        elif self.mae_loss:
+            # L1 / MAE loss: optimizes the conditional MEDIAN instead of the mean.
+            # On a small-move-dominated target this de-shrinks toward the right
+            # scale for |error| (MAE) directly, instead of MSE's mean-collapse.
+            loss = torch.nn.functional.l1_loss(acc_pred, labels)
+        elif self.vol_normalized and vols is not None:
+            # standardize the move by historical volatility: loss =
+            # ((pred-delta)/vol)^2. Equivalent to predicting delta/vol (the
+            # "move as a multiple of prior volatility"). High-vol markets no
+            # longer dominate the MSE -> fights mean-collapse; vol supplies the
+            # per-market magnitude scale while the model learns direction/order.
+            vc = torch.clamp(vols.to(acc_pred.dtype), min=self.vol_floor)
+            w = 1.0 / (vc * vc)
+            loss = (w * (acc_pred - labels) ** 2).sum() / (w.sum() + 1e-8)
+        elif self.delta_weighted:
+            # weight each record's squared error by |true_delta| (+floor): big
+            # moves dominate the gradient -> fights MSE mean-collapse, forces the
+            # model to actually fit the large news-driven moves.
+            w = labels.abs() + self.delta_weight_floor
+            loss = (w * (acc_pred - labels) ** 2).sum() / (w.sum() + 1e-8)
+        else:
+            loss = torch.nn.functional.mse_loss(acc_pred, labels)
+        return loss, acc_pred, labels
 
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
         loss, _, _ = self._forward_and_loss(model, inputs)
@@ -99,7 +165,22 @@ class MultiEventForecaster:
         head_lr_multiplier: float = 1.0,
         pooling_method: str = 'last_token',
         null_subsample_ratio: float = 1.0,
-        window_std_threshold: float = 0.0,
+        predict_delta: bool = True,
+        delta_weighted: bool = False,
+        delta_weight_floor: float = 0.0,
+        vol_normalized: bool = False,
+        vol_floor: float = 0.01,
+        mae_loss: bool = False,
+        huber_loss: bool = False,
+        huber_beta: float = 0.05,
+        per_news_loss: bool = False,
+        bounded_output: bool = False,
+        read_all: bool = False,
+        attr_noise_drop: float = 0.0,
+        attr_noise_add: float = 0.0,
+        prior_attr_path: Optional[str] = None,
+        post_prior_mix: float = 1.0,
+        lora_config: Optional[LoraConfig] = None,
     ):
         self.model_name = model_name
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -110,61 +191,62 @@ class MultiEventForecaster:
         self.pooling_method = pooling_method
         self.head_lr_multiplier = head_lr_multiplier
         self.null_subsample_ratio = null_subsample_ratio
-        self.window_std_threshold = window_std_threshold
+        self.predict_delta = predict_delta
+        self.delta_weighted = delta_weighted
+        self.delta_weight_floor = delta_weight_floor
+        self.vol_normalized = vol_normalized
+        self.vol_floor = vol_floor
+        self.mae_loss = mae_loss
+        self.huber_loss = huber_loss
+        self.huber_beta = huber_beta
+        self.per_news_loss = per_news_loss
+        self.bounded_output = bounded_output
+        self.read_all = read_all
+        self.attr_noise_drop = attr_noise_drop
+        self.attr_noise_add = attr_noise_add
+        # prior+posterior mixture (train-only): blend the attributer's PRIOR
+        # weights into the posterior so the forecaster trains on the realistic
+        # inference distribution. post_prior_mix=1.0 keeps pure-posterior behavior.
+        self.prior_attr_path = prior_attr_path
+        self.post_prior_mix = post_prior_mix
+        self.lora_config = lora_config
 
     def setup_model(self) -> None:
         config = LLMRegressorConfig(
             base_model_name_or_path=self.model_name,
             max_length=self.max_seq_length,
             pooling_method=self.pooling_method,
+            max_news=self.max_news,
+            predict_delta=self.predict_delta,
+            bounded_output=self.bounded_output,
         )
-        self.model = LLMRegressor(config)
+        self.model = LLMRegressor(config, lora_config=self.lora_config)
+        if self.lora_config is None:
+            # Full fine-tune: backbone loads in bf16 but the regression head is
+            # fp32, and FSDP refuses to flatten mixed-dtype params. Cast the whole
+            # model to fp32 (uniform) so FSDP can wrap it; TrainingArguments bf16
+            # then drives FSDP mixed-precision (bf16 compute, fp32 master weights).
+            self.model = self.model.float()
         if self.gradient_checkpointing and hasattr(self.model.llm, 'gradient_checkpointing_enable'):
             self.model.llm.gradient_checkpointing_enable(
                 gradient_checkpointing_kwargs={"use_reentrant": False}
             )
             print("Gradient checkpointing enabled (use_reentrant=False)")
+        if self.lora_config is not None and hasattr(self.model.llm, 'print_trainable_parameters'):
+            self.model.llm.print_trainable_parameters()
 
     def _create_collate_fn(self):
         def collate_fn(batch):
-            max_len = min(
-                max(x['input_ids'].size(-1) for x in batch), self.max_seq_length
+            out = collate_padded_groups(
+                batch, self.tokenizer.pad_token_id, self.max_seq_length,
             )
-            all_input_ids, all_attention_masks = [], []
-            all_labels, all_weights, all_group_ids = [], [], []
-            all_market_ids, all_event_ids, all_ts = [], [], []
-            all_before_prices = []
-
-            for group_idx, item in enumerate(batch):
-                ids = item['input_ids'][:, :max_len]
-                padded = torch.nn.functional.pad(
-                    ids, (0, max_len - ids.size(-1)),
-                    value=self.tokenizer.pad_token_id,
-                )
-                all_input_ids.append(padded)
-                all_attention_masks.append((padded != self.tokenizer.pad_token_id).long())
-                all_labels.append(item['label'])
-                all_weights.append(item['weights'])
-                all_group_ids.append(torch.full((len(item['weights']),), group_idx))
-                all_market_ids.append(item['market_id'])
-                all_event_ids.append(item['event_id'])
-                all_ts.append(item['t'])
-                all_before_prices.append(item['before_price'])
-
+            out['labels'] = torch.stack([x['label'] for x in batch])
+            out['weights'] = torch.cat([x['weights'] for x in batch])
             # 'before_prices' is only consumed by predict() for the
-            # pred_delta/true_delta derived fields exported to downstream
-            # inference scripts; the trainer ignores it.
-            return {
-                'input_ids': torch.cat(all_input_ids),
-                'attention_mask': torch.cat(all_attention_masks),
-                'labels': torch.stack(all_labels),
-                'weights': torch.cat(all_weights),
-                'group_ids': torch.cat(all_group_ids),
-                'before_prices': torch.stack(all_before_prices),
-                'market_ids': all_market_ids,
-                'event_ids': all_event_ids,
-                'ts': all_ts,
-            }
+            # pred_delta/true_delta derived fields; the trainer ignores it.
+            out['before_prices'] = torch.stack([x['before_price'] for x in batch])
+            out['vols'] = torch.stack([x['vol'] for x in batch])
+            return out
 
         return collate_fn
 
@@ -176,14 +258,21 @@ class MultiEventForecaster:
             # the best checkpoint is still on disk.
             pass
 
-    def _make_dataset(self, records: List[Record], null_subsample_ratio: float) -> MultiEventForecasterDataset:
+    def _make_dataset(self, records: List[Record], null_subsample_ratio: float,
+                      apply_prior: bool = False) -> MultiEventForecasterDataset:
         return MultiEventForecasterDataset(
             records=records,
             tokenizer=self.tokenizer,
             max_news=self.max_news,
             max_seq_length=self.max_seq_length,
             null_subsample_ratio=null_subsample_ratio,
-            window_std_threshold=self.window_std_threshold,
+            predict_delta=self.predict_delta,
+            read_all=self.read_all,
+            attr_noise_drop=self.attr_noise_drop,
+            attr_noise_add=self.attr_noise_add,
+            # prior mixing is a TRAIN-time augmentation only.
+            prior_attr_path=self.prior_attr_path if apply_prior else None,
+            post_prior_mix=self.post_prior_mix,
         )
 
     def train(
@@ -195,7 +284,7 @@ class MultiEventForecaster:
         if self.model is None:
             self.setup_model()
 
-        train_dataset = self._make_dataset(train_records, self.null_subsample_ratio)
+        train_dataset = self._make_dataset(train_records, self.null_subsample_ratio, apply_prior=True)
         valid_dataset = self._make_dataset(valid_records, 1.0)
 
         trainer = WeightedTrainer(
@@ -205,6 +294,14 @@ class MultiEventForecaster:
             eval_dataset=valid_dataset,
             data_collator=self._create_collate_fn(),
             head_lr_multiplier=self.head_lr_multiplier,
+            delta_weighted=self.delta_weighted,
+            delta_weight_floor=self.delta_weight_floor,
+            vol_normalized=self.vol_normalized,
+            vol_floor=self.vol_floor,
+            mae_loss=self.mae_loss,
+            huber_loss=self.huber_loss,
+            huber_beta=self.huber_beta,
+            per_news_loss=self.per_news_loss,
         )
 
         self._safe_train(trainer)
@@ -221,6 +318,7 @@ class MultiEventForecaster:
         batch_size: int = 8,
         score_threshold: float = 0.0,
         top_k: int = 0,
+        weight_temperature: float = 1.0,
     ) -> List[Dict[str, Union[str, float]]]:
         if attributer is not None:
             records = self._generate_attributions(
@@ -233,7 +331,8 @@ class MultiEventForecaster:
             tokenizer=self.tokenizer,
             max_news=self.max_news,
             max_seq_length=self.max_seq_length,
-            window_std_threshold=self.window_std_threshold,
+            predict_delta=self.predict_delta,
+            read_all=self.read_all,
         )
         dataloader = DataLoader(
             dataset, batch_size=batch_size, shuffle=False,
@@ -256,6 +355,11 @@ class MultiEventForecaster:
                     mask = group_ids == group_idx
                     indices = torch.where(mask)[0]
                     group_weights = weights[mask]
+                    # weight_temperature sharpens (<1) or flattens (>1) the
+                    # attribution-weighted average. T<1 concentrates mass on the
+                    # top news, countering dilution when many news are attributed.
+                    if weight_temperature != 1.0:
+                        group_weights = group_weights.clamp(min=1e-8).pow(1.0 / weight_temperature)
                     normalized = group_weights / (group_weights.sum() + 1e-8)
 
                     acc_pred = 0.0
@@ -268,15 +372,26 @@ class MultiEventForecaster:
                         acc_pred += (chunk_pred * normalized[i:i + chunk_size]).sum()
 
                     before_price = before_prices[group_idx].item()
-                    pred_price = acc_pred.item()
-                    true_price = labels[group_idx].item()
+                    # In delta mode the model + label are deltas off before_price;
+                    # in price mode they are absolute prices. Reconstruct the
+                    # complementary field so downstream gets both either way.
+                    if self.predict_delta:
+                        pred_delta = acc_pred.item()
+                        true_delta = labels[group_idx].item()
+                        pred_price = before_price + pred_delta
+                        true_price = before_price + true_delta
+                    else:
+                        pred_price = acc_pred.item()
+                        true_price = labels[group_idx].item()
+                        pred_delta = pred_price - before_price
+                        true_delta = true_price - before_price
 
                     results.append({
                         'event_id': batch['event_ids'][group_idx],
                         'market_id': batch['market_ids'][group_idx],
                         't': batch['ts'][group_idx],
-                        'pred_delta': pred_price - before_price,
-                        'true_delta': true_price - before_price,
+                        'pred_delta': pred_delta,
+                        'true_delta': true_delta,
                         'pred_price': pred_price,
                         'true_price': true_price,
                         'before_price': before_price,
@@ -297,7 +412,7 @@ class MultiEventForecaster:
             # propagates as truly "no news" instead of leaking the labels.
             record.attributions = []
             news_list = record.news
-            if not news_list or len(news_list) < 2:
+            if not news_list:
                 continue
 
             attrs = attributer.attribute_record(
@@ -326,3 +441,12 @@ class MultiEventForecaster:
     def load(self, path: str) -> None:
         self.model = LLMRegressor.from_pretrained(path)
         self.model.to('cuda' if torch.cuda.is_available() else 'cpu')
+        # Checkpoint config is the source of truth for must-match-training
+        # hyperparameters; restore them over any inference-script defaults.
+        cfg = self.model.config
+        if getattr(cfg, 'pooling_method', None) is not None:
+            self.pooling_method = cfg.pooling_method
+        if getattr(cfg, 'max_news', None) is not None:
+            self.max_news = cfg.max_news
+        if getattr(cfg, 'predict_delta', None) is not None:
+            self.predict_delta = cfg.predict_delta

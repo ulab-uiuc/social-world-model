@@ -2,8 +2,10 @@
 Train PriorAttributer using KL divergence from PosteriorAttributer.
 
 The input data should have attributions precomputed using precompute_attributions.py
-(which uses PosteriorAttributer). The PriorAttributer learns to predict the same
-distribution without access to news.
+(which uses PosteriorAttributer). The PosteriorAttributer derives the target
+distribution with access to the realized future price; the PriorAttributer learns
+to reproduce that distribution from the news + history + question alone (i.e.
+without seeing the future outcome).
 
 Single GPU:
     python train_attributer.py \
@@ -19,6 +21,7 @@ Multi-GPU (DDP):
 """
 import argparse
 import os
+from typing import Any, Dict
 
 import torch
 import torch.distributed as dist
@@ -89,6 +92,19 @@ def parse_args():
     parser.add_argument('--save-steps', type=int, default=100)
     parser.add_argument('--eval-steps', type=int, default=500)
     parser.add_argument('--fp16', action='store_true')
+    parser.add_argument('--bf16', action='store_true',
+                        help='Mixed-precision bf16 training. A100/H100 only.')
+    parser.add_argument('--fsdp', type=str, default='',
+                        help='FSDP mode, e.g. "full_shard auto_wrap". Empty disables FSDP.')
+    parser.add_argument('--fsdp-transformer-layer-cls', type=str, default='',
+                        help='Transformer layer class for FSDP auto-wrap, e.g. Qwen3DecoderLayer.')
+    parser.add_argument('--lora-r', type=int, default=0,
+                        help='LoRA rank. 0 disables LoRA (full FT).')
+    parser.add_argument('--lora-alpha', type=int, default=32)
+    parser.add_argument('--lora-dropout', type=float, default=0.05)
+    parser.add_argument('--lora-target-modules', type=str,
+                        default='q_proj,k_proj,v_proj,o_proj',
+                        help='Comma-separated module names for LoRA target.')
     parser.add_argument('--gradient-checkpointing', action='store_true',
                         help='Enable gradient checkpointing to save memory')
     
@@ -102,7 +118,27 @@ def parse_args():
     parser.add_argument('--max-news', type=int, default=50,
                         help='Max news articles per record (default: 50)')
     parser.add_argument('--target-temperature', type=float, default=0.5,
-                        help='Temperature for target distribution (lower=sharper, default: 0.5)')
+                        help='Softmax temperature (shared train+inference; does NOT change '
+                             'output sharpness relative to target). Default 0.5.')
+    parser.add_argument('--target-sharpen', type=float, default=1.0,
+                        help='Sharpen the KL target: p_dist ∝ score**this. >1 makes the '
+                             'attributer more decisive (top news gets more mass). Default 1.0.')
+    parser.add_argument('--routing-loss-weight', type=float, default=0.0,
+                        help='Weight of the routing BCE: pushes the no-news prob -> 1 for '
+                             'null records, 0 for has-news, directly training the '
+                             '"is there causal news?" classifier. Default 0 (off).')
+    parser.add_argument('--neg-bce-weight', type=float, default=0.0,
+                        help='Per-news relevance BCE weight: pushes sigmoid(logit)->1 for gold-attributed news, 0 otherwise. Supplies forward-KL the negative-suppression it lacks.')
+    parser.add_argument('--reverse-kl', action='store_true',
+                        help='Use reverse KL(q||p) (mode-seeking: sharpens the distribution and '
+                             'actively suppresses off-target/irrelevant news) instead of forward KL(p||q).')
+    parser.add_argument('--head-lr-multiplier', type=float, default=1.0,
+                        help='LR multiplier for the regression head. >1 fixes head under-fitting that keeps the attributer output flatter (eff~5) than the KL target (eff~2).')
+    parser.add_argument('--per-news-bce', action='store_true',
+                        help='Per-news Bernoulli mode: drop the softmax/KL; train each news as an '
+                             'independent sigmoid with soft-target BCE to its 0-1 posterior relevance '
+                             '(matches the 235B per-news labels). no-news is emergent = Π(1-p_i). '
+                             'Decouples ranking from routing — no softmax competition.')
     parser.add_argument('--null-subsample-ratio', type=float, default=1.0,
                         help='Fraction of null records (no positive attributions) to keep in TRAIN dataset. '
                              '1.0=keep all (default), <1.0 dilutes null supervision. Valid set always keeps ratio=1.0.')
@@ -156,7 +192,21 @@ def main():
     if train_with_attr == 0:
         raise ValueError("No training records have attributions.")
     
-    print_main("Full fine-tuning mode (no LoRA)")
+    lora_config = None
+    if args.lora_r > 0:
+        from peft import LoraConfig, TaskType
+        lora_config = LoraConfig(
+            r=args.lora_r,
+            lora_alpha=args.lora_alpha,
+            lora_dropout=args.lora_dropout,
+            target_modules=args.lora_target_modules.split(','),
+            bias='none',
+            task_type=TaskType.FEATURE_EXTRACTION,
+        )
+        print_main(f"LoRA mode: r={args.lora_r}, alpha={args.lora_alpha}, "
+                   f"targets={args.lora_target_modules}")
+    else:
+        print_main("Full fine-tuning mode (no LoRA)")
 
     attributer = BasicPriorAttributer(
         model_name=args.model_name,
@@ -165,6 +215,13 @@ def main():
         max_news=args.max_news,
         target_temperature=args.target_temperature,
         null_subsample_ratio=args.null_subsample_ratio,
+        target_sharpen=args.target_sharpen,
+        routing_loss_weight=args.routing_loss_weight,
+        reverse_kl=args.reverse_kl,
+        neg_bce_weight=args.neg_bce_weight,
+        per_news_bce=args.per_news_bce,
+        head_lr_multiplier=args.head_lr_multiplier,
+        lora_config=lora_config,
     )
 
     # HF constraint: load_best_model_at_end=True requires save_steps to be
@@ -176,6 +233,16 @@ def main():
         )
         args.save_steps = args.eval_steps
     
+    fsdp_kwargs: Dict[str, Any] = {}
+    if args.fsdp:
+        fsdp_kwargs['fsdp'] = args.fsdp
+        # FULL_STATE_DICT so the root FSDP unit (embeddings/final norm) is gathered
+        # on save; otherwise it's written as an unloadable 1-D flat shard.
+        fsdp_config: Dict[str, Any] = {'state_dict_type': 'FULL_STATE_DICT'}
+        if args.fsdp_transformer_layer_cls:
+            fsdp_config['transformer_layer_cls_to_wrap'] = [args.fsdp_transformer_layer_cls]
+        fsdp_kwargs['fsdp_config'] = fsdp_config
+
     # Training arguments
     training_args = TrainingArguments(
         output_dir=args.output_dir,
@@ -195,10 +262,15 @@ def main():
         eval_strategy='steps',
         save_strategy='steps',
         fp16=args.fp16,
+        bf16=args.bf16,
+        **fsdp_kwargs,
         metric_for_best_model='eval_loss',
         greater_is_better=False,  # Lower loss is better
-        load_best_model_at_end=True,
-        save_safetensors=False,
+        # load_best_model_at_end=True would torch.load at training end, which
+        # tripped HF's CVE-2025-32434 check on torch<2.6. Skip the auto-reload;
+        # `trainer.state.best_model_checkpoint` is still populated.
+        load_best_model_at_end=False,
+        save_safetensors=True,
         remove_unused_columns=False,
         report_to='wandb' if is_main_process() else 'none',
         logging_first_step=True,

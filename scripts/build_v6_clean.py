@@ -1,7 +1,7 @@
 """Drop records where |z_score| > 1 but the attributor returned no positive
 attributions — these are likely attributor failures, not legitimate nulls.
 
-Reads data/v6/*.jsonl and writes cleaned versions to data/v6/v6_clean/.
+Reads <src-dir>/*.jsonl and writes cleaned versions to <src-dir>/v6_clean/.
 Also splits cleaned train into train + valid_subset150 (fixed seed).
 """
 import argparse
@@ -51,7 +51,7 @@ def write_lines(dst: Path, lines: list[str]) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument('--src-dir', default='data/v6')
+    parser.add_argument('--src-dir', default='data/social-world-model-v6')
     parser.add_argument('--out-subdir', default='v6_clean')
     parser.add_argument(
         '--files',
@@ -81,7 +81,8 @@ def main() -> None:
         pct = 100 * dropped / total if total else 0
         print(f"  {name}: kept={kept}  dropped={dropped}  ({pct:.1f}%)")
 
-        if name == 'train.jsonl':
+        stem = name.lower()
+        if stem.startswith('train'):
             rng = random.Random(args.valid_seed)
             valid_idx = set(rng.sample(range(kept), args.valid_size))
             train_lines = [l for i, l in enumerate(kept_lines) if i not in valid_idx]
@@ -93,7 +94,13 @@ def main() -> None:
             print(f"    -> {train_path}  ({len(train_lines)} records)")
             print(f"    -> {valid_path}  ({len(valid_lines)} records)")
         else:
-            dst = out_dir / name
+            if stem.startswith('test_kalshi'):
+                out_name = 'test_kalshi.jsonl'
+            elif stem.startswith('test_polymarket'):
+                out_name = 'test_polymarket.jsonl'
+            else:
+                out_name = name
+            dst = out_dir / out_name
             write_lines(dst, kept_lines)
             print(f"    -> {dst}")
 
