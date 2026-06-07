@@ -28,8 +28,9 @@ class WeightedTrainer(Trainer):
 
     def __init__(self, *args, head_lr_multiplier: float = 1.0,
                  delta_weighted: bool = False, delta_weight_floor: float = 0.0,
-                 vol_normalized: bool = False, vol_floor: float = 0.01, mae_loss: bool = False, huber_loss: bool = False, huber_beta: float = 0.05, per_news_loss: bool = False, **kwargs):
+                 vol_normalized: bool = False, vol_floor: float = 0.01, mae_loss: bool = False, huber_loss: bool = False, huber_beta: float = 0.05, per_news_loss: bool = False, odds_null_categorical: bool = False, **kwargs):
         super().__init__(*args, **kwargs)
+        self.odds_null_categorical = odds_null_categorical
         self.head_lr_multiplier = head_lr_multiplier
         self.delta_weighted = delta_weighted
         self.delta_weight_floor = delta_weight_floor
@@ -103,9 +104,15 @@ class WeightedTrainer(Trainer):
             # itself explain the shift. Removes the averaging ceiling / mean-collapse
             # escape route.
             gid = group_ids.long()
-            wsum = torch.zeros(labels.size(0), device=weights.device, dtype=weights.dtype)
-            wsum.scatter_add_(0, gid, weights)
-            norm_w = (weights / (wsum[gid] + 1e-8)).to(preds.dtype)
+            if self.odds_null_categorical:
+                # weights are already the odds categorical pi_i (sum 1-pi_0); the
+                # missing pi_0 mass = no-news predicting 0 (a constant, no gradient).
+                # Do NOT renormalize to 1 -- that would discard the null mass.
+                norm_w = weights.to(preds.dtype)
+            else:
+                wsum = torch.zeros(labels.size(0), device=weights.device, dtype=weights.dtype)
+                wsum.scatter_add_(0, gid, weights)
+                norm_w = (weights / (wsum[gid] + 1e-8)).to(preds.dtype)
             lbl_pn = labels[gid]
             se = (preds - lbl_pn) ** 2                       # per-news squared error
             inner = torch.zeros(labels.size(0), device=preds.device, dtype=preds.dtype)
@@ -180,6 +187,10 @@ class MultiEventForecaster:
         attr_noise_add: float = 0.0,
         prior_attr_path: Optional[str] = None,
         post_prior_mix: float = 1.0,
+        odds_null_categorical: bool = False,
+        null_rho0: float = 1.0,
+        odds_eps: float = 1e-3,
+        odds_temp: float = 1.0,
         lora_config: Optional[LoraConfig] = None,
     ):
         self.model_name = model_name
@@ -209,6 +220,13 @@ class MultiEventForecaster:
         # inference distribution. post_prior_mix=1.0 keeps pure-posterior behavior.
         self.prior_attr_path = prior_attr_path
         self.post_prior_mix = post_prior_mix
+        # odds+null categorical: convert independent per-news Bernoulli scores into
+        # a joint (k+1) categorical with a null prior mass rho0. News weights sum to
+        # 1-pi_0 (no-news contributes 0); loss/predict must NOT renormalize.
+        self.odds_null_categorical = odds_null_categorical
+        self.null_rho0 = null_rho0
+        self.odds_eps = odds_eps
+        self.odds_temp = odds_temp
         self.lora_config = lora_config
 
     def setup_model(self) -> None:
@@ -273,6 +291,10 @@ class MultiEventForecaster:
             # prior mixing is a TRAIN-time augmentation only.
             prior_attr_path=self.prior_attr_path if apply_prior else None,
             post_prior_mix=self.post_prior_mix,
+            odds_null_categorical=self.odds_null_categorical,
+            null_rho0=self.null_rho0,
+            odds_eps=self.odds_eps,
+            odds_temp=self.odds_temp,
         )
 
     def train(
@@ -302,6 +324,7 @@ class MultiEventForecaster:
             huber_loss=self.huber_loss,
             huber_beta=self.huber_beta,
             per_news_loss=self.per_news_loss,
+            odds_null_categorical=self.odds_null_categorical,
         )
 
         self._safe_train(trainer)
@@ -333,6 +356,12 @@ class MultiEventForecaster:
             max_seq_length=self.max_seq_length,
             predict_delta=self.predict_delta,
             read_all=self.read_all,
+            include_nonews_candidate=getattr(self, 'include_nonews_candidate', False),
+            odds_null_categorical=getattr(self, 'odds_null_categorical', False),
+            null_rho0=getattr(self, 'null_rho0', 1.0),
+            odds_eps=getattr(self, 'odds_eps', 1e-3),
+            odds_temp=getattr(self, 'odds_temp', 1.0),
+            direct_soft_routing=getattr(self, 'direct_soft_routing', False),
         )
         dataloader = DataLoader(
             dataset, batch_size=batch_size, shuffle=False,
@@ -360,7 +389,12 @@ class MultiEventForecaster:
                     # top news, countering dilution when many news are attributed.
                     if weight_temperature != 1.0:
                         group_weights = group_weights.clamp(min=1e-8).pow(1.0 / weight_temperature)
-                    normalized = group_weights / (group_weights.sum() + 1e-8)
+                    if getattr(self, 'odds_null_categorical', False) or getattr(self, 'direct_soft_routing', False):
+                        # weights are the categorical pi_i (sum 1-pi_0); use as-is
+                        # so the missing pi_0 mass shrinks the aggregate (no-news -> 0).
+                        normalized = group_weights
+                    else:
+                        normalized = group_weights / (group_weights.sum() + 1e-8)
 
                     acc_pred = 0.0
                     for i in range(0, len(indices), chunk_size):

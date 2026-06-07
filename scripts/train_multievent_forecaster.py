@@ -88,7 +88,25 @@ def parse_args():
                         help='LR scheduler type (linear, cosine, cosine_with_restarts)')
     parser.add_argument('--logging-steps', type=int, default=100)
     parser.add_argument('--save-steps', type=int, default=100)
+    parser.add_argument('--save-total-limit', type=int, default=None,
+                        help='Cap number of saved checkpoints (HF keeps the most '
+                             'recent N + the best). Use for full-FT (each ckpt is '
+                             'GBs) to avoid filling the disk. None=keep all.')
+    parser.add_argument('--save-only-model', action='store_true',
+                        help='Save ONLY model weights (skip optimizer/scheduler/rng '
+                             'state). For full-FT this cuts checkpoint size ~3-4x '
+                             '(no fp32 Adam state) and the slow FSDP optimizer gather. '
+                             'Cannot resume training from these, but we only need the '
+                             'final weights for inference.')
     parser.add_argument('--eval-steps', type=int, default=500)
+    parser.add_argument('--no-mid-checkpoints', action='store_true',
+                        help='Disable mid-training checkpointing (save_strategy=no). '
+                             'Forces the run to save ONCE at the end via '
+                             'trainer.save_model(), which under FSDP goes through '
+                             'accelerate.get_state_dict (correct gather of the root '
+                             'embedding). Mid-training _save_checkpoint uses '
+                             'save_fsdp_model which writes a FLAT embedding shard that '
+                             'cannot be reloaded. Use for full-FT FSDP runs.')
     parser.add_argument('--fp16', action='store_true')
     parser.add_argument('--bf16', action='store_true',
                         help='Mixed-precision bf16 training. A100/H100 only.')
@@ -142,6 +160,18 @@ def parse_args():
     parser.add_argument('--mae-loss', action='store_true',
                         help='L1/MAE loss (optimizes conditional median) instead of MSE. '
                              'De-shrinks for MAE directly; overrides vol/delta-weighted.')
+    parser.add_argument('--odds-null-categorical', action='store_true',
+                        help='Convert independent per-news Bernoulli scores into a joint '
+                             '(k+1) categorical over (news, no-news) via odds + null prior '
+                             'mass rho0. News weights sum to 1-pi_0 (no-news pred fixed 0); '
+                             'loss/predict skip renorm. Fixes L1 collapsing weak [0.2,0,0]->[1,0,0].')
+    parser.add_argument('--null-rho0', type=float, default=1.0,
+                        help='Null event raw mass o_0=rho0 in the odds categorical.')
+    parser.add_argument('--odds-eps', type=float, default=1e-3,
+                        help='Epsilon in odds o_i=(a+eps)/(1-a+eps).')
+    parser.add_argument('--odds-temp', type=float, default=1.0,
+                        help='Smoothing temperature: o_i^(1/T). T>1 flattens. odds already '
+                             'spreads the distribution so T=1 is the default (no extra sharpen).')
     parser.add_argument('--per-news-loss', action='store_true',
                         help='Responsibility-weighted L_wm: score each news vs the move then weight by attribution (vs error-of-weighted-mean). Composes with --vol-normalized-loss.')
     parser.add_argument('--huber-loss', action='store_true',
@@ -282,19 +312,23 @@ def main():
         attr_noise_add=args.attr_noise_add,
         prior_attr_path=args.prior_attr_path,
         post_prior_mix=args.post_prior_mix,
+        odds_null_categorical=args.odds_null_categorical,
+        null_rho0=args.null_rho0,
+        odds_eps=args.odds_eps,
+        odds_temp=args.odds_temp,
         delta_weight_floor=args.delta_weight_floor,
         lora_config=lora_config,
     )
 
     # HF constraint: load_best_model_at_end=True requires save_steps to be
-    # a round multiple of eval_steps.
-    if args.eval_steps > 0 and args.save_steps % args.eval_steps != 0:
+    # a round multiple of eval_steps. (Skipped when mid-checkpoints are off.)
+    if not args.no_mid_checkpoints and args.eval_steps > 0 and args.save_steps % args.eval_steps != 0:
         print_main(
             f"Adjusting save_steps from {args.save_steps} to {args.eval_steps} "
             "to satisfy load_best_model_at_end requirement."
         )
         args.save_steps = args.eval_steps
-    
+
     fsdp_kwargs: Dict[str, Any] = {}
     if args.fsdp:
         fsdp_kwargs['fsdp'] = args.fsdp
@@ -324,9 +358,11 @@ def main():
         max_grad_norm=args.max_grad_norm,
         logging_steps=args.logging_steps,
         save_steps=args.save_steps,
+        save_total_limit=args.save_total_limit,
+        save_only_model=args.save_only_model,
         eval_steps=args.eval_steps,
         eval_strategy='steps',
-        save_strategy='steps',
+        save_strategy='no' if args.no_mid_checkpoints else 'steps',
         fp16=args.fp16,
         bf16=args.bf16,
         **fsdp_kwargs,
