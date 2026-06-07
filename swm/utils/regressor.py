@@ -6,7 +6,6 @@ from typing import Optional
 
 import torch
 import torch.nn as nn
-from peft import LoraConfig, PeftModel, get_peft_model
 from transformers import AutoModel, PretrainedConfig, PreTrainedModel
 
 
@@ -50,7 +49,6 @@ class LLMRegressor(PreTrainedModel):
     def __init__(
         self,
         config: LLMRegressorConfig,
-        lora_config: Optional[LoraConfig] = None,
     ):
         super().__init__(config)
         # AutoModel (no LM head) + last_hidden_state — avoids `output_hidden_states=True`
@@ -62,10 +60,7 @@ class LLMRegressor(PreTrainedModel):
             torch_dtype="auto",
         )
         hidden_size = base.config.hidden_size
-        if lora_config is not None:
-            self.llm = get_peft_model(base, lora_config)
-        else:
-            self.llm = base
+        self.llm = base
         # Scale regression head proportionally to hidden size.
         mid_size = max(256, hidden_size // 4)
         nef = getattr(config, 'n_extra_features', 0) or 0
@@ -79,7 +74,6 @@ class LLMRegressor(PreTrainedModel):
             nn.Linear(64, 1),
         )
         self.max_length = config.max_length
-        self.lora_config = lora_config
 
     def forward(self, input_ids, attention_mask=None, extra_features=None, **kwargs):
         # Returns raw per-sequence predictions (batch, 1). The forecaster and
@@ -139,7 +133,7 @@ class LLMRegressor(PreTrainedModel):
         # could only reach self.llm's child units, leaving the root-owned head as
         # a flat shard.) get_state_dict materializes on rank0; non-rank0 ranks
         # don't enter here, so no collective is needed below.
-        if state_dict is not None and self.lora_config is None:
+        if state_dict is not None:
             if not rank0:
                 return
             def _clean(k):
@@ -152,14 +146,14 @@ class LLMRegressor(PreTrainedModel):
             inner.save_pretrained(save_directory, state_dict=backbone_sd)
         else:
             # Fallback: FSDP without a passed state_dict (gather self ourselves),
-            # or LoRA / single-GPU / DDP (direct save).
+            # or single-GPU / DDP (direct save).
             try:
                 from torch.distributed.fsdp import (
                     FullyShardedDataParallel as FSDP, StateDictType, FullStateDictConfig)
                 is_fsdp = any(isinstance(m, FSDP) for m in self.llm.modules())
             except Exception:
                 is_fsdp = False
-            if is_fsdp and self.lora_config is None:
+            if is_fsdp:
                 cfg = FullStateDictConfig(offload_to_cpu=True, rank0_only=True)
                 with FSDP.state_dict_type(self, StateDictType.FULL_STATE_DICT, cfg):
                     full = self.state_dict()             # collective: ALL ranks enter
@@ -173,9 +167,7 @@ class LLMRegressor(PreTrainedModel):
                 self.llm.save_pretrained(save_directory)
 
         if not rank0:
-            return  # only rank0 writes the head/lora/sidecar files
-        if self.lora_config is not None:
-            self.lora_config.save_pretrained(save_directory)
+            return  # only rank0 writes the head/sidecar files
         torch.save(
             head_sd_override if head_sd_override is not None else self.regression_head.state_dict(),
             Path(save_directory) / 'regression_head.bin',
@@ -193,22 +185,14 @@ class LLMRegressor(PreTrainedModel):
                 data = json.load(fh)
             config = LLMRegressorConfig(**{k: data.get(k) for k in cls._SIDECAR_FIELDS})
         else:
-            # Legacy checkpoints: LoRA kept our fields in config.json; full-FT
-            # lost them (backbone config.json won) so they fall back to defaults.
+            # Legacy checkpoints without the sidecar fall back to defaults
+            # (the backbone's own config.json wins for full-FT saves).
             config = LLMRegressorConfig.from_pretrained(path, **kwargs)
 
-        adapter_present = (path / 'adapter_config.json').exists()
-        # Non-LoRA: backbone was saved at this path. Point base loader there.
-        # LoRA: backbone wasn't saved; keep config.base_model_name_or_path
-        # pointing to the original HF model.
-        if not adapter_present:
-            config.base_model_name_or_path = str(path)
+        # The backbone was saved at this path; point the base loader there.
+        config.base_model_name_or_path = str(path)
 
-        model = cls(config, lora_config=None)
-
-        if adapter_present:
-            model.llm = PeftModel.from_pretrained(model.llm, str(path))
-            model.lora_config = LoraConfig.from_pretrained(str(path))
+        model = cls(config)
 
         head_state = torch.load(
             path / 'regression_head.bin',

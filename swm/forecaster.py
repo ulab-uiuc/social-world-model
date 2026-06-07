@@ -2,7 +2,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 import torch
-from peft import LoraConfig
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from transformers import AutoTokenizer, Trainer, TrainingArguments
@@ -191,7 +190,6 @@ class MultiEventForecaster:
         null_rho0: float = 1.0,
         odds_eps: float = 1e-3,
         odds_temp: float = 1.0,
-        lora_config: Optional[LoraConfig] = None,
     ):
         self.model_name = model_name
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -227,7 +225,6 @@ class MultiEventForecaster:
         self.null_rho0 = null_rho0
         self.odds_eps = odds_eps
         self.odds_temp = odds_temp
-        self.lora_config = lora_config
 
     def setup_model(self) -> None:
         config = LLMRegressorConfig(
@@ -238,20 +235,17 @@ class MultiEventForecaster:
             predict_delta=self.predict_delta,
             bounded_output=self.bounded_output,
         )
-        self.model = LLMRegressor(config, lora_config=self.lora_config)
-        if self.lora_config is None:
-            # Full fine-tune: backbone loads in bf16 but the regression head is
-            # fp32, and FSDP refuses to flatten mixed-dtype params. Cast the whole
-            # model to fp32 (uniform) so FSDP can wrap it; TrainingArguments bf16
-            # then drives FSDP mixed-precision (bf16 compute, fp32 master weights).
-            self.model = self.model.float()
+        self.model = LLMRegressor(config)
+        # Full fine-tune: backbone loads in bf16 but the regression head is
+        # fp32, and FSDP refuses to flatten mixed-dtype params. Cast the whole
+        # model to fp32 (uniform) so FSDP can wrap it; TrainingArguments bf16
+        # then drives FSDP mixed-precision (bf16 compute, fp32 master weights).
+        self.model = self.model.float()
         if self.gradient_checkpointing and hasattr(self.model.llm, 'gradient_checkpointing_enable'):
             self.model.llm.gradient_checkpointing_enable(
                 gradient_checkpointing_kwargs={"use_reentrant": False}
             )
             print("Gradient checkpointing enabled (use_reentrant=False)")
-        if self.lora_config is not None and hasattr(self.model.llm, 'print_trainable_parameters'):
-            self.model.llm.print_trainable_parameters()
 
     def _create_collate_fn(self):
         def collate_fn(batch):

@@ -116,13 +116,6 @@ def parse_args():
                         help='If >0, use size_based FSDP auto-wrap (wraps ANY module > this many params, incl. the embedding -> gathered on save). Overrides transformer-layer-cls.')
     parser.add_argument('--fsdp-transformer-layer-cls', type=str, default='',
                         help='Transformer layer class for FSDP auto-wrap, e.g. Qwen3DecoderLayer.')
-    parser.add_argument('--lora-r', type=int, default=0,
-                        help='LoRA rank. 0 disables LoRA (full FT).')
-    parser.add_argument('--lora-alpha', type=int, default=32)
-    parser.add_argument('--lora-dropout', type=float, default=0.05)
-    parser.add_argument('--lora-target-modules', type=str,
-                        default='q_proj,k_proj,v_proj,o_proj',
-                        help='Comma-separated module names for LoRA target.')
     parser.add_argument('--gradient-checkpointing', action='store_true',
                         help='Enable gradient checkpointing to save memory')
     
@@ -274,21 +267,7 @@ def main():
     if train_with_attr == 0:
         raise ValueError("No training records have attributions.")
     
-    lora_config = None
-    if args.lora_r > 0:
-        from peft import LoraConfig, TaskType
-        lora_config = LoraConfig(
-            r=args.lora_r,
-            lora_alpha=args.lora_alpha,
-            lora_dropout=args.lora_dropout,
-            target_modules=args.lora_target_modules.split(','),
-            bias='none',
-            task_type=TaskType.FEATURE_EXTRACTION,
-        )
-        print_main(f"LoRA mode: r={args.lora_r}, alpha={args.lora_alpha}, "
-                   f"targets={args.lora_target_modules}")
-    else:
-        print_main("Full fine-tuning mode (no LoRA)")
+    print_main("Full fine-tuning mode (FSDP)")
 
     forecaster = MultiEventForecaster(
         model_name=args.model_name,
@@ -317,7 +296,6 @@ def main():
         odds_eps=args.odds_eps,
         odds_temp=args.odds_temp,
         delta_weight_floor=args.delta_weight_floor,
-        lora_config=lora_config,
     )
 
     # HF constraint: load_best_model_at_end=True requires save_steps to be
