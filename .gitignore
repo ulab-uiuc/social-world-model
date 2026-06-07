@@ -187,3 +187,15 @@ data/v6/
 
 # Claude session state
 .claude/scheduled_tasks.lock
+
+# === SWM: data, weights, derived artifacts (too large / not code) ===
+data/
+saves_local/
+saves/
+dumps/
+dumps_*/
+figures/
+results/
+scripts_backup/
+*_backup/
+*.bak_*

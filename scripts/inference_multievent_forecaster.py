@@ -80,6 +80,16 @@ def parse_args():
     parser.add_argument('--max-seq-length', type=int, default=1024)
     parser.add_argument('--batch-size', type=int, default=8)
     parser.add_argument('--max-news', type=int, default=30)
+    parser.add_argument('--odds-null-categorical', action='store_true',
+                        help='Aggregate with the odds+null categorical (match odds-trained models): '
+                             'pi_i = odds_i/(rho0+sum odds), no-news=0, no renorm.')
+    parser.add_argument('--null-rho0', type=float, default=1.0)
+    parser.add_argument('--odds-eps', type=float, default=1e-3)
+    parser.add_argument('--odds-temp', type=float, default=1.0)
+    parser.add_argument('--direct-soft-routing', action='store_true',
+                        help='PRIOR attributer already emits categorical routing weights pi_i: '
+                             'use scores AS-IS (clamp [0,1], no-news=1-sum->0), no odds transform, '
+                             'no renorm. Use for prior-attributed files; NOT for raw Bernoulli/posterior.')
     parser.add_argument('--force-max-news', type=int, default=None,
                         help='Ablation: override max_news AFTER loading the checkpoint '
                              '(load() normally restores the trained value). Caps how many '
@@ -104,6 +114,12 @@ def parse_args():
     parser.add_argument('--limit', type=int, default=None)
     parser.add_argument('--read-all', action='store_true',
                         help='Joint-read all candidate news in one prompt (must match training).')
+    parser.add_argument('--include-nonews-candidate', action='store_true',
+                        help='No-routing inference: inject a no-news candidate with '
+                             'weight = 1 - sum(news scores) into the weighted average, '
+                             'so the forecaster blends news preds with its no-news pred '
+                             'instead of relying on an explicit null-gate. Use with a '
+                             'forecaster trained on null data (v10+).')
     parser.add_argument('--num-shards', type=int, default=1, help='Split data into N shards for parallel multi-GPU inference.')
     parser.add_argument('--shard-idx', type=int, default=0, help='Which shard (0..N-1) this process handles.')
     return parser.parse_args()
@@ -157,6 +173,18 @@ def main():
         forecaster_kwargs['pooling_method'] = args.pooling_method
     forecaster = MultiEventForecaster(**forecaster_kwargs)
     forecaster.load(args.model_path)
+    forecaster.include_nonews_candidate = args.include_nonews_candidate
+    forecaster.odds_null_categorical = args.odds_null_categorical
+    forecaster.null_rho0 = args.null_rho0
+    forecaster.odds_eps = args.odds_eps
+    forecaster.odds_temp = args.odds_temp
+    forecaster.direct_soft_routing = args.direct_soft_routing
+    if args.odds_null_categorical:
+        print(f"[odds] odds+null categorical aggregation (rho0={args.null_rho0}, eps={args.odds_eps}, T={args.odds_temp})")
+    if args.direct_soft_routing:
+        print("[direct] direct soft routing: prior categorical weights used as-is (no odds, no renorm)")
+    if args.include_nonews_candidate:
+        print("[no-routing] injecting no-news candidate (weight=1-sum(news scores)) into weighted average")
     if args.force_max_news is not None:
         forecaster.max_news = args.force_max_news
         print(f"[ablation] forced max_news={args.force_max_news} (overriding checkpoint value)")
