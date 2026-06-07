@@ -90,6 +90,16 @@ def parse_args():
                         help='LR scheduler type (linear, cosine, cosine_with_restarts)')
     parser.add_argument('--logging-steps', type=int, default=100)
     parser.add_argument('--save-steps', type=int, default=100)
+    parser.add_argument('--save-total-limit', type=int, default=None,
+                        help='Keep at most N checkpoints (best + most-recent). Prevents disk blowup for full-FT.')
+    parser.add_argument('--ddp-timeout', type=int, default=1800,
+                        help='Distributed collective timeout (seconds). Raise well above the time a slow '
+                             'NFS checkpoint write takes, so other ranks waiting at the next allreduce do '
+                             'not trip the NCCL watchdog and abort the run mid-save.')
+    parser.add_argument('--save-only-model', action='store_true',
+                        help='Save ONLY model weights, not optimizer/scheduler/rng. For FSDP full-FT this '
+                             'skips the huge fp32 optimizer-state gather (~2x params) — checkpoints shrink '
+                             'from ~3x to ~1x model size and save many minutes faster. No mid-run resume.')
     parser.add_argument('--eval-steps', type=int, default=500)
     parser.add_argument('--fp16', action='store_true')
     parser.add_argument('--bf16', action='store_true',
@@ -98,13 +108,6 @@ def parse_args():
                         help='FSDP mode, e.g. "full_shard auto_wrap". Empty disables FSDP.')
     parser.add_argument('--fsdp-transformer-layer-cls', type=str, default='',
                         help='Transformer layer class for FSDP auto-wrap, e.g. Qwen3DecoderLayer.')
-    parser.add_argument('--lora-r', type=int, default=0,
-                        help='LoRA rank. 0 disables LoRA (full FT).')
-    parser.add_argument('--lora-alpha', type=int, default=32)
-    parser.add_argument('--lora-dropout', type=float, default=0.05)
-    parser.add_argument('--lora-target-modules', type=str,
-                        default='q_proj,k_proj,v_proj,o_proj',
-                        help='Comma-separated module names for LoRA target.')
     parser.add_argument('--gradient-checkpointing', action='store_true',
                         help='Enable gradient checkpointing to save memory')
     
@@ -120,6 +123,14 @@ def parse_args():
     parser.add_argument('--target-temperature', type=float, default=0.5,
                         help='Softmax temperature (shared train+inference; does NOT change '
                              'output sharpness relative to target). Default 0.5.')
+    parser.add_argument('--target-mode', type=str, default='normalize', choices=['normalize', 'odds'],
+                        help="Target dist over (news∪no-news). 'odds': score->odds, null gets raw mass "
+                             "--null-odds, then normalize (weak scores->high no-news, null emerges).")
+    parser.add_argument('--null-odds', type=float, default=1.0,
+                        help='Raw odds mass rho_0 for the no-news slot in --target-mode odds. Higher = more conservative (more null mass).')
+    parser.add_argument('--odds-eps', type=float, default=1e-3)
+    parser.add_argument('--odds-temp', type=float, default=1.0,
+                        help='Smoothing T for odds**(1/T); T>1 flattens the target.')
     parser.add_argument('--target-sharpen', type=float, default=1.0,
                         help='Sharpen the KL target: p_dist ∝ score**this. >1 makes the '
                              'attributer more decisive (top news gets more mass). Default 1.0.')
@@ -191,22 +202,8 @@ def main():
 
     if train_with_attr == 0:
         raise ValueError("No training records have attributions.")
-    
-    lora_config = None
-    if args.lora_r > 0:
-        from peft import LoraConfig, TaskType
-        lora_config = LoraConfig(
-            r=args.lora_r,
-            lora_alpha=args.lora_alpha,
-            lora_dropout=args.lora_dropout,
-            target_modules=args.lora_target_modules.split(','),
-            bias='none',
-            task_type=TaskType.FEATURE_EXTRACTION,
-        )
-        print_main(f"LoRA mode: r={args.lora_r}, alpha={args.lora_alpha}, "
-                   f"targets={args.lora_target_modules}")
-    else:
-        print_main("Full fine-tuning mode (no LoRA)")
+
+    print_main("Full fine-tuning mode (FSDP)")
 
     attributer = BasicPriorAttributer(
         model_name=args.model_name,
@@ -215,13 +212,16 @@ def main():
         max_news=args.max_news,
         target_temperature=args.target_temperature,
         null_subsample_ratio=args.null_subsample_ratio,
+        target_mode=args.target_mode,
+        null_odds=args.null_odds,
+        odds_eps=args.odds_eps,
+        odds_temp=args.odds_temp,
         target_sharpen=args.target_sharpen,
         routing_loss_weight=args.routing_loss_weight,
         reverse_kl=args.reverse_kl,
         neg_bce_weight=args.neg_bce_weight,
         per_news_bce=args.per_news_bce,
         head_lr_multiplier=args.head_lr_multiplier,
-        lora_config=lora_config,
     )
 
     # HF constraint: load_best_model_at_end=True requires save_steps to be
@@ -258,6 +258,9 @@ def main():
         lr_scheduler_type=args.lr_scheduler_type,
         logging_steps=args.logging_steps,
         save_steps=args.save_steps,
+        save_total_limit=args.save_total_limit,
+        save_only_model=args.save_only_model,
+        ddp_timeout=args.ddp_timeout,
         eval_steps=args.eval_steps,
         eval_strategy='steps',
         save_strategy='steps',

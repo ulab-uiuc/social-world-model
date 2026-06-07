@@ -3,7 +3,6 @@ from typing import Any, Dict, List, Optional
 
 import torch
 import torch.nn.functional as F
-from peft import LoraConfig
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from transformers import AutoTokenizer, Trainer, TrainingArguments
@@ -179,12 +178,15 @@ class BasicPriorAttributer:
         target_temperature: float = 0.5,
         null_subsample_ratio: float = 1.0,
         target_sharpen: float = 1.0,
+        target_mode: str = 'normalize',
+        null_odds: float = 1.0,
+        odds_eps: float = 1e-3,
+        odds_temp: float = 1.0,
         routing_loss_weight: float = 0.0,
         reverse_kl: bool = False,
         neg_bce_weight: float = 0.0,
         per_news_bce: bool = False,
         head_lr_multiplier: float = 1.0,
-        lora_config: Optional[LoraConfig] = None,
     ):
         self.head_lr_multiplier = head_lr_multiplier
         self.model_name = model_name
@@ -196,11 +198,14 @@ class BasicPriorAttributer:
         self.target_temperature = target_temperature
         self.null_subsample_ratio = null_subsample_ratio
         self.target_sharpen = target_sharpen
+        self.target_mode = target_mode
+        self.null_odds = null_odds
+        self.odds_eps = odds_eps
+        self.odds_temp = odds_temp
         self.routing_loss_weight = routing_loss_weight
         self.reverse_kl = reverse_kl
         self.neg_bce_weight = neg_bce_weight
         self.per_news_bce = per_news_bce
-        self.lora_config = lora_config
         # Two-stage null gate (set by inference). null_gate=True scores the
         # "no relevant news" option; null_gate_threshold=None means parameter-
         # free (null when no-news ranks #1), otherwise null when its softmax
@@ -214,19 +219,16 @@ class BasicPriorAttributer:
             max_news=self.max_news, target_temperature=self.target_temperature,
             per_news_bce=self.per_news_bce,
         )
-        self.model = LLMRegressor(config, lora_config=self.lora_config)
-        if self.lora_config is None:
-            # Full fine-tune: backbone is bf16 but the head is fp32, and FSDP
-            # refuses to flatten mixed-dtype params. Cast to uniform fp32; the
-            # TrainingArguments bf16 flag then drives FSDP mixed precision.
-            self.model = self.model.float()
+        self.model = LLMRegressor(config)
+        # Full fine-tune: backbone is bf16 but the head is fp32, and FSDP
+        # refuses to flatten mixed-dtype params. Cast to uniform fp32; the
+        # TrainingArguments bf16 flag then drives FSDP mixed precision.
+        self.model = self.model.float()
         if self.gradient_checkpointing and hasattr(self.model.llm, 'gradient_checkpointing_enable'):
             self.model.llm.gradient_checkpointing_enable(
                 gradient_checkpointing_kwargs={"use_reentrant": False}
             )
             print("Gradient checkpointing enabled (use_reentrant=False)")
-        if self.lora_config is not None and hasattr(self.model.llm, 'print_trainable_parameters'):
-            self.model.llm.print_trainable_parameters()
 
     def _create_collate_fn(self):
         def collate_fn(batch):
@@ -260,6 +262,10 @@ class BasicPriorAttributer:
             max_seq_length=self.max_seq_length,
             null_subsample_ratio=self.null_subsample_ratio,
             target_sharpen=self.target_sharpen,
+            target_mode=self.target_mode,
+            null_odds=self.null_odds,
+            odds_eps=self.odds_eps,
+            odds_temp=self.odds_temp,
         )
         valid_dataset = PriorAttributerDataset(
             records=valid_records,
@@ -267,6 +273,10 @@ class BasicPriorAttributer:
             max_news=self.max_news,
             max_seq_length=self.max_seq_length,
             target_sharpen=self.target_sharpen,
+            target_mode=self.target_mode,
+            null_odds=self.null_odds,
+            odds_eps=self.odds_eps,
+            odds_temp=self.odds_temp,
         )
 
         trainer = KLDivergenceTrainer(

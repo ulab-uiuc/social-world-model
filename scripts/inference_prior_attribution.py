@@ -32,6 +32,8 @@ def parse_args():
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--num-shards', type=int, default=1, help='Split data into N shards for parallel multi-GPU inference.')
     parser.add_argument('--shard-idx', type=int, default=0, help='Which shard (0..N-1) this process handles.')
+    parser.add_argument('--infer-temperature', type=float, default=None,
+                        help='Override the softmax temperature at inference only (sharpens output without retraining). Default: keep trained target_temperature.')
     return parser.parse_args()
 
 
@@ -54,6 +56,9 @@ def main():
     attributer.load(args.attributer_path)
     attributer.max_news = args.max_news
     print(f'[fix] attributer.max_news forced to {attributer.max_news} (score ALL candidate news, no tail truncation)')
+    if args.infer_temperature is not None:
+        print(f'[temp] overriding inference softmax temperature {attributer.target_temperature} -> {args.infer_temperature} (logits unchanged; sharpening only)')
+        attributer.target_temperature = args.infer_temperature
 
     updated = 0
     for record in tqdm(records, desc='Generating attributions'):
