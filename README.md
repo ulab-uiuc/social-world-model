@@ -62,6 +62,20 @@ Each record is one `(history, candidate_news, target, attributions)` example.
 are the splits restricted to records with at least one non-zero-score news (used
 for training).
 
+Use it directly with 🤗 `datasets`:
+
+```python
+from datasets import load_dataset
+
+block = "Qwen3.5-397B-attributed-data"   # or "Qwen3-32B-attributed-data"
+ds = load_dataset("ulab-ai/swm-bench", data_files={
+    "train":           f"{block}/train.jsonl",                          # attributor
+    "train_attr":      f"{block}/train_with_nonzero_attribution.jsonl", # world model
+    "test_kalshi":     f"{block}/test_kalshi.jsonl",
+    "test_polymarket": f"{block}/test_polymarket.jsonl",
+})
+```
+
 ## Stage 1 — Train the attributor
 
 The attributor is trained to reproduce the posterior's responsibility
