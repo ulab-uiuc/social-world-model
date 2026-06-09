@@ -52,9 +52,16 @@ python -c "from huggingface_hub import snapshot_download; \
   snapshot_download('ulab-ai/swm-bench', repo_type='dataset', local_dir='data/swm-bench')"
 ```
 
+SWM-Bench has three parts:
+- `raw/` — the original Polymarket / Kalshi price series + crawled news.
+- `Qwen3.5-397B-attributed-data/` — the records labeled by the Qwen3.5-397B
+  posterior attributor (our main dataset).
+- `Qwen3-32B-attributed-data/` — the same records labeled by Qwen3-32B.
+
 Each record is one `(history, candidate_news, target, attributions)` example.
-The `attributions` field holds the posterior (oracle) scores; the *attributed
-subset* is the examples with at least one non-zero-score news.
+`attributions` holds the posterior (oracle) scores; `*_with_nonzero_attribution.jsonl`
+are the splits restricted to records with at least one non-zero-score news (used
+for training).
 
 ## Stage 1 — Train the attributor
 
@@ -62,9 +69,9 @@ The attributor is trained to reproduce the posterior's responsibility
 distribution over candidate news (forward-KL; one epoch is enough):
 
 ```bash
-DATA=data/swm-bench
+DATA=data/swm-bench/Qwen3.5-397B-attributed-data
 CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun --nproc_per_node=4 scripts/train_attributer.py \
-    --train-data-path $DATA/train_clean.jsonl \
+    --train-data-path $DATA/train_with_nonzero_attribution.jsonl \
     --valid-data-path $DATA/valid_subset150.jsonl \
     --output-dir saves/attributer_8b --model-name Qwen/Qwen3-8B \
     --epochs 1 --max-news 30 --max-seq-length 1024 \
@@ -91,9 +98,9 @@ bash scripts/train_fc_v9odds.sh single 0 1 29501 Qwen/Qwen3-0.6B wm06b saves_loc
 **Posterior** (oracle attribution, already in the test file):
 
 ```bash
-DATA=data/swm-bench
+DATA=data/swm-bench/Qwen3.5-397B-attributed-data
 python scripts/inference_multievent_world_model.py \
-    --test-data-path $DATA/test_kalshi_final.jsonl \
+    --test-data-path $DATA/test_kalshi.jsonl \
     --model-path saves_local/wm8b/final-model --model-name Qwen/Qwen3-8B \
     --output-path results/posterior_kalshi.jsonl --max-news 30
 ```
@@ -103,7 +110,7 @@ python scripts/inference_multievent_world_model.py \
 ```bash
 # (a) prior attribution: replace each record's attributions with the model's
 python scripts/inference_prior_attribution.py \
-    --data-path $DATA/test_kalshi_final.jsonl \
+    --data-path $DATA/test_kalshi.jsonl \
     --attributer-path saves/attributer_8b --model-name Qwen/Qwen3-8B \
     --output-path results/test_kalshi_prior.jsonl --max-news 30
 

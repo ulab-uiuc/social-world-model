@@ -10,7 +10,7 @@ mu-dump's own attributions. attr-subset is defined by ORACLE positives in --orac
 
 Example:
   python scripts/aggregate_offline.py --mu-dump dumps/fc8b_kalshi.jsonl \
-     --oracle-file data/.../test_kalshi_final.jsonl --scheme direct
+     --oracle-file data/.../test_kalshi.jsonl --scheme direct
 """
 
 import argparse

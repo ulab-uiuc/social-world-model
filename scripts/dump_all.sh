@@ -29,7 +29,7 @@ dump () {
 P06=$(ls -d "$DISK3"/fc06b_v9odds_semdedup/checkpoint-* 2>/dev/null|sort -t- -k2 -n|tail -1)
 for spec in "saves_local/fc8b_v9odds_semdedup/final-model Qwen/Qwen3-8B fc8b" "$DISK3/fc4b_v9odds_semdedup/final-model Qwen/Qwen3-4B fc4b" "$P06 Qwen/Qwen3-0.6B fc06b"; do
   set -- $spec
-  dump "$1" "$2" "$3" kalshi "$D/test_kalshi_final.jsonl"
-  dump "$1" "$2" "$3" poly   "$D/test_polymarket_final.jsonl"
+  dump "$1" "$2" "$3" kalshi "$D/test_kalshi.jsonl"
+  dump "$1" "$2" "$3" poly   "$D/test_polymarket.jsonl"
 done
 echo "=== DUMP_ALL_DONE ==="

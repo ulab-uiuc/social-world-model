@@ -3,7 +3,7 @@
 
   all  = every datapoint in the test file
   attr = datapoints whose news is NOT all-zero attribution
-         (defined from the clean-semdedup test_*_final.jsonl files,
+         (defined from the clean-semdedup test_*.jsonl files,
           matched to each baseline file by (market_id, history fingerprint))
 
 Metric logic is identical to run_gpt55_baseline.compute_metrics_for_file
@@ -137,7 +137,7 @@ def load_attr_keys():
     """Return {split: set of (market_id, history_fp) that are in the attr subset}."""
     keys = {}
     for split in ('kalshi', 'polymarket'):
-        rows = load(CLEAN / f'test_{split}_final.jsonl')
+        rows = load(CLEAN / f'test_{split}.jsonl')
         s = set()
         for r in rows:
             attrs = r.get('attributions') or []

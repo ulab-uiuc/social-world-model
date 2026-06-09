@@ -53,12 +53,12 @@ runeval () {
   wait; cat "$OUT/${tag}_${mk}"_s*.jsonl > "$outf"; rm -f "$OUT/${tag}_${mk}"_s*.jsonl
   echo "done $tag $mk -> $(wc -l <"$outf")"
 }
-runeval "$P8" Qwen/Qwen3-8B  fc8b  kalshi "$D/test_kalshi_final.jsonl"
-runeval "$P8" Qwen/Qwen3-8B  fc8b  poly   "$D/test_polymarket_final.jsonl"
-runeval "$P4" Qwen/Qwen3-4B  fc4b  kalshi "$D/test_kalshi_final.jsonl"
-runeval "$P4" Qwen/Qwen3-4B  fc4b  poly   "$D/test_polymarket_final.jsonl"
-runeval "$P06" Qwen/Qwen3-0.6B fc06b kalshi "$D/test_kalshi_final.jsonl"
-runeval "$P06" Qwen/Qwen3-0.6B fc06b poly   "$D/test_polymarket_final.jsonl"
+runeval "$P8" Qwen/Qwen3-8B  fc8b  kalshi "$D/test_kalshi.jsonl"
+runeval "$P8" Qwen/Qwen3-8B  fc8b  poly   "$D/test_polymarket.jsonl"
+runeval "$P4" Qwen/Qwen3-4B  fc4b  kalshi "$D/test_kalshi.jsonl"
+runeval "$P4" Qwen/Qwen3-4B  fc4b  poly   "$D/test_polymarket.jsonl"
+runeval "$P06" Qwen/Qwen3-0.6B fc06b kalshi "$D/test_kalshi.jsonl"
+runeval "$P06" Qwen/Qwen3-0.6B fc06b poly   "$D/test_polymarket.jsonl"
 
 # 6. score
 "$ENVDIR/bin/python" - <<PYEOF
@@ -78,7 +78,7 @@ def met(p,t):
 print("\n===== v9-odds-semdedup POSTERIOR (odds aggregation) =====")
 print(f"{'model':>6}{'mkt':>7}{'subset':>6}{'MASE':>8}{'DA':>7}{'Corr':>8}{'n':>6}")
 for tag in ["fc8b","fc4b","fc06b"]:
-    for mk,tf in [("kalshi","test_kalshi_final.jsonl"),("poly","test_polymarket_final.jsonl")]:
+    for mk,tf in [("kalshi","test_kalshi.jsonl"),("poly","test_polymarket.jsonl")]:
         pf=f"{OUT}/{tag}_{mk}.jsonl"
         if not os.path.exists(pf): print(f"{tag:>6}{mk:>7}  (missing)"); continue
         z,ak=zak(tf); rows=[json.loads(l) for l in open(pf)]
