@@ -66,12 +66,14 @@ for training).
 ## Stage 1 — Train the attributor
 
 The attributor is trained to reproduce the posterior's responsibility
-distribution over candidate news (forward-KL; one epoch is enough):
+distribution over candidate news (forward-KL; one epoch is enough). It trains on
+`train.jsonl` — **all** records, including null events, so it learns to assign
+low/no score to irrelevant or news-less cases:
 
 ```bash
 DATA=data/swm-bench/Qwen3.5-397B-attributed-data
 CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun --nproc_per_node=4 scripts/train_attributer.py \
-    --train-data-path $DATA/train_with_nonzero_attribution.jsonl \
+    --train-data-path $DATA/train.jsonl \
     --valid-data-path $DATA/valid_subset150.jsonl \
     --output-dir saves/attributer_8b --model-name Qwen/Qwen3-8B \
     --epochs 1 --max-news 30 --max-seq-length 1024 \
@@ -81,9 +83,9 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun --nproc_per_node=4 scripts/train_attribute
 
 ## Stage 2 — Train the world model
 
-The world model is trained on the posterior-attributed data with a per-news,
-responsibility-weighted regression loss, full fine-tuning under FSDP
-(`MODE GPUS NPROC PORT MODEL TAG SAVE EP`):
+The world model is trained on `train_with_nonzero_attribution.jsonl` (the
+attributed records) with a per-news, responsibility-weighted regression loss,
+full fine-tuning under FSDP (`MODE GPUS NPROC PORT MODEL TAG SAVE EP`):
 
 ```bash
 # 8B, 8-GPU FSDP, 6 epochs
