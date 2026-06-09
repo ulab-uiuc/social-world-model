@@ -112,8 +112,6 @@ def parse_args():
 
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--limit', type=int, default=None)
-    parser.add_argument('--read-all', action='store_true',
-                        help='Joint-read all candidate news in one prompt (must match training).')
     parser.add_argument('--include-nonews-candidate', action='store_true',
                         help='No-routing inference: inject a no-news candidate with '
                              'weight = 1 - sum(news scores) into the weighted average, '
@@ -167,7 +165,6 @@ def main():
         'max_seq_length': args.max_seq_length,
         'max_news': args.max_news,
         'predict_delta': args.predict_delta,
-        'read_all': args.read_all,
     }
     if args.pooling_method is not None:
         forecaster_kwargs['pooling_method'] = args.pooling_method

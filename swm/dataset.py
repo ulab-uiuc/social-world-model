@@ -141,11 +141,6 @@ class MultiEventForecasterDataset(Dataset):
         max_seq_length: int = 1024,
         null_subsample_ratio: float = 1.0,
         predict_delta: bool = True,
-        read_all: bool = False,
-        attr_noise_drop: float = 0.0,
-        attr_noise_add: float = 0.0,
-        prior_attr_path: Optional[str] = None,
-        post_prior_mix: float = 1.0,
         include_nonews_candidate: bool = False,
         odds_null_categorical: bool = False,
         null_rho0: float = 1.0,
@@ -166,24 +161,6 @@ class MultiEventForecasterDataset(Dataset):
         self.max_seq_length = max_seq_length
         self.null_subsample_ratio = null_subsample_ratio
         self.predict_delta = predict_delta
-        self.read_all = read_all
-        # prior+posterior MIXTURE (fixes attributor/forecaster distribution
-        # mismatch): the forecaster trains on posterior (oracle, soft) weights but
-        # at inference consumes the attributer's PRIOR (sharper, includes
-        # off-target). Blend per-news weight w_i = a*post_i + (1-a)*prior_i so the
-        # forecaster sees BOTH the clean causal signal AND the realistic inference
-        # distribution (DAgger-style train/infer bridge). a=post_prior_mix:
-        # 1.0 = pure posterior (old behavior), 0.0 = pure prior.
-        self.post_prior_mix = post_prior_mix
-        self._prior_by_key = self._load_prior_attr(prior_attr_path) if prior_attr_path else None
-        # H3: train/inference attribution mismatch. At inference the forecaster
-        # reads the *attributer's* (noisy) selection, not the gold positives it
-        # trains on. Inject that noise at train time: drop true positives
-        # (false negatives) and add distractor negatives at small weight (false
-        # positives), so the model learns to tolerate imperfect attribution.
-        # Set >0 only on the train split.
-        self.attr_noise_drop = attr_noise_drop
-        self.attr_noise_add = attr_noise_add
         self.datapoints = self._create_datapoints()
         print(f'Created {len(self.datapoints)} datapoints')
 
@@ -212,51 +189,44 @@ class MultiEventForecasterDataset(Dataset):
                 has_kept += 1
 
             target = record.target
-            if getattr(self, 'read_all', False):
-                # read-all: ONE prompt with ALL candidate news read jointly
-                # (aligns with prompting baseline; breaks per-news avg ceiling).
-                prompts = [self._build_read_all_prompt(record, target)]
-                weights = torch.tensor([1.0], dtype=torch.float)
-                total = 1.0
+            prompts = [self._build_prompt(record, target, news) for news, _ in items]
+            raw = torch.tensor([w for _, w in items], dtype=torch.float).clamp(min=0.0)
+            if getattr(self, 'direct_soft_routing', False):
+                # PRIOR attributer (odds-trained) already emits the categorical
+                # routing weights pi_i directly (per-record sum < 1; the missing
+                # 1-sum is the implicit no-news mass). Use them AS-IS: clamp to
+                # [0,1], mask any None candidate to 0, NO odds transform, NO
+                # renorm. The no-news remainder -> 0 shrinks weak/null events.
+                is_news = torch.tensor([news is not None for news, _ in items], dtype=torch.float)
+                weights = raw.clamp(0.0, 1.0) * is_news
+            elif getattr(self, 'odds_null_categorical', False):
+                # Independent per-news Bernoulli scores a_i -> joint (k+1) categorical
+                # over (news, no-news) via odds + a null prior mass rho0:
+                #   o_i = ((a_i+eps)/(1-a_i+eps))^(1/T),  o_0 = rho0
+                #   pi_i = o_i / (rho0 + sum_j o_j)   (news weights sum to 1-pi_0)
+                # The null mass pi_0 = rho0/(rho0+sum o) is NOT a candidate here:
+                # no-news prediction is fixed 0, so news weights summing to <1
+                # shrink the aggregate for low-confidence events. Loss/predict
+                # must NOT renormalize these to 1. Fixes L1's bug where weak
+                # [0.2,0,0] collapses to a confident [1,0,0].
+                # no-news candidate (news is None, e.g. a null event's only
+                # candidate) predicts 0 and contributes 0: mask its odds to 0 so
+                # null events aggregate to 0 (route-to-0), not the untrained
+                # no-news-prompt output. Has-news events have no None candidate.
+                is_news = torch.tensor([news is not None for news, _ in items], dtype=torch.float)
+                a = raw.clamp(0.0, 1.0 - 1e-6)
+                o = (a + self.odds_eps) / (1.0 - a + self.odds_eps) * is_news
+                if self.odds_temp != 1.0:
+                    o = o.pow(1.0 / self.odds_temp)
+                weights = o / (self.null_rho0 + o.sum())
             else:
-                prompts = [self._build_prompt(record, target, news) for news, _ in items]
-                raw = torch.tensor([w for _, w in items], dtype=torch.float).clamp(min=0.0)
-                if getattr(self, 'direct_soft_routing', False):
-                    # PRIOR attributer (odds-trained) already emits the categorical
-                    # routing weights pi_i directly (per-record sum < 1; the missing
-                    # 1-sum is the implicit no-news mass). Use them AS-IS: clamp to
-                    # [0,1], mask any None candidate to 0, NO odds transform, NO
-                    # renorm. The no-news remainder -> 0 shrinks weak/null events.
-                    is_news = torch.tensor([news is not None for news, _ in items], dtype=torch.float)
-                    weights = raw.clamp(0.0, 1.0) * is_news
-                elif getattr(self, 'odds_null_categorical', False):
-                    # Independent per-news Bernoulli scores a_i -> joint (k+1) categorical
-                    # over (news, no-news) via odds + a null prior mass rho0:
-                    #   o_i = ((a_i+eps)/(1-a_i+eps))^(1/T),  o_0 = rho0
-                    #   pi_i = o_i / (rho0 + sum_j o_j)   (news weights sum to 1-pi_0)
-                    # The null mass pi_0 = rho0/(rho0+sum o) is NOT a candidate here:
-                    # no-news prediction is fixed 0, so news weights summing to <1
-                    # shrink the aggregate for low-confidence events. Loss/predict
-                    # must NOT renormalize these to 1. Fixes L1's bug where weak
-                    # [0.2,0,0] collapses to a confident [1,0,0].
-                    # no-news candidate (news is None, e.g. a null event's only
-                    # candidate) predicts 0 and contributes 0: mask its odds to 0 so
-                    # null events aggregate to 0 (route-to-0), not the untrained
-                    # no-news-prompt output. Has-news events have no None candidate.
-                    is_news = torch.tensor([news is not None for news, _ in items], dtype=torch.float)
-                    a = raw.clamp(0.0, 1.0 - 1e-6)
-                    o = (a + self.odds_eps) / (1.0 - a + self.odds_eps) * is_news
-                    if self.odds_temp != 1.0:
-                        o = o.pow(1.0 / self.odds_temp)
-                    weights = o / (self.null_rho0 + o.sum())
+                # Fallback: L1-normalize attribution scores to a convex weight vector.
+                weights = raw
+                total = weights.sum()
+                if total > 0:
+                    weights = weights / total
                 else:
-                    # Normalize attribution scores to a convex weight vector directly.
-                    weights = raw
-                    total = weights.sum()
-                    if total > 0:
-                        weights = weights / total
-                    else:
-                        weights = torch.full_like(weights, 1.0 / weights.numel())
+                    weights = torch.full_like(weights, 1.0 / weights.numel())
 
             before_p = (
                 float(record.history[-1].get('p', 0.5)) if record.history
@@ -264,20 +234,11 @@ class MultiEventForecasterDataset(Dataset):
             )
             target_p = float(target.get('p', 0.5))
             label_val = target_p - before_p if self.predict_delta else target_p
-            # historical volatility = mean abs daily price change over the
-            # history window; the vol-normalized loss standardizes the move
-            # (predict delta/vol) so high-vol markets don't dominate the MSE.
-            hist_ps = [float(h.get('p', 0.5)) for h in record.history]
-            vol = (
-                sum(abs(hist_ps[i] - hist_ps[i - 1]) for i in range(1, len(hist_ps)))
-                / (len(hist_ps) - 1)
-            ) if len(hist_ps) > 1 else 0.0
             datapoints.append({
                 **_pack_prompts(self.tokenizer, prompts, self.max_seq_length),
                 'weights': weights,
                 'label': torch.tensor(label_val, dtype=torch.float),
                 'before_price': torch.tensor(before_p, dtype=torch.float),
-                'vol': torch.tensor(vol, dtype=torch.float),
                 'market_id': record.market_id,
                 'event_id': record.event_id,
                 't': target.get('t'),
@@ -298,7 +259,6 @@ class MultiEventForecasterDataset(Dataset):
         """List of (news_or_None, weight) tuples for this record, or None to drop."""
         positives = self._top_positives(record)
         if positives:
-            positives = self._apply_attr_noise(record, positives, rng)
             # No-routing inference: the attributer's softmax is over (news ∪
             # {no-news}), so the news scores sum to <1 and the residual mass is
             # the no-news weight. Inject it as a regular weighted candidate so
@@ -313,95 +273,15 @@ class MultiEventForecasterDataset(Dataset):
             return None
         return [(None, 1.0)]
 
-    @staticmethod
-    def _load_prior_attr(path):
-        """Map (market_id, t) -> {news_idx: prior_score} from an attributer's
-        prior-attribution dump (output of inference_prior_attribution.py)."""
-        import json as _json
-        by_key = {}
-        with open(path) as fh:
-            for line in fh:
-                if not line.strip():
-                    continue
-                r = _json.loads(line)
-                t = (r.get('target') or {}).get('t')
-                k = (r.get('market_id'), t)
-                by_key[k] = {a['news_idx']: float(a.get('score') or 0)
-                             for a in (r.get('attributions') or [])}
-        return by_key
-
     def _top_positives(self, record: Record) -> List:
         n = len(record.news)
         # posterior (oracle) positive scores, idx -> score
         post = {a['news_idx']: float(a['score'])
                 for a in record.attributions
                 if 0 <= a.get('news_idx', -1) < n and float(a.get('score') or 0) > 0}
-
-        a = getattr(self, 'post_prior_mix', 1.0)
-        prior_map = getattr(self, '_prior_by_key', None)
-        if prior_map is not None and a < 1.0:
-            prior = prior_map.get((record.market_id, (record.target or {}).get('t')), {})
-            prior = {i: s for i, s in prior.items() if 0 <= i < n and s > 0}
-            # L1-normalize each distribution over its own support, then blend
-            # per news idx: w_i = a*post_norm_i + (1-a)*prior_norm_i. Off-target
-            # news the prior surfaces enter the read set at reduced weight, so the
-            # forecaster learns the realistic inference distribution.
-            def _norm(d):
-                tot = sum(d.values())
-                return {i: v / tot for i, v in d.items()} if tot > 0 else {}
-            pn, prn = _norm(post), _norm(prior)
-            blended = {}
-            for i in set(pn) | set(prn):
-                blended[i] = a * pn.get(i, 0.0) + (1.0 - a) * prn.get(i, 0.0)
-            items = [(record.news[i], w) for i, w in blended.items() if w > 0]
-        else:
-            items = [(record.news[i], s) for i, s in post.items()]
+        items = [(record.news[i], s) for i, s in post.items()]
         items.sort(key=lambda p: -p[1])
         return items[:self.max_news]
-
-    def _apply_attr_noise(self, record, positives, rng):
-        """H3: simulate the attributer's imperfect selection at train time."""
-        drop = getattr(self, 'attr_noise_drop', 0.0)
-        add = getattr(self, 'attr_noise_add', 0.0)
-        if drop <= 0.0 and add <= 0.0:
-            return positives
-        # false negatives: drop each true positive w.p. `drop` (keep >=1).
-        if drop > 0.0 and len(positives) > 1:
-            kept = [p for p in positives if rng.random() >= drop]
-            positives = kept if kept else positives[:1]
-        # false positives: add distractor negatives at the min positive weight.
-        if add > 0.0:
-            pos_news_ids = {id(nw) for nw, _ in positives}
-            negs = [nw for nw in record.news if id(nw) not in pos_news_ids]
-            if negs:
-                min_w = min((w for _, w in positives), default=0.0)
-                distractor_w = max(min_w, 1e-3)
-                n_add = min(len(negs), int(round(add * len(positives))))
-                if add < 1.0 and n_add == 0 and rng.random() < add:
-                    n_add = 1
-                for nw in rng.sample(negs, n_add) if n_add else []:
-                    positives.append((nw, distractor_w))
-        return positives[:self.max_news]
-
-    def _build_read_all_prompt(self, record: Record, target: Dict[str, float]) -> str:
-        """One prompt with ALL candidate news read jointly (read-all mode)."""
-        target_date = unix_to_date(target['t'])
-        news = (record.news or [])[:self.max_news]
-        lines = ['Recent news (most relevant first):']
-        if news:
-            for nw in news:
-                t = nw.get('title', ''); d = nw.get('description', '')
-                lines.append(f'- {t}. {d}' if d else f'- {t}')
-        else:
-            lines.append('- No relevant news.')
-        lines.append(f'\nEvent: {record.question}')
-        if record.description:
-            lines.append(f'Description: {record.description}')
-        lines.append('\nRecent price history:')
-        for day in record.history:
-            lines.append(f"  {unix_to_date(day['t'])}: {day['p']:.3f}")
-        lines.append(f'\nPredict the probability on {target_date}:')
-        return '\n'.join(lines)
 
     def _build_prompt(
         self,

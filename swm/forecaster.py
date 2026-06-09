@@ -26,18 +26,10 @@ class WeightedTrainer(Trainer):
     """
 
     def __init__(self, *args, head_lr_multiplier: float = 1.0,
-                 delta_weighted: bool = False, delta_weight_floor: float = 0.0,
-                 vol_normalized: bool = False, vol_floor: float = 0.01, mae_loss: bool = False, huber_loss: bool = False, huber_beta: float = 0.05, per_news_loss: bool = False, odds_null_categorical: bool = False, **kwargs):
+                 per_news_loss: bool = False, odds_null_categorical: bool = False, **kwargs):
         super().__init__(*args, **kwargs)
         self.odds_null_categorical = odds_null_categorical
         self.head_lr_multiplier = head_lr_multiplier
-        self.delta_weighted = delta_weighted
-        self.delta_weight_floor = delta_weight_floor
-        self.vol_normalized = vol_normalized
-        self.vol_floor = vol_floor
-        self.mae_loss = mae_loss
-        self.huber_loss = huber_loss
-        self.huber_beta = huber_beta
         self.per_news_loss = per_news_loss
 
     def create_optimizer(self):
@@ -86,7 +78,6 @@ class WeightedTrainer(Trainer):
         labels = inputs.pop('labels')
         weights = inputs.pop('weights')
         group_ids = inputs.pop('group_ids')
-        vols = inputs.pop('vols', None)
 
         preds = model(
             input_ids=inputs['input_ids'],
@@ -116,37 +107,9 @@ class WeightedTrainer(Trainer):
             se = (preds - lbl_pn) ** 2                       # per-news squared error
             inner = torch.zeros(labels.size(0), device=preds.device, dtype=preds.dtype)
             inner.scatter_add_(0, gid, norm_w * se)          # Sum_i pi_i (mu_i - delta)^2 per record
-            if self.vol_normalized and vols is not None:
-                vc = torch.clamp(vols.to(preds.dtype), min=self.vol_floor)
-                wg = 1.0 / (vc * vc)
-                loss = (wg * inner).sum() / (wg.sum() + 1e-8)
-            else:
-                loss = inner.mean()
+            loss = inner.mean()
             return loss, acc_pred, labels
-        if self.huber_loss:
-            loss = torch.nn.functional.smooth_l1_loss(acc_pred, labels, beta=self.huber_beta)
-        elif self.mae_loss:
-            # L1 / MAE loss: optimizes the conditional MEDIAN instead of the mean.
-            # On a small-move-dominated target this de-shrinks toward the right
-            # scale for |error| (MAE) directly, instead of MSE's mean-collapse.
-            loss = torch.nn.functional.l1_loss(acc_pred, labels)
-        elif self.vol_normalized and vols is not None:
-            # standardize the move by historical volatility: loss =
-            # ((pred-delta)/vol)^2. Equivalent to predicting delta/vol (the
-            # "move as a multiple of prior volatility"). High-vol markets no
-            # longer dominate the MSE -> fights mean-collapse; vol supplies the
-            # per-market magnitude scale while the model learns direction/order.
-            vc = torch.clamp(vols.to(acc_pred.dtype), min=self.vol_floor)
-            w = 1.0 / (vc * vc)
-            loss = (w * (acc_pred - labels) ** 2).sum() / (w.sum() + 1e-8)
-        elif self.delta_weighted:
-            # weight each record's squared error by |true_delta| (+floor): big
-            # moves dominate the gradient -> fights MSE mean-collapse, forces the
-            # model to actually fit the large news-driven moves.
-            w = labels.abs() + self.delta_weight_floor
-            loss = (w * (acc_pred - labels) ** 2).sum() / (w.sum() + 1e-8)
-        else:
-            loss = torch.nn.functional.mse_loss(acc_pred, labels)
+        loss = torch.nn.functional.mse_loss(acc_pred, labels)
         return loss, acc_pred, labels
 
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
@@ -172,20 +135,7 @@ class MultiEventForecaster:
         pooling_method: str = 'last_token',
         null_subsample_ratio: float = 1.0,
         predict_delta: bool = True,
-        delta_weighted: bool = False,
-        delta_weight_floor: float = 0.0,
-        vol_normalized: bool = False,
-        vol_floor: float = 0.01,
-        mae_loss: bool = False,
-        huber_loss: bool = False,
-        huber_beta: float = 0.05,
         per_news_loss: bool = False,
-        bounded_output: bool = False,
-        read_all: bool = False,
-        attr_noise_drop: float = 0.0,
-        attr_noise_add: float = 0.0,
-        prior_attr_path: Optional[str] = None,
-        post_prior_mix: float = 1.0,
         odds_null_categorical: bool = False,
         null_rho0: float = 1.0,
         odds_eps: float = 1e-3,
@@ -201,23 +151,7 @@ class MultiEventForecaster:
         self.head_lr_multiplier = head_lr_multiplier
         self.null_subsample_ratio = null_subsample_ratio
         self.predict_delta = predict_delta
-        self.delta_weighted = delta_weighted
-        self.delta_weight_floor = delta_weight_floor
-        self.vol_normalized = vol_normalized
-        self.vol_floor = vol_floor
-        self.mae_loss = mae_loss
-        self.huber_loss = huber_loss
-        self.huber_beta = huber_beta
         self.per_news_loss = per_news_loss
-        self.bounded_output = bounded_output
-        self.read_all = read_all
-        self.attr_noise_drop = attr_noise_drop
-        self.attr_noise_add = attr_noise_add
-        # prior+posterior mixture (train-only): blend the attributer's PRIOR
-        # weights into the posterior so the forecaster trains on the realistic
-        # inference distribution. post_prior_mix=1.0 keeps pure-posterior behavior.
-        self.prior_attr_path = prior_attr_path
-        self.post_prior_mix = post_prior_mix
         # odds+null categorical: convert independent per-news Bernoulli scores into
         # a joint (k+1) categorical with a null prior mass rho0. News weights sum to
         # 1-pi_0 (no-news contributes 0); loss/predict must NOT renormalize.
@@ -233,7 +167,6 @@ class MultiEventForecaster:
             pooling_method=self.pooling_method,
             max_news=self.max_news,
             predict_delta=self.predict_delta,
-            bounded_output=self.bounded_output,
         )
         self.model = LLMRegressor(config)
         # Full fine-tune: backbone loads in bf16 but the regression head is
@@ -257,7 +190,6 @@ class MultiEventForecaster:
             # 'before_prices' is only consumed by predict() for the
             # pred_delta/true_delta derived fields; the trainer ignores it.
             out['before_prices'] = torch.stack([x['before_price'] for x in batch])
-            out['vols'] = torch.stack([x['vol'] for x in batch])
             return out
 
         return collate_fn
@@ -270,8 +202,7 @@ class MultiEventForecaster:
             # the best checkpoint is still on disk.
             pass
 
-    def _make_dataset(self, records: List[Record], null_subsample_ratio: float,
-                      apply_prior: bool = False) -> MultiEventForecasterDataset:
+    def _make_dataset(self, records: List[Record], null_subsample_ratio: float) -> MultiEventForecasterDataset:
         return MultiEventForecasterDataset(
             records=records,
             tokenizer=self.tokenizer,
@@ -279,12 +210,6 @@ class MultiEventForecaster:
             max_seq_length=self.max_seq_length,
             null_subsample_ratio=null_subsample_ratio,
             predict_delta=self.predict_delta,
-            read_all=self.read_all,
-            attr_noise_drop=self.attr_noise_drop,
-            attr_noise_add=self.attr_noise_add,
-            # prior mixing is a TRAIN-time augmentation only.
-            prior_attr_path=self.prior_attr_path if apply_prior else None,
-            post_prior_mix=self.post_prior_mix,
             odds_null_categorical=self.odds_null_categorical,
             null_rho0=self.null_rho0,
             odds_eps=self.odds_eps,
@@ -300,7 +225,7 @@ class MultiEventForecaster:
         if self.model is None:
             self.setup_model()
 
-        train_dataset = self._make_dataset(train_records, self.null_subsample_ratio, apply_prior=True)
+        train_dataset = self._make_dataset(train_records, self.null_subsample_ratio)
         valid_dataset = self._make_dataset(valid_records, 1.0)
 
         trainer = WeightedTrainer(
@@ -310,13 +235,6 @@ class MultiEventForecaster:
             eval_dataset=valid_dataset,
             data_collator=self._create_collate_fn(),
             head_lr_multiplier=self.head_lr_multiplier,
-            delta_weighted=self.delta_weighted,
-            delta_weight_floor=self.delta_weight_floor,
-            vol_normalized=self.vol_normalized,
-            vol_floor=self.vol_floor,
-            mae_loss=self.mae_loss,
-            huber_loss=self.huber_loss,
-            huber_beta=self.huber_beta,
             per_news_loss=self.per_news_loss,
             odds_null_categorical=self.odds_null_categorical,
         )
@@ -349,7 +267,6 @@ class MultiEventForecaster:
             max_news=self.max_news,
             max_seq_length=self.max_seq_length,
             predict_delta=self.predict_delta,
-            read_all=self.read_all,
             include_nonews_candidate=getattr(self, 'include_nonews_candidate', False),
             odds_null_categorical=getattr(self, 'odds_null_categorical', False),
             null_rho0=getattr(self, 'null_rho0', 1.0),

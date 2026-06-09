@@ -144,15 +144,6 @@ def parse_args():
                         help='Trim each record history to the last N days BEFORE training. '
                              'Small N (e.g. 1) removes the momentum trajectory, forcing the '
                              'model to read news for the delta. before_price is unchanged.')
-    parser.add_argument('--delta-weighted-loss', action='store_true',
-                        help='Weight each record loss by |true_delta|(+floor): big moves '
-                             'dominate the gradient, fighting MSE mean-collapse.')
-    parser.add_argument('--delta-weight-floor', type=float, default=0.0,
-                        help='Floor added to |true_delta| weight (so small moves are not '
-                             'fully ignored). Default 0 (pure |delta|).')
-    parser.add_argument('--mae-loss', action='store_true',
-                        help='L1/MAE loss (optimizes conditional median) instead of MSE. '
-                             'De-shrinks for MAE directly; overrides vol/delta-weighted.')
     parser.add_argument('--odds-null-categorical', action='store_true',
                         help='Convert independent per-news Bernoulli scores into a joint '
                              '(k+1) categorical over (news, no-news) via odds + null prior '
@@ -166,32 +157,7 @@ def parse_args():
                         help='Smoothing temperature: o_i^(1/T). T>1 flattens. odds already '
                              'spreads the distribution so T=1 is the default (no extra sharpen).')
     parser.add_argument('--per-news-loss', action='store_true',
-                        help='Responsibility-weighted L_wm: score each news vs the move then weight by attribution (vs error-of-weighted-mean). Composes with --vol-normalized-loss.')
-    parser.add_argument('--huber-loss', action='store_true',
-                        help='Huber/smooth-L1 loss (robust; quadratic near 0, linear in tail).')
-    parser.add_argument('--huber-beta', type=float, default=0.05,
-                        help='Huber transition point (default 0.05 ~ median move scale).')
-    parser.add_argument('--attr-noise-drop', type=float, default=0.0,
-                        help='H3: drop each gold-attributed news w.p. this (false negatives).')
-    parser.add_argument('--attr-noise-add', type=float, default=0.0,
-                        help='H3: add distractor negatives = round(this*n_pos) at small weight (false positives).')
-    parser.add_argument('--prior-attr-path', type=str, default=None,
-                        help='Prior-attribution dump (inference_prior_attribution.py output) on the TRAIN set; '
-                             'mixed into posterior weights to bridge train/inference distribution.')
-    parser.add_argument('--post-prior-mix', type=float, default=1.0,
-                        help='Blend a in w=a*posterior+(1-a)*prior. 1.0=pure posterior (default), 0.0=pure prior, 0.5=balanced.')
-    parser.add_argument('--read-all', action='store_true',
-                        help='Read ALL candidate news jointly in one prompt (vs per-news weighted avg).')
-    parser.add_argument('--bounded-output', action='store_true',
-                        help='Sigmoid the head -> per-news pred in [0,1]=target_p; delta=target_p-before '
-                             'respects [-bp,1-bp] bounds. Implies --no-predict-delta (label=target_p).')
-    parser.add_argument('--vol-normalized-loss', action='store_true',
-                        help='Loss = ((pred-delta)/vol)^2 = predict the move as a multiple '
-                             'of historical volatility. Standardizes scale across markets, '
-                             'fights mean-collapse. Overrides --delta-weighted-loss.')
-    parser.add_argument('--vol-floor', type=float, default=0.01,
-                        help='Floor on historical volatility in the vol-normalized loss '
-                             '(avoids blow-up when a market was flat). Default 0.01.')
+                        help='Responsibility-weighted L_wm: score each news vs the move then weight by attribution (vs error-of-weighted-mean).')
     parser.add_argument('--train-attributed-only', action='store_true',
                         help='Train/eval only on records that have >=1 positive-score '
                              'attribution (news-driven events), so the gradient is not '
@@ -278,24 +244,11 @@ def main():
         pooling_method=args.pooling_method,
         null_subsample_ratio=args.null_subsample_ratio,
         predict_delta=args.predict_delta,
-        delta_weighted=args.delta_weighted_loss,
-        vol_normalized=args.vol_normalized_loss,
-        vol_floor=args.vol_floor,
-        mae_loss=args.mae_loss,
-        huber_loss=args.huber_loss,
         per_news_loss=args.per_news_loss,
-        huber_beta=args.huber_beta,
-        bounded_output=args.bounded_output,
-        read_all=args.read_all,
-        attr_noise_drop=args.attr_noise_drop,
-        attr_noise_add=args.attr_noise_add,
-        prior_attr_path=args.prior_attr_path,
-        post_prior_mix=args.post_prior_mix,
         odds_null_categorical=args.odds_null_categorical,
         null_rho0=args.null_rho0,
         odds_eps=args.odds_eps,
         odds_temp=args.odds_temp,
-        delta_weight_floor=args.delta_weight_floor,
     )
 
     # HF constraint: load_best_model_at_end=True requires save_steps to be
