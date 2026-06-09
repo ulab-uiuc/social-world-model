@@ -1,6 +1,6 @@
-"""Dump per-news forecaster predictions mu_i (routing-agnostic).
+"""Dump per-news world_model predictions mu_i (routing-agnostic).
 
-For each record, run the forecaster ONCE on every candidate news (and the
+For each record, run the world_model ONCE on every candidate news (and the
 no-news prompt) and store mu_i. The mu_i depend only on (model, news text,
 history) — NOT on the attribution/routing weights. So any routing scheme
 (direct / odds / L1 / posterior, any rho0 / eps / temp / prior file) becomes a
@@ -18,9 +18,9 @@ import json
 import torch
 from tqdm import tqdm
 
-from swm.dataset import MultiEventForecasterDataset, _pack_prompts
-from swm.forecaster import MultiEventForecaster
+from swm.dataset import MultiEventWorldModelDataset, _pack_prompts
 from swm.utils.utils import load_records, set_seed
+from swm.world_model import MultiEventWorldModel
 
 
 def parse_args():
@@ -73,13 +73,13 @@ def main():
     }
     if args.pooling_method is not None:
         fk['pooling_method'] = args.pooling_method
-    fc = MultiEventForecaster(**fk)
+    fc = MultiEventWorldModel(**fk)
     fc.load(args.model_path)
     fc.model.eval()
     dev = fc.model.llm.device
 
     # instance only used for its _build_prompt (no datapoints built on empty list)
-    ds = MultiEventForecasterDataset(
+    ds = MultiEventWorldModelDataset(
         records=[],
         tokenizer=fc.tokenizer,
         max_news=50,

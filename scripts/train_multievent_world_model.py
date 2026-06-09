@@ -1,19 +1,19 @@
 """
-Train MultiEventForecaster using precomputed attributions.
+Train MultiEventWorldModel using precomputed attributions.
 
 The input data should have attributions precomputed using precompute_attributions.py
 
 Single GPU:
-    python train_multievent_forecaster.py \
+    python train_multievent_world_model.py \
         --train-data-path ../data/attributed/train.jsonl \
         --valid-data-path ../data/attributed/valid.jsonl \
-        --output-dir ../saves/multievent_forecaster
+        --output-dir ../saves/multievent_world_model
 
 Multi-GPU (DDP):
-    torchrun --nproc_per_node=4 train_multievent_forecaster.py \
+    torchrun --nproc_per_node=4 train_multievent_world_model.py \
         --train-data-path ../data/attributed/train.jsonl \
         --valid-data-path ../data/attributed/valid.jsonl \
-        --output-dir ../saves/multievent_forecaster
+        --output-dir ../saves/multievent_world_model
 """
 
 import argparse
@@ -24,8 +24,8 @@ import torch
 import torch.distributed as dist
 from transformers import TrainingArguments
 
-from swm.forecaster import MultiEventForecaster
 from swm.utils.utils import load_records, set_seed
+from swm.world_model import MultiEventWorldModel
 
 
 def is_main_process():
@@ -61,7 +61,7 @@ def print_main(*args, **kwargs):
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description='Train MultiEventForecaster with precomputed attributions'
+        description='Train MultiEventWorldModel with precomputed attributions'
     )
     # Data paths
     parser.add_argument(
@@ -348,7 +348,7 @@ def main():
 
     print_main('Full fine-tuning mode (FSDP)')
 
-    forecaster = MultiEventForecaster(
+    world_model = MultiEventWorldModel(
         model_name=args.model_name,
         max_seq_length=args.max_seq_length,
         gradient_checkpointing=args.gradient_checkpointing,
@@ -434,7 +434,7 @@ def main():
         local_rank=local_rank if world_size > 1 else -1,
     )
 
-    best_checkpoint = forecaster.train(
+    best_checkpoint = world_model.train(
         train_records=train_records,
         valid_records=valid_records,
         training_args=training_args,
@@ -444,7 +444,7 @@ def main():
 
     # Only save on main process
     if is_main_process():
-        forecaster.save(best_checkpoint)
+        world_model.save(best_checkpoint)
 
     # Cleanup distributed
     if dist.is_initialized():

@@ -1,4 +1,4 @@
-"""Compare prior computed 3 ways, all camera-ready forecaster + ck150 prior scores:
+"""Compare prior computed 3 ways, all camera-ready world_model + ck150 prior scores:
   A) GPU-fresh dump on ck150 news, idx-aligned scores, ALL ck150 news (zero matching)
   B) GPU-fresh dump on ck150 news, restricted to TEST news (content-matched)
   C) offline reuse of dumps/ mu (test news) + ck150 content-matched scores  [current table]

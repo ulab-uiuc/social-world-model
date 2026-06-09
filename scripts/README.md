@@ -1,6 +1,6 @@
-# Main Forecaster Pipeline
+# Main WorldModel Pipeline
 
-End-to-end production pipeline for the prediction-market forecaster.
+End-to-end production pipeline for the prediction-market world_model.
 Side experiments + dead ends live in `backup_plan/` (gitignored).
 
 ## Current SOTA (full K + P test, ORACLE routing)
@@ -55,24 +55,24 @@ from (market, news, before_price) only.
 
 Existing ckpts: `/mnt/data_from_server1/haofeiy2/social-world-model/saves/prior_attributer_combined_06b_klfix_v2/`
 
-### Stage 3 — Forecaster (has-news predictor)
+### Stage 3 — WorldModel (has-news predictor)
 
 MSE scalar regressor that predicts `p_after` directly from
 (market, news, history, before_price).
 
-- `train_multievent_forecaster.py` — trainer
-- `inference_multievent_forecaster.py` — forecaster-only inference
+- `train_multievent_world_model.py` — trainer
+- `inference_multievent_world_model.py` — world_model-only inference
   (expects attribution already in test jsonl — used for our SMART joint eval)
 - `train_fc_v42b_predict_p_newsonly.sh` — v42b (Polymarket SOTA backbone)
 - `train_fc_v44_predict_p_stdfilter.sh` — v44 (Kalshi SOTA backbone)
 
-### End-to-end inference (attributer + forecaster in one pass)
+### End-to-end inference (attributer + world_model in one pass)
 
 For **production** — runs prior attributer FIRST to score news, then
-forecaster on top-K. No oracle attribution needed in test data.
+world_model on top-K. No oracle attribution needed in test data.
 
 - `inference_vllm.py` — **fastest** (~450 items/s). Uses vLLM with two LoRA
-  adapters (attributer + forecaster) sharing the same Qwen3-8B base.
+  adapters (attributer + world_model) sharing the same Qwen3-8B base.
   Recommended for production / large-scale eval.
 - `inference_fast.py` — HF-based (~22 items/s, ~20x slower). No vLLM
   dependency. Useful for debugging or environments without vLLM.
@@ -103,14 +103,14 @@ python scripts/inference_posterior_attribution.py \
 # Stage 2: train prior attributer (for production inference)
 bash scripts/train_attributer.sh 0
 
-# Stage 3: train forecasters (~5-6h each on H100)
+# Stage 3: train world_models (~5-6h each on H100)
 bash scripts/train_fc_v42b_predict_p_newsonly.sh 1   # P SOTA
 bash scripts/train_fc_v44_predict_p_stdfilter.sh 2   # K SOTA
 
 # Inference (oracle routing — what we report)
-python scripts/inference_multievent_forecaster.py \
+python scripts/inference_multievent_world_model.py \
     --test-data-path data/vllm_attributed/combined_test_kalshi.jsonl \
-    --model-path /path/to/forecaster_v44_predict_p_stdfilter/checkpoint-600 \
+    --model-path /path/to/world_model_v44_predict_p_stdfilter/checkpoint-600 \
     --predict-absolute-price \
     --output-path results/v44_ck600_K.jsonl
 # (repeat for v42b on P)
@@ -124,5 +124,5 @@ python scripts/inference_prior_attribution.py \
     --data-path data/vllm_attributed/combined_test_kalshi.jsonl \
     --attributer-path /path/to/prior_attributer_06b_klfix_v2/checkpoint \
     --output-path data/vllm_attributed/combined_test_kalshi_PRIOR.jsonl
-# 2. Then forecaster inference + SMART joint on PRIOR-attributed test
+# 2. Then world_model inference + SMART joint on PRIOR-attributed test
 ```

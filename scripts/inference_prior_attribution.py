@@ -34,7 +34,7 @@ def parse_args():
         '--max-news',
         type=int,
         default=30,
-        help='Cap candidate news scored per record. MUST cover all candidates (>=forecaster max-news=30) or tail news get silently dropped (default attributer used 20).',
+        help='Cap candidate news scored per record. MUST cover all candidates (>=world_model max-news=30) or tail news get silently dropped (default attributer used 20).',
     )
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument(
@@ -92,7 +92,7 @@ def main():
         # CRITICAL: clear any precomputed (posterior/oracle) attributions first
         # so the output carries ONLY this prior attributer's scores — otherwise
         # records the prior skips would silently leak posterior labels into the
-        # "prior" file. Mirrors MultiEventForecaster._generate_attributions.
+        # "prior" file. Mirrors MultiEventWorldModel._generate_attributions.
         record.attributions = []
         if not record.news:
             continue

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Dump per-news mu_i for 3 forecasters x 2 markets from the ORACLE semdedup test
+# Dump per-news mu_i for 3 world_models x 2 markets from the ORACLE semdedup test
 # files (carries oracle attributions). Routing-agnostic; aggregate offline after.
 set -o pipefail
 ENVDIR=/home/haofeiy2/.conda/envs/agentgym

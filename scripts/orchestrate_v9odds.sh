@@ -23,7 +23,7 @@ if [ -d scripts/saves_local/fc8b_v9odds_semdedup ]; then
 fi
 echo "8B moved: shards=$(ls saves_local/fc8b_v9odds_semdedup/final-model/*.safetensors 2>/dev/null|wc -l) $(date +%T)"
 # 3. train 4B (GPU5-8) + 0.6B (GPU0) as children
-pkill -9 -f train_multievent_forecaster 2>/dev/null; sleep 3
+pkill -9 -f train_multievent_world_model 2>/dev/null; sleep 3
 bash scripts/train_fc_v9odds.sh fsdp   5,6,7,8 4 29581 Qwen/Qwen3-4B   fc4b_v9odds_semdedup  "$DISK3" 6 &
 bash scripts/train_fc_v9odds.sh single 0       1 29582 Qwen/Qwen3-0.6B fc06b_v9odds_semdedup "$DISK3" 6 &
 wait
@@ -43,7 +43,7 @@ runeval () {
   [ -s "$outf" ] && { echo "skip $tag $mk"; return; }
   s=0
   for g in $GPUS; do
-    CUDA_VISIBLE_DEVICES=$g "$ENVDIR/bin/python" scripts/inference_multievent_forecaster.py \
+    CUDA_VISIBLE_DEVICES=$g "$ENVDIR/bin/python" scripts/inference_multievent_world_model.py \
       --test-data-path "$src" --model-path "$mp" --model-name "$mn" \
       --output-path "$OUT/${tag}_${mk}_s${s}.jsonl" --max-news 30 --batch-size 16 \
       --odds-null-categorical --null-rho0 1.0 --odds-eps 1e-3 --odds-temp 1.0 \

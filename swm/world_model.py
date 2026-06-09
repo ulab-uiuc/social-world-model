@@ -7,7 +7,7 @@ from tqdm import tqdm
 from transformers import AutoTokenizer, Trainer, TrainingArguments
 
 from .data import Record
-from .dataset import MultiEventForecasterDataset, collate_padded_groups
+from .dataset import MultiEventWorldModelDataset, collate_padded_groups
 from .utils.regressor import LLMRegressor, LLMRegressorConfig
 
 
@@ -146,8 +146,8 @@ class WeightedTrainer(Trainer):
         return (loss, acc_pred, labels)
 
 
-class MultiEventForecaster:
-    """Forecaster that predicts target.p from question + history + attributed news."""
+class MultiEventWorldModel:
+    """WorldModel that predicts target.p from question + history + attributed news."""
 
     def __init__(
         self,
@@ -232,8 +232,8 @@ class MultiEventForecaster:
 
     def _make_dataset(
         self, records: List[Record], null_subsample_ratio: float
-    ) -> MultiEventForecasterDataset:
-        return MultiEventForecasterDataset(
+    ) -> MultiEventWorldModelDataset:
+        return MultiEventWorldModelDataset(
             records=records,
             tokenizer=self.tokenizer,
             max_news=self.max_news,
@@ -293,7 +293,7 @@ class MultiEventForecaster:
                 top_k=top_k,
             )
 
-        dataset = MultiEventForecasterDataset(
+        dataset = MultiEventWorldModelDataset(
             records=records,
             tokenizer=self.tokenizer,
             max_news=self.max_news,

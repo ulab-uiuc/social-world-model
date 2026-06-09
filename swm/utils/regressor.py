@@ -82,7 +82,7 @@ class LLMRegressor(PreTrainedModel):
         self.lora_config = lora_config
 
     def forward(self, input_ids, attention_mask=None, extra_features=None, **kwargs):
-        # Returns raw per-sequence predictions (batch, 1). The forecaster and
+        # Returns raw per-sequence predictions (batch, 1). The world_model and
         # attributer trainers pool these into their own weighted-MSE / KL losses;
         # this module never computes a loss itself.
         outputs = self.llm(

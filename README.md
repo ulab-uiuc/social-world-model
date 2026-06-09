@@ -20,16 +20,16 @@ moves in response to news. It has two trained components:
    news with knowledge of the realized move (the oracle/training signal); the
    **prior** attributor is a small LLM fine-tuned to *imitate* that signal at
    inference (no peek at the future).
-2. **Forecaster** — given the attributed news + history, predicts the price
+2. **WorldModel** — given the attributed news + history, predicts the price
    change. Per-news predictions are aggregated into the final forecast through
    the attributor's weights.
 
 At inference we run the two **jointly**: the attributor selects/weights news,
-the forecaster turns that into a price move. We report two settings — **prior**
+the world model turns that into a price move. We report two settings — **prior**
 (deployable, prior attributor) and **posterior** (oracle-attribution ceiling).
 
 > **Recipes in one line.** The **attributor** is trained with a standard
-> **forward-KL** objective for **1 epoch**; the **forecaster** is trained with a
+> **forward-KL** objective for **1 epoch**; the **world model** is trained with a
 > standard **weighted MSE**. Both operate over the same **odds distribution**:
 > per-news Bernoulli responsibilities are mapped to a categorical over
 > *(news ∪ no-news)* via odds with a null prior mass (see
@@ -84,9 +84,9 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun --nproc_per_node=4 scripts/train_attribute
 default (pass `--reverse-kl` to switch). See [`scripts/train_attributer.sh`](scripts/train_attributer.sh)
 for the 0.6B / 4B / 8B sweep.
 
-## Stage 2 — Train the forecaster (weighted MSE, odds)
+## Stage 2 — Train the world model (weighted MSE, odds)
 
-The forecaster is trained on the posterior-attributed data with a per-news,
+The world model is trained on the posterior-attributed data with a per-news,
 responsibility-weighted MSE under the same odds routing. Full fine-tuning under
 FSDP (`MODE GPUS NPROC PORT MODEL TAG SAVE EP`):
 
@@ -98,7 +98,7 @@ bash scripts/train_fc_v9odds.sh fsdp 0,1,2,3,4,5,6,7 8 29500 Qwen/Qwen3-8B fc8b 
 bash scripts/train_fc_v9odds.sh single 0 1 29501 Qwen/Qwen3-0.6B fc06b saves_local 6
 ```
 
-This wraps [`scripts/train_multievent_forecaster.py`](scripts/train_multievent_forecaster.py)
+This wraps [`scripts/train_multievent_world_model.py`](scripts/train_multievent_world_model.py)
 with `--per-news-loss --odds-null-categorical` (the deployed recipe).
 
 ## Stage 3 — Joint inference (prior & posterior)
@@ -107,7 +107,7 @@ with `--per-news-loss --odds-null-categorical` (the deployed recipe).
 
 ```bash
 DATA=data/social-world-model-v6-qwen3.5-397B-clean-semdedup
-python scripts/inference_multievent_forecaster.py \
+python scripts/inference_multievent_world_model.py \
     --test-data-path $DATA/test_kalshi_final.jsonl \
     --model-path saves_local/fc8b/final-model --model-name Qwen/Qwen3-8B \
     --output-path results/posterior_kalshi.jsonl --max-news 30
@@ -124,7 +124,7 @@ python scripts/inference_prior_attribution.py \
     --output-path results/test_kalshi_prior.jsonl --max-news 30
 
 # (b) forecast on the prior-attributed file
-python scripts/inference_multievent_forecaster.py \
+python scripts/inference_multievent_world_model.py \
     --test-data-path results/test_kalshi_prior.jsonl \
     --model-path saves_local/fc8b/final-model --model-name Qwen/Qwen3-8B \
     --direct-soft-routing \

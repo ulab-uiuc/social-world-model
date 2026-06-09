@@ -110,7 +110,7 @@ def main():
                 a['news_idx']: float(a.get('score') or 0)
                 for a in (r.get('attributions') or [])
             }
-        # route over POSITIVE-score news only (matches forecaster _top_positives)
+        # route over POSITIVE-score news only (matches world_model _top_positives)
         idxs = [i for i in mu.keys() if i in sc and sc[i] > 0] if sc else []
         if idxs:
             w = weights(

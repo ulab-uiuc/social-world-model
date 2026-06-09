@@ -1,4 +1,4 @@
-"""Reproduce the `z_score` field stored in the v6 forecaster datasets.
+"""Reproduce the `z_score` field stored in the v6 world_model datasets.
 
 Each record in data/social-world-model-v6-*-clean-dedup/*.jsonl carries a
 `z_score` that measures how anomalous the target move is relative to the recent

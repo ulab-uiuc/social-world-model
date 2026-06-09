@@ -1,19 +1,19 @@
-"""Inference with MultiEventForecaster on v6 records.
+"""Inference with MultiEventWorldModel on v6 records.
 
 Can use either:
 1. Precomputed attributions in the input file
 2. A PriorAttributer to generate attributions on the fly
 
 Usage with precomputed attributions:
-    python inference_multievent_forecaster.py \
+    python inference_multievent_world_model.py \
         --test-data-path ../data/v6/test_polymarket.jsonl \
-        --model-path ../saves/multievent_forecaster/checkpoint-best \
+        --model-path ../saves/multievent_world_model/checkpoint-best \
         --output-path ../results/predictions.jsonl
 
 Usage with PriorAttributer:
-    python inference_multievent_forecaster.py \
+    python inference_multievent_world_model.py \
         --test-data-path ../data/v6/test_polymarket.jsonl \
-        --model-path ../saves/multievent_forecaster/checkpoint-best \
+        --model-path ../saves/multievent_world_model/checkpoint-best \
         --attributer-path ../saves/prior_attributer/checkpoint-best \
         --output-path ../results/predictions.jsonl
 """
@@ -27,8 +27,8 @@ from typing import Dict, List
 import jsonlines
 
 from swm.attributer import BasicPriorAttributer
-from swm.forecaster import MultiEventForecaster
 from swm.utils.utils import load_records, set_seed
+from swm.world_model import MultiEventWorldModel
 
 
 def unix_to_date(ts: int) -> str:
@@ -61,7 +61,7 @@ def build_prompt_for_display(
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description='Run inference with MultiEventForecaster'
+        description='Run inference with MultiEventWorldModel'
     )
     parser.add_argument('--test-data-path', type=str, required=True)
     parser.add_argument('--model-path', type=str, required=True)
@@ -116,7 +116,7 @@ def parse_args():
         default=None,
         help='Ablation: override max_news AFTER loading the checkpoint '
         '(load() normally restores the trained value). Caps how many '
-        'top-scored attributed news the forecaster averages over.',
+        'top-scored attributed news the world_model averages over.',
     )
     parser.add_argument('--max-history-len', type=int, default=None)
     parser.add_argument(
@@ -151,9 +151,9 @@ def parse_args():
         action='store_true',
         help='No-routing inference: inject a no-news candidate with '
         'weight = 1 - sum(news scores) into the weighted average, '
-        'so the forecaster blends news preds with its no-news pred '
+        'so the world_model blends news preds with its no-news pred '
         'instead of relying on an explicit null-gate. Use with a '
-        'forecaster trained on null data (v10+).',
+        'world_model trained on null data (v10+).',
     )
     parser.add_argument(
         '--num-shards',
@@ -210,23 +210,23 @@ def main():
     data_with_attr = sum(1 for r in records if r.attributions)
     print(f'Records with precomputed attributions: {data_with_attr}/{len(records)}')
 
-    print(f'Loading forecaster from {args.model_path}...')
-    forecaster_kwargs = {
+    print(f'Loading world_model from {args.model_path}...')
+    world_model_kwargs = {
         'model_name': args.model_name,
         'max_seq_length': args.max_seq_length,
         'max_news': args.max_news,
         'predict_delta': args.predict_delta,
     }
     if args.pooling_method is not None:
-        forecaster_kwargs['pooling_method'] = args.pooling_method
-    forecaster = MultiEventForecaster(**forecaster_kwargs)
-    forecaster.load(args.model_path)
-    forecaster.include_nonews_candidate = args.include_nonews_candidate
-    forecaster.odds_null_categorical = args.odds_null_categorical
-    forecaster.null_rho0 = args.null_rho0
-    forecaster.odds_eps = args.odds_eps
-    forecaster.odds_temp = args.odds_temp
-    forecaster.direct_soft_routing = args.direct_soft_routing
+        world_model_kwargs['pooling_method'] = args.pooling_method
+    world_model = MultiEventWorldModel(**world_model_kwargs)
+    world_model.load(args.model_path)
+    world_model.include_nonews_candidate = args.include_nonews_candidate
+    world_model.odds_null_categorical = args.odds_null_categorical
+    world_model.null_rho0 = args.null_rho0
+    world_model.odds_eps = args.odds_eps
+    world_model.odds_temp = args.odds_temp
+    world_model.direct_soft_routing = args.direct_soft_routing
     if args.odds_null_categorical:
         print(
             f'[odds] odds+null categorical aggregation (rho0={args.null_rho0}, eps={args.odds_eps}, T={args.odds_temp})'
@@ -240,7 +240,7 @@ def main():
             '[no-routing] injecting no-news candidate (weight=1-sum(news scores)) into weighted average'
         )
     if args.force_max_news is not None:
-        forecaster.max_news = args.force_max_news
+        world_model.max_news = args.force_max_news
         print(
             f'[ablation] forced max_news={args.force_max_news} (overriding checkpoint value)'
         )
@@ -269,7 +269,7 @@ def main():
         )
 
     print('Running inference...')
-    results = forecaster.predict(
+    results = world_model.predict(
         records=records,
         attributer=attributer,
         batch_size=args.batch_size,
@@ -371,7 +371,7 @@ def main():
     )
 
     # "Predict no change" baseline = always output delta 0 (i.e. copy the last
-    # price). The forecaster only adds value if delta_mse beats this.
+    # price). The world_model only adds value if delta_mse beats this.
     baseline_delta_mse = float(np.mean(true_delta**2))
     skill = (
         1.0 - delta_mse / baseline_delta_mse if baseline_delta_mse > 0 else float('nan')

@@ -30,13 +30,13 @@ COMMON=(
 
 if [ "$MODE" = "fsdp" ]; then
   CUDA_VISIBLE_DEVICES=$GPUS "$ENVDIR/bin/torchrun" --nproc_per_node=$NPROC --master_port=$PORT \
-    train_multievent_forecaster.py "${COMMON[@]}" \
+    train_multievent_world_model.py "${COMMON[@]}" \
     --fsdp "full_shard auto_wrap" --fsdp-transformer-layer-cls Qwen3DecoderLayer \
     --no-mid-checkpoints \
     > "$LOG/$TAG.log" 2>&1
 else
   CUDA_VISIBLE_DEVICES=$GPUS "$ENVDIR/bin/python" \
-    train_multievent_forecaster.py "${COMMON[@]}" --save-steps 50 \
+    train_multievent_world_model.py "${COMMON[@]}" --save-steps 50 \
     > "$LOG/$TAG.log" 2>&1
 fi
 echo "$TAG done (exit $?)"

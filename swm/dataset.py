@@ -52,7 +52,7 @@ def collate_padded_groups(
 ) -> Dict[str, Any]:
     """Right-pad each item's (N_i, L_i) prompts to a common length and flatten.
 
-    Shared by the forecaster and attributer collators: both turn a batch of
+    Shared by the world_model and attributer collators: both turn a batch of
     per-record prompt groups into one (sum N_i, L) tensor plus a group_ids
     vector and the carried market/event/t metadata. Callers add their own
     per-item tensors (labels/weights vs p_dist).
@@ -134,8 +134,8 @@ def build_attributer_no_news_prompt(record: Record, target: Dict[str, float]) ->
     return '\n'.join(lines)
 
 
-class MultiEventForecasterDataset(Dataset):
-    """Forecaster training set: predict target.p from (question, history, news).
+class MultiEventWorldModelDataset(Dataset):
+    """WorldModel training set: predict target.p from (question, history, news).
 
     Each record is one training group. We emit one prompt per
     positive-attribution news (or a single no-news prompt for null records)
@@ -185,7 +185,7 @@ class MultiEventForecasterDataset(Dataset):
         rng = random.Random(NULL_SUBSAMPLE_SEED)
         null_kept = null_dropped = has_kept = 0
 
-        for record in tqdm(self.records, desc='Building forecaster datapoints'):
+        for record in tqdm(self.records, desc='Building world_model datapoints'):
             if not record.target or not record.news:
                 continue
 
@@ -264,7 +264,7 @@ class MultiEventForecasterDataset(Dataset):
         if self.null_subsample_ratio < 1.0:
             tot = null_kept + has_kept
             print(
-                f'[MultiEventForecasterDataset] null_subsample_ratio={self.null_subsample_ratio} '
+                f'[MultiEventWorldModelDataset] null_subsample_ratio={self.null_subsample_ratio} '
                 f'→ has_news={has_kept} ({100 * has_kept / max(tot, 1):.1f}%)  '
                 f'null_kept={null_kept} ({100 * null_kept / max(tot, 1):.1f}%)  '
                 f'null_dropped={null_dropped}'
@@ -283,7 +283,7 @@ class MultiEventForecasterDataset(Dataset):
             # No-routing inference: the attributer's softmax is over (news ∪
             # {no-news}), so the news scores sum to <1 and the residual mass is
             # the no-news weight. Inject it as a regular weighted candidate so
-            # the forecaster blends news predictions with its no-news prediction
+            # the world_model blends news predictions with its no-news prediction
             # — no explicit null-gate / routing needed. Inference-only.
             if getattr(self, 'include_nonews_candidate', False):
                 residual = 1.0 - sum(float(w) for _, w in positives)
