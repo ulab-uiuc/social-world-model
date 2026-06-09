@@ -1,5 +1,7 @@
+![Social World Model](assets/swm.png)
+
 <h1 align="center">
-  Social World Models: Forecasting Belief Shifts from News
+  Building Social World Models with Large Language Models
 </h1>
 
 <p align="center">
