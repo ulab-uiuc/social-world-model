@@ -11,25 +11,24 @@
   <a href="https://pytorch.org/"><img src="https://img.shields.io/badge/PyTorch-2.x-ee4c2c?logo=pytorch" alt="PyTorch"></a>
 </p>
 
-A **Social World Model (SWM)** predicts how a market's collective belief (a
-prediction-market price) shifts in response to news. Given a question, its price
-history, and recent news, it forecasts the next price move — and, crucially,
-*which* news drove it.
+**Social World Model (SWM)** models how collective beliefs change after
+real-world events. We represent social beliefs with prediction-market
+trajectories and learn an event-conditioned transition model
+$s_{t+1} \sim P_\theta(s_{t+1} \mid s_t, e_t)$, where $s_t$ is the current belief
+state and $e_t$ is a news/event signal. This repo provides the training method
+and a benchmark, **SWM-Bench**.
 
-This repo provides a **training method** and a benchmark (**SWM-Bench**) for
-that task. An SWM is built from two components that share the same forecasting
-objective:
+## Training Recipe
 
-- a **social attributor**, which scores how responsible each news item is for a
-  belief shift, and
-- a **world model**, which predicts the price move from the attributed news and
-  history.
+SWM uses a **posterior-guided training recipe**. A frozen hindsight LLM first
+identifies which candidate event best explains the observed belief shift. We then
+use these attribution weights to train:
 
-We train both and run them jointly at inference. The attributor comes in two
-forms: a large prompted LLM **posterior** attributor that scores news with
-knowledge of the realized move (the training signal and an oracle ceiling), and
-a small fine-tuned **prior** attributor that imitates it without seeing the
-future (the deployable system).
+- a **prior attributor** that predicts event relevance *before* seeing the future;
+- a **world model** that predicts the belief change caused by each event.
+
+At inference, SWM either forecasts future beliefs from real news or simulates
+belief shifts under hypothetical events.
 
 ## Installation
 
@@ -52,19 +51,42 @@ python -c "from huggingface_hub import snapshot_download; \
   snapshot_download('ulab-ai/swm-bench', repo_type='dataset', local_dir='data/swm-bench')"
 ```
 
+SWM-Bench has three parts:
+- `raw/` — the original Polymarket / Kalshi price series + crawled news.
+- `Qwen3.5-397B-attributed-data/` — the records labeled by the Qwen3.5-397B
+  posterior attributor (our main dataset).
+- `Qwen3-32B-attributed-data/` — the same records labeled by Qwen3-32B.
+
 Each record is one `(history, candidate_news, target, attributions)` example.
-The `attributions` field holds the posterior (oracle) scores; the *attributed
-subset* is the examples with at least one non-zero-score news.
+`attributions` holds the posterior (oracle) scores; `*_with_nonzero_attribution.jsonl`
+are the splits restricted to records with at least one non-zero-score news (used
+for training).
+
+Use it directly with 🤗 `datasets`:
+
+```python
+from datasets import load_dataset
+
+block = "Qwen3.5-397B-attributed-data"   # or "Qwen3-32B-attributed-data"
+ds = load_dataset("ulab-ai/swm-bench", data_files={
+    "train":           f"{block}/train.jsonl",                          # attributor
+    "train_attr":      f"{block}/train_with_nonzero_attribution.jsonl", # world model
+    "test_kalshi":     f"{block}/test_kalshi.jsonl",
+    "test_polymarket": f"{block}/test_polymarket.jsonl",
+})
+```
 
 ## Stage 1 — Train the attributor
 
 The attributor is trained to reproduce the posterior's responsibility
-distribution over candidate news (forward-KL; one epoch is enough):
+distribution over candidate news (forward-KL; one epoch is enough). It trains on
+`train.jsonl` — **all** records, including null events, so it learns to assign
+low/no score to irrelevant or news-less cases:
 
 ```bash
-DATA=data/swm-bench
+DATA=data/swm-bench/Qwen3.5-397B-attributed-data
 CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun --nproc_per_node=4 scripts/train_attributer.py \
-    --train-data-path $DATA/train_clean.jsonl \
+    --train-data-path $DATA/train.jsonl \
     --valid-data-path $DATA/valid_subset150.jsonl \
     --output-dir saves/attributer_8b --model-name Qwen/Qwen3-8B \
     --epochs 1 --max-news 30 --max-seq-length 1024 \
@@ -74,9 +96,9 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun --nproc_per_node=4 scripts/train_attribute
 
 ## Stage 2 — Train the world model
 
-The world model is trained on the posterior-attributed data with a per-news,
-responsibility-weighted regression loss, full fine-tuning under FSDP
-(`MODE GPUS NPROC PORT MODEL TAG SAVE EP`):
+The world model is trained on `train_with_nonzero_attribution.jsonl` (the
+attributed records) with a per-news, responsibility-weighted regression loss,
+full fine-tuning under FSDP (`MODE GPUS NPROC PORT MODEL TAG SAVE EP`):
 
 ```bash
 # 8B, 8-GPU FSDP, 6 epochs
@@ -91,9 +113,9 @@ bash scripts/train_fc_v9odds.sh single 0 1 29501 Qwen/Qwen3-0.6B wm06b saves_loc
 **Posterior** (oracle attribution, already in the test file):
 
 ```bash
-DATA=data/swm-bench
+DATA=data/swm-bench/Qwen3.5-397B-attributed-data
 python scripts/inference_multievent_world_model.py \
-    --test-data-path $DATA/test_kalshi_final.jsonl \
+    --test-data-path $DATA/test_kalshi.jsonl \
     --model-path saves_local/wm8b/final-model --model-name Qwen/Qwen3-8B \
     --output-path results/posterior_kalshi.jsonl --max-news 30
 ```
@@ -103,7 +125,7 @@ python scripts/inference_multievent_world_model.py \
 ```bash
 # (a) prior attribution: replace each record's attributions with the model's
 python scripts/inference_prior_attribution.py \
-    --data-path $DATA/test_kalshi_final.jsonl \
+    --data-path $DATA/test_kalshi.jsonl \
     --attributer-path saves/attributer_8b --model-name Qwen/Qwen3-8B \
     --output-path results/test_kalshi_prior.jsonl --max-news 30
 

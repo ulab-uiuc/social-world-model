@@ -18,7 +18,7 @@ DATA="$REPO/data/social-world-model-v6-qwen3.5-397B-clean-semdedup"
 LOG="$REPO/logs"; mkdir -p "$LOG" "$SAVE"
 
 COMMON=(
-  --train-data-path "$DATA/train_clean.jsonl"
+  --train-data-path "$DATA/train_with_nonzero_attribution.jsonl"
   --valid-data-path "$DATA/valid_subset150.jsonl"
   --output-dir "$SAVE/$TAG" --model-name "$MODEL"
   --train-batch-size 4 --gradient-accumulation-steps 1 --eval-batch-size 4

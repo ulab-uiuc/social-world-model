@@ -26,11 +26,11 @@ WINDOW = 30
 MIN_HISTORY = 10
 FLOOR = 0.01
 FILES = [
-    'test_kalshi_final.jsonl',
-    'test_polymarket_final.jsonl',
+    'test_kalshi.jsonl',
+    'test_polymarket.jsonl',
     'train.jsonl',
-    'train_clean.jsonl',
-    'valid_clean.jsonl',
+    'train_with_nonzero_attribution.jsonl',
+    'valid_with_nonzero_attribution.jsonl',
     'valid_subset150.jsonl',
 ]
 
