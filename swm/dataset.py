@@ -152,14 +152,12 @@ class MultiEventWorldModelDataset(Dataset):
         null_subsample_ratio: float = 1.0,
         predict_delta: bool = True,
         include_nonews_candidate: bool = False,
-        odds_null_categorical: bool = False,
         null_rho0: float = 1.0,
         odds_eps: float = 1e-3,
         odds_temp: float = 1.0,
         direct_soft_routing: bool = False,
     ):
         self.include_nonews_candidate = include_nonews_candidate
-        self.odds_null_categorical = odds_null_categorical
         self.direct_soft_routing = direct_soft_routing
         self.null_rho0 = null_rho0
         self.odds_eps = odds_eps
@@ -211,7 +209,7 @@ class MultiEventWorldModelDataset(Dataset):
                     [news is not None for news, _ in items], dtype=torch.float
                 )
                 weights = raw.clamp(0.0, 1.0) * is_news
-            elif getattr(self, 'odds_null_categorical', False):
+            else:
                 # Independent per-news Bernoulli scores a_i -> joint (k+1) categorical
                 # over (news, no-news) via odds + a null prior mass rho0:
                 #   o_i = ((a_i+eps)/(1-a_i+eps))^(1/T),  o_0 = rho0
@@ -219,9 +217,8 @@ class MultiEventWorldModelDataset(Dataset):
                 # The null mass pi_0 = rho0/(rho0+sum o) is NOT a candidate here:
                 # no-news prediction is fixed 0, so news weights summing to <1
                 # shrink the aggregate for low-confidence events. Loss/predict
-                # must NOT renormalize these to 1. Fixes L1's bug where weak
-                # [0.2,0,0] collapses to a confident [1,0,0].
-                # no-news candidate (news is None, e.g. a null event's only
+                # must NOT renormalize these to 1.
+                # A no-news candidate (news is None, e.g. a null event's only
                 # candidate) predicts 0 and contributes 0: mask its odds to 0 so
                 # null events aggregate to 0 (route-to-0), not the untrained
                 # no-news-prompt output. Has-news events have no None candidate.
@@ -233,14 +230,6 @@ class MultiEventWorldModelDataset(Dataset):
                 if self.odds_temp != 1.0:
                     o = o.pow(1.0 / self.odds_temp)
                 weights = o / (self.null_rho0 + o.sum())
-            else:
-                # Fallback: L1-normalize attribution scores to a convex weight vector.
-                weights = raw
-                total = weights.sum()
-                if total > 0:
-                    weights = weights / total
-                else:
-                    weights = torch.full_like(weights, 1.0 / weights.numel())
 
             before_p = (
                 float(record.history[-1].get('p', 0.5))
@@ -352,8 +341,6 @@ class PriorAttributerDataset(Dataset):
         max_seq_length: int = 1024,
         include_negatives: bool = True,
         null_subsample_ratio: float = 1.0,
-        target_sharpen: float = 1.0,
-        target_mode: str = 'normalize',
         null_odds: float = 1.0,
         odds_eps: float = 1e-3,
         odds_temp: float = 1.0,
@@ -365,25 +352,12 @@ class PriorAttributerDataset(Dataset):
         self.max_seq_length = max_seq_length
         self.include_negatives = include_negatives
         self.null_subsample_ratio = null_subsample_ratio
-        self.target_mode = target_mode
-        self.null_odds = null_odds
-        self.odds_eps = odds_eps
-        self.odds_temp = odds_temp
-        # Sharpen the KL target: p_dist ∝ score**target_sharpen. >1 makes the
-        # target distribution more peaked (top news gets more mass), so the
-        # learned attributer is more decisive. Lowering target_temperature does
-        # NOT do this (train/inference share it, so output ≈ target).
-        self.target_sharpen = target_sharpen
-        # Target distribution construction over (news ∪ {no-news}):
-        #   'normalize' (legacy): p ∝ [scores..., 1 if null else 0]. A weak score
-        #     like [0.2,0,0] collapses to [1,0,0] (over-confident; no-news always
-        #     0 for has-news → forward-KL has no gradient to raise no-news).
-        #   'odds': map each score a_i to odds o_i=((a_i+eps)/(1-a_i+eps))**(1/T),
-        #     give the null slot a fixed raw mass rho_0=null_odds, then normalize.
-        #     Weak scores -> high no-news (e.g. [0.2,0,0]->[no-news .8, .2,0,0]),
-        #     null records -> no-news≈1 emerge naturally (no is_null special-case),
-        #     and no-news mass is nonzero for has-news -> KL gradient suppresses it.
-        self.target_mode = target_mode
+        # Target distribution over (news ∪ {no-news}): map each posterior score
+        # a_i to odds o_i=((a_i+eps)/(1-a_i+eps))**(1/T), give the null slot a
+        # fixed raw mass rho_0=null_odds, then normalize. Weak scores -> high
+        # no-news (e.g. [0.2,0,0]->[no-news .8, .2,0,0]); null records -> no-news≈1
+        # emerge naturally; no-news mass is nonzero for has-news so the forward-KL
+        # gradient suppresses it.
         self.null_odds = null_odds
         self.odds_eps = odds_eps
         self.odds_temp = odds_temp
@@ -427,30 +401,17 @@ class PriorAttributerDataset(Dataset):
             # null else 0) — used as-is by the per-news-BCE path (raw_scores).
             score_list.append(1.0 if is_null else 0.0)
 
-            if self.target_mode == 'odds':
-                # odds construction: news o_i = ((a_i+eps)/(1-a_i+eps))**(1/T),
-                # null slot raw mass = null_odds; normalize over (news ∪ {no-news}).
-                a = torch.tensor(
-                    [scores_by_idx.get(i, 0.0) for i in use_idxs],
-                    dtype=torch.float,
-                ).clamp(0.0, 1.0)
-                odds = (a + self.odds_eps) / (1.0 - a + self.odds_eps)
-                if self.odds_temp != 1.0:
-                    odds = odds.pow(1.0 / self.odds_temp)
-                raw = torch.cat(
-                    [odds, torch.tensor([self.null_odds], dtype=torch.float)]
-                )
-                p_dist = raw / raw.sum()
-            else:
-                scores = torch.tensor(score_list, dtype=torch.float).clamp(min=0.0)
-                if self.target_sharpen != 1.0:
-                    scores = scores.pow(self.target_sharpen)
-                total = scores.sum()
-                p_dist = (
-                    scores / total
-                    if total > 0
-                    else torch.full_like(scores, 1.0 / scores.size(0))
-                )
+            # odds construction: news o_i = ((a_i+eps)/(1-a_i+eps))**(1/T),
+            # null slot raw mass = null_odds; normalize over (news ∪ {no-news}).
+            a = torch.tensor(
+                [scores_by_idx.get(i, 0.0) for i in use_idxs],
+                dtype=torch.float,
+            ).clamp(0.0, 1.0)
+            odds = (a + self.odds_eps) / (1.0 - a + self.odds_eps)
+            if self.odds_temp != 1.0:
+                odds = odds.pow(1.0 / self.odds_temp)
+            raw = torch.cat([odds, torch.tensor([self.null_odds], dtype=torch.float)])
+            p_dist = raw / raw.sum()
 
             datapoints.append(
                 {

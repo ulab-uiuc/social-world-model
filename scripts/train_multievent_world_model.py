@@ -215,14 +215,6 @@ def parse_args():
         'model to read news for the delta. before_price is unchanged.',
     )
     parser.add_argument(
-        '--odds-null-categorical',
-        action='store_true',
-        help='Convert independent per-news Bernoulli scores into a joint '
-        '(k+1) categorical over (news, no-news) via odds + null prior '
-        'mass rho0. News weights sum to 1-pi_0 (no-news pred fixed 0); '
-        'loss/predict skip renorm. Fixes L1 collapsing weak [0.2,0,0]->[1,0,0].',
-    )
-    parser.add_argument(
         '--null-rho0',
         type=float,
         default=1.0,
@@ -240,11 +232,6 @@ def parse_args():
         default=1.0,
         help='Smoothing temperature: o_i^(1/T). T>1 flattens. odds already '
         'spreads the distribution so T=1 is the default (no extra sharpen).',
-    )
-    parser.add_argument(
-        '--per-news-loss',
-        action='store_true',
-        help='Responsibility-weighted L_wm: score each news vs the move then weight by attribution (vs error-of-weighted-mean).',
     )
     parser.add_argument(
         '--train-attributed-only',
@@ -357,8 +344,6 @@ def main():
         pooling_method=args.pooling_method,
         null_subsample_ratio=args.null_subsample_ratio,
         predict_delta=args.predict_delta,
-        per_news_loss=args.per_news_loss,
-        odds_null_categorical=args.odds_null_categorical,
         null_rho0=args.null_rho0,
         odds_eps=args.odds_eps,
         odds_temp=args.odds_temp,

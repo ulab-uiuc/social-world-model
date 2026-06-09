@@ -23,7 +23,7 @@ COMMON=(
   --output-dir "$SAVE/$TAG" --model-name "$MODEL"
   --train-batch-size 4 --gradient-accumulation-steps 1 --eval-batch-size 4
   --learning-rate 2e-5 --head-lr-multiplier 5 --warmup-steps 30 --bf16
-  --per-news-loss --odds-null-categorical --null-rho0 1.0 --odds-eps 1e-3 --odds-temp 1.0
+  --null-rho0 1.0 --odds-eps 1e-3 --odds-temp 1.0
   --epochs "$EP" --max-news 30 --max-seq-length 1024
   --eval-steps 50 --logging-steps 10 --gradient-checkpointing
 )

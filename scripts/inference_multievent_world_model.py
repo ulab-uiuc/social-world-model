@@ -94,12 +94,6 @@ def parse_args():
     parser.add_argument('--max-seq-length', type=int, default=1024)
     parser.add_argument('--batch-size', type=int, default=8)
     parser.add_argument('--max-news', type=int, default=30)
-    parser.add_argument(
-        '--odds-null-categorical',
-        action='store_true',
-        help='Aggregate with the odds+null categorical (match odds-trained models): '
-        'pi_i = odds_i/(rho0+sum odds), no-news=0, no renorm.',
-    )
     parser.add_argument('--null-rho0', type=float, default=1.0)
     parser.add_argument('--odds-eps', type=float, default=1e-3)
     parser.add_argument('--odds-temp', type=float, default=1.0)
@@ -222,15 +216,10 @@ def main():
     world_model = MultiEventWorldModel(**world_model_kwargs)
     world_model.load(args.model_path)
     world_model.include_nonews_candidate = args.include_nonews_candidate
-    world_model.odds_null_categorical = args.odds_null_categorical
     world_model.null_rho0 = args.null_rho0
     world_model.odds_eps = args.odds_eps
     world_model.odds_temp = args.odds_temp
     world_model.direct_soft_routing = args.direct_soft_routing
-    if args.odds_null_categorical:
-        print(
-            f'[odds] odds+null categorical aggregation (rho0={args.null_rho0}, eps={args.odds_eps}, T={args.odds_temp})'
-        )
     if args.direct_soft_routing:
         print(
             '[direct] direct soft routing: prior categorical weights used as-is (no odds, no renorm)'

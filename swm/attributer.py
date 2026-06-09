@@ -30,7 +30,6 @@ class KLDivergenceTrainer(Trainer):
         *args,
         logit_temperature: float = 1.0,
         routing_loss_weight: float = 0.0,
-        reverse_kl: bool = False,
         neg_bce_weight: float = 0.0,
         per_news_bce: bool = False,
         head_lr_multiplier: float = 1.0,
@@ -39,7 +38,6 @@ class KLDivergenceTrainer(Trainer):
         super().__init__(*args, **kwargs)
         self.logit_temperature = logit_temperature
         self.routing_loss_weight = routing_loss_weight
-        self.reverse_kl = reverse_kl
         self.neg_bce_weight = neg_bce_weight
         self.head_lr_multiplier = head_lr_multiplier
         # per-news Bernoulli mode: drop the softmax/KL entirely; each news is an
@@ -150,19 +148,8 @@ class KLDivergenceTrainer(Trainer):
 
         eps = 1e-8
         p = targets.to(logits.dtype).clamp(min=0.0)
-        # KL(p ‖ q) = Σ p · log(p/q); contribution is 0 wherever p_i = 0.
-        if getattr(self, 'reverse_kl', False):
-            # reverse KL(q‖p) = Σ q·log(q/p): mode-seeking. q>0 where p≈0
-            # (irrelevant news) is heavily penalized -> actively suppresses
-            # off-target news and sharpens the distribution. Gradient flows
-            # through q (the model softmax); p (target) is constant.
-            kl_per_prompt = q * (
-                torch.log(q.clamp(min=eps)) - torch.log(p.clamp(min=eps))
-            )
-        else:
-            kl_per_prompt = p * (
-                torch.log(p.clamp(min=eps)) - torch.log(q.clamp(min=eps))
-            )
+        # forward KL(p ‖ q) = Σ p · log(p/q); contribution is 0 wherever p_i = 0.
+        kl_per_prompt = p * (torch.log(p.clamp(min=eps)) - torch.log(q.clamp(min=eps)))
         kl_per_group = torch.zeros(n_groups, device=logits.device, dtype=logits.dtype)
         kl_per_group.scatter_add_(0, group_ids, kl_per_prompt)
         loss = kl_per_group.mean()
@@ -225,13 +212,10 @@ class BasicPriorAttributer:
         max_news: int = 50,
         target_temperature: float = 0.5,
         null_subsample_ratio: float = 1.0,
-        target_sharpen: float = 1.0,
-        target_mode: str = 'normalize',
         null_odds: float = 1.0,
         odds_eps: float = 1e-3,
         odds_temp: float = 1.0,
         routing_loss_weight: float = 0.0,
-        reverse_kl: bool = False,
         neg_bce_weight: float = 0.0,
         per_news_bce: bool = False,
         head_lr_multiplier: float = 1.0,
@@ -245,13 +229,10 @@ class BasicPriorAttributer:
         self.max_news = max_news
         self.target_temperature = target_temperature
         self.null_subsample_ratio = null_subsample_ratio
-        self.target_sharpen = target_sharpen
-        self.target_mode = target_mode
         self.null_odds = null_odds
         self.odds_eps = odds_eps
         self.odds_temp = odds_temp
         self.routing_loss_weight = routing_loss_weight
-        self.reverse_kl = reverse_kl
         self.neg_bce_weight = neg_bce_weight
         self.per_news_bce = per_news_bce
         # Two-stage null gate (set by inference). null_gate=True scores the
@@ -318,8 +299,6 @@ class BasicPriorAttributer:
             max_news=self.max_news,
             max_seq_length=self.max_seq_length,
             null_subsample_ratio=self.null_subsample_ratio,
-            target_sharpen=self.target_sharpen,
-            target_mode=self.target_mode,
             null_odds=self.null_odds,
             odds_eps=self.odds_eps,
             odds_temp=self.odds_temp,
@@ -329,8 +308,6 @@ class BasicPriorAttributer:
             tokenizer=self.tokenizer,
             max_news=self.max_news,
             max_seq_length=self.max_seq_length,
-            target_sharpen=self.target_sharpen,
-            target_mode=self.target_mode,
             null_odds=self.null_odds,
             odds_eps=self.odds_eps,
             odds_temp=self.odds_temp,
@@ -344,7 +321,6 @@ class BasicPriorAttributer:
             data_collator=self._create_collate_fn(),
             logit_temperature=self.target_temperature,
             routing_loss_weight=self.routing_loss_weight,
-            reverse_kl=self.reverse_kl,
             neg_bce_weight=self.neg_bce_weight,
             per_news_bce=self.per_news_bce,
             head_lr_multiplier=self.head_lr_multiplier,

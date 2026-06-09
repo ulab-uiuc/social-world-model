@@ -177,18 +177,10 @@ def parse_args():
         'output sharpness relative to target). Default 0.5.',
     )
     parser.add_argument(
-        '--target-mode',
-        type=str,
-        default='normalize',
-        choices=['normalize', 'odds'],
-        help="Target dist over (news∪no-news). 'odds': score->odds, null gets raw mass "
-        '--null-odds, then normalize (weak scores->high no-news, null emerges).',
-    )
-    parser.add_argument(
         '--null-odds',
         type=float,
         default=1.0,
-        help='Raw odds mass rho_0 for the no-news slot in --target-mode odds. Higher = more conservative (more null mass).',
+        help='Raw odds mass rho_0 for the no-news slot. Higher = more conservative (more null mass).',
     )
     parser.add_argument('--odds-eps', type=float, default=1e-3)
     parser.add_argument(
@@ -196,13 +188,6 @@ def parse_args():
         type=float,
         default=1.0,
         help='Smoothing T for odds**(1/T); T>1 flattens the target.',
-    )
-    parser.add_argument(
-        '--target-sharpen',
-        type=float,
-        default=1.0,
-        help='Sharpen the KL target: p_dist ∝ score**this. >1 makes the '
-        'attributer more decisive (top news gets more mass). Default 1.0.',
     )
     parser.add_argument(
         '--routing-loss-weight',
@@ -217,12 +202,6 @@ def parse_args():
         type=float,
         default=0.0,
         help='Per-news relevance BCE weight: pushes sigmoid(logit)->1 for gold-attributed news, 0 otherwise. Supplies forward-KL the negative-suppression it lacks.',
-    )
-    parser.add_argument(
-        '--reverse-kl',
-        action='store_true',
-        help='Use reverse KL(q||p) (mode-seeking: sharpens the distribution and '
-        'actively suppresses off-target/irrelevant news) instead of forward KL(p||q).',
     )
     parser.add_argument(
         '--head-lr-multiplier',
@@ -322,13 +301,10 @@ def main():
         max_news=args.max_news,
         target_temperature=args.target_temperature,
         null_subsample_ratio=args.null_subsample_ratio,
-        target_mode=args.target_mode,
         null_odds=args.null_odds,
         odds_eps=args.odds_eps,
         odds_temp=args.odds_temp,
-        target_sharpen=args.target_sharpen,
         routing_loss_weight=args.routing_loss_weight,
-        reverse_kl=args.reverse_kl,
         neg_bce_weight=args.neg_bce_weight,
         per_news_bce=args.per_news_bce,
         head_lr_multiplier=args.head_lr_multiplier,

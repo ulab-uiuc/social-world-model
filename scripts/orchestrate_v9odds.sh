@@ -46,7 +46,7 @@ runeval () {
     CUDA_VISIBLE_DEVICES=$g "$ENVDIR/bin/python" scripts/inference_multievent_world_model.py \
       --test-data-path "$src" --model-path "$mp" --model-name "$mn" \
       --output-path "$OUT/${tag}_${mk}_s${s}.jsonl" --max-news 30 --batch-size 16 \
-      --odds-null-categorical --null-rho0 1.0 --odds-eps 1e-3 --odds-temp 1.0 \
+      --null-rho0 1.0 --odds-eps 1e-3 --odds-temp 1.0 \
       --num-shards $NS --shard-idx $s > "$LG/${tag}_${mk}_s${s}.log" 2>&1 &
     s=$((s+1))
   done
