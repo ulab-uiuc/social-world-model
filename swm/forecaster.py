@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Union
 
 import torch
 from torch.utils.data import DataLoader
@@ -25,8 +25,14 @@ class WeightedTrainer(Trainer):
     used to desync NCCL ALLREDUCE.
     """
 
-    def __init__(self, *args, head_lr_multiplier: float = 1.0,
-                 per_news_loss: bool = False, odds_null_categorical: bool = False, **kwargs):
+    def __init__(
+        self,
+        *args,
+        head_lr_multiplier: float = 1.0,
+        per_news_loss: bool = False,
+        odds_null_categorical: bool = False,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
         self.odds_null_categorical = odds_null_categorical
         self.head_lr_multiplier = head_lr_multiplier
@@ -42,8 +48,16 @@ class WeightedTrainer(Trainer):
         # params (LayerNorm/RMSNorm weights) get no weight decay, matching HF's
         # default split — the old code applied decay to all params indiscriminately.
         groups = {
-            'head_decay': {'params': [], 'lr': base_lr * self.head_lr_multiplier, 'weight_decay': decay},
-            'head_nodecay': {'params': [], 'lr': base_lr * self.head_lr_multiplier, 'weight_decay': 0.0},
+            'head_decay': {
+                'params': [],
+                'lr': base_lr * self.head_lr_multiplier,
+                'weight_decay': decay,
+            },
+            'head_nodecay': {
+                'params': [],
+                'lr': base_lr * self.head_lr_multiplier,
+                'weight_decay': 0.0,
+            },
             'other_decay': {'params': [], 'lr': base_lr, 'weight_decay': decay},
             'other_nodecay': {'params': [], 'lr': base_lr, 'weight_decay': 0.0},
         }
@@ -52,11 +66,15 @@ class WeightedTrainer(Trainer):
                 continue
             is_head = 'regression_head' in name
             no_decay = param.ndim <= 1 or name.endswith('.bias')
-            key = ('head' if is_head else 'other') + ('_nodecay' if no_decay else '_decay')
+            key = ('head' if is_head else 'other') + (
+                '_nodecay' if no_decay else '_decay'
+            )
             groups[key]['params'].append(param)
 
         group_list = [g for g in groups.values() if g['params']]
-        optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(self.args)
+        optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(
+            self.args
+        )
         optimizer_kwargs.pop('lr', None)
         optimizer_kwargs.pop('weight_decay', None)  # set per-group above
         self.optimizer = optimizer_cls(group_list, **optimizer_kwargs)
@@ -100,19 +118,25 @@ class WeightedTrainer(Trainer):
                 # Do NOT renormalize to 1 -- that would discard the null mass.
                 norm_w = weights.to(preds.dtype)
             else:
-                wsum = torch.zeros(labels.size(0), device=weights.device, dtype=weights.dtype)
+                wsum = torch.zeros(
+                    labels.size(0), device=weights.device, dtype=weights.dtype
+                )
                 wsum.scatter_add_(0, gid, weights)
                 norm_w = (weights / (wsum[gid] + 1e-8)).to(preds.dtype)
             lbl_pn = labels[gid]
-            se = (preds - lbl_pn) ** 2                       # per-news squared error
+            se = (preds - lbl_pn) ** 2  # per-news squared error
             inner = torch.zeros(labels.size(0), device=preds.device, dtype=preds.dtype)
-            inner.scatter_add_(0, gid, norm_w * se)          # Sum_i pi_i (mu_i - delta)^2 per record
+            inner.scatter_add_(
+                0, gid, norm_w * se
+            )  # Sum_i pi_i (mu_i - delta)^2 per record
             loss = inner.mean()
             return loss, acc_pred, labels
         loss = torch.nn.functional.mse_loss(acc_pred, labels)
         return loss, acc_pred, labels
 
-    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
+    def compute_loss(
+        self, model, inputs, return_outputs=False, num_items_in_batch=None
+    ):
         loss, _, _ = self._forward_and_loss(model, inputs)
         return loss
 
@@ -174,16 +198,20 @@ class MultiEventForecaster:
         # model to fp32 (uniform) so FSDP can wrap it; TrainingArguments bf16
         # then drives FSDP mixed-precision (bf16 compute, fp32 master weights).
         self.model = self.model.float()
-        if self.gradient_checkpointing and hasattr(self.model.llm, 'gradient_checkpointing_enable'):
+        if self.gradient_checkpointing and hasattr(
+            self.model.llm, 'gradient_checkpointing_enable'
+        ):
             self.model.llm.gradient_checkpointing_enable(
-                gradient_checkpointing_kwargs={"use_reentrant": False}
+                gradient_checkpointing_kwargs={'use_reentrant': False}
             )
-            print("Gradient checkpointing enabled (use_reentrant=False)")
+            print('Gradient checkpointing enabled (use_reentrant=False)')
 
     def _create_collate_fn(self):
         def collate_fn(batch):
             out = collate_padded_groups(
-                batch, self.tokenizer.pad_token_id, self.max_seq_length,
+                batch,
+                self.tokenizer.pad_token_id,
+                self.max_seq_length,
             )
             out['labels'] = torch.stack([x['label'] for x in batch])
             out['weights'] = torch.cat([x['weights'] for x in batch])
@@ -202,7 +230,9 @@ class MultiEventForecaster:
             # the best checkpoint is still on disk.
             pass
 
-    def _make_dataset(self, records: List[Record], null_subsample_ratio: float) -> MultiEventForecasterDataset:
+    def _make_dataset(
+        self, records: List[Record], null_subsample_ratio: float
+    ) -> MultiEventForecasterDataset:
         return MultiEventForecasterDataset(
             records=records,
             tokenizer=self.tokenizer,
@@ -257,8 +287,10 @@ class MultiEventForecaster:
     ) -> List[Dict[str, Union[str, float]]]:
         if attributer is not None:
             records = self._generate_attributions(
-                records, attributer,
-                score_threshold=score_threshold, top_k=top_k,
+                records,
+                attributer,
+                score_threshold=score_threshold,
+                top_k=top_k,
             )
 
         dataset = MultiEventForecasterDataset(
@@ -275,7 +307,9 @@ class MultiEventForecaster:
             direct_soft_routing=getattr(self, 'direct_soft_routing', False),
         )
         dataloader = DataLoader(
-            dataset, batch_size=batch_size, shuffle=False,
+            dataset,
+            batch_size=batch_size,
+            shuffle=False,
             collate_fn=self._create_collate_fn(),
         )
 
@@ -299,8 +333,12 @@ class MultiEventForecaster:
                     # attribution-weighted average. T<1 concentrates mass on the
                     # top news, countering dilution when many news are attributed.
                     if weight_temperature != 1.0:
-                        group_weights = group_weights.clamp(min=1e-8).pow(1.0 / weight_temperature)
-                    if getattr(self, 'odds_null_categorical', False) or getattr(self, 'direct_soft_routing', False):
+                        group_weights = group_weights.clamp(min=1e-8).pow(
+                            1.0 / weight_temperature
+                        )
+                    if getattr(self, 'odds_null_categorical', False) or getattr(
+                        self, 'direct_soft_routing', False
+                    ):
                         # weights are the categorical pi_i (sum 1-pi_0); use as-is
                         # so the missing pi_0 mass shrinks the aggregate (no-news -> 0).
                         normalized = group_weights
@@ -309,12 +347,12 @@ class MultiEventForecaster:
 
                     acc_pred = 0.0
                     for i in range(0, len(indices), chunk_size):
-                        chunk_idx = indices[i:i + chunk_size]
+                        chunk_idx = indices[i : i + chunk_size]
                         chunk_pred = self.model(
                             input_ids=input_ids[chunk_idx],
                             attention_mask=attention_mask[chunk_idx],
                         ).view(-1)
-                        acc_pred += (chunk_pred * normalized[i:i + chunk_size]).sum()
+                        acc_pred += (chunk_pred * normalized[i : i + chunk_size]).sum()
 
                     before_price = before_prices[group_idx].item()
                     # In delta mode the model + label are deltas off before_price;
@@ -331,16 +369,18 @@ class MultiEventForecaster:
                         pred_delta = pred_price - before_price
                         true_delta = true_price - before_price
 
-                    results.append({
-                        'event_id': batch['event_ids'][group_idx],
-                        'market_id': batch['market_ids'][group_idx],
-                        't': batch['ts'][group_idx],
-                        'pred_delta': pred_delta,
-                        'true_delta': true_delta,
-                        'pred_price': pred_price,
-                        'true_price': true_price,
-                        'before_price': before_price,
-                    })
+                    results.append(
+                        {
+                            'event_id': batch['event_ids'][group_idx],
+                            'market_id': batch['market_ids'][group_idx],
+                            't': batch['ts'][group_idx],
+                            'pred_delta': pred_delta,
+                            'true_delta': true_delta,
+                            'pred_price': pred_price,
+                            'true_price': true_price,
+                            'before_price': before_price,
+                        }
+                    )
         return results
 
     def _generate_attributions(
@@ -374,9 +414,11 @@ class MultiEventForecaster:
                 total_records_with_news += 1
 
         if total_news > 0:
-            print(f"Generated attributions for {total_records_with_news} records, "
-                  f"kept {total_kept}/{total_news} news "
-                  f"({total_kept / total_news * 100:.1f}%)")
+            print(
+                f'Generated attributions for {total_records_with_news} records, '
+                f'kept {total_kept}/{total_news} news '
+                f'({total_kept / total_news * 100:.1f}%)'
+            )
         return records
 
     def save(self, path: str) -> None:

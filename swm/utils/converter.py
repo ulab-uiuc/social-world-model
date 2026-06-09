@@ -2,10 +2,10 @@ import json
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
-from pydantic import ValidationError
 import requests
+from pydantic import ValidationError
 
 from ..data import DailyNewsData, MarketData
 from .utils import filter_midnight_points
@@ -13,6 +13,7 @@ from .utils import filter_midnight_points
 
 class PolymarketCategory(str, Enum):
     """Categories for Polymarket data."""
+
     POLITICS = 'Politics'
     CRYPTO = 'Crypto'
     ELECTION = 'Election'
@@ -20,6 +21,7 @@ class PolymarketCategory(str, Enum):
 
 class KalshiCategory(str, Enum):
     """Categories for Kalshi data (excluding Sports and Climate)."""
+
     COMPANIES = 'Companies'
     CRYPTO = 'Crypto'
     ECONOMICS = 'Economics'
@@ -57,26 +59,26 @@ class PolyMarketDataConverter:
         current_change: float,
     ) -> float:
         """Compute robust z-score using median and MAD (Median Absolute Deviation).
-        
+
         Args:
             changes: List of historical changes (local window)
             current_change: The change to compute z-score for
-            
+
         Returns:
             Robust z-score value
         """
         import statistics
-        
+
         if len(changes) < 10:
             return 0.0
-        
+
         median = statistics.median(changes)
         # MAD = median(|x_i - median|)
         mad = statistics.median([abs(c - median) for c in changes])
         # Scale MAD to approximate std (for normal distribution, MAD ≈ 0.6745 * std)
         scaled_mad = mad * 1.4826
         scaled_mad = max(scaled_mad, 0.01)  # Avoid division by zero
-        
+
         return (current_change - median) / scaled_mad
 
     def find_breakpoints(
@@ -84,77 +86,82 @@ class PolyMarketDataConverter:
         daily_series: List[Dict[str, float]],
     ) -> List[Dict[str, Any]]:
         """Detect anomalies in daily time series using rolling robust Z-score.
-        
+
         Algorithm:
         1. For each point, use a rolling window of previous changes
         2. Compute robust Z-score using median and MAD (Median Absolute Deviation)
         3. Detect changes where Z-score exceeds threshold
-        
+
         Args:
             daily_series: List of {'t': timestamp, 'p': price} sorted by time
-            
+
         Returns:
             List of breakpoint dicts with full point information
         """
         if not daily_series or len(daily_series) < 2:
             return []
-        
+
         breakpoints = []
         z_threshold = self.config.z_score_threshold
         window_size = self.config.rolling_window
-        
+
         # Sort by timestamp
         sorted_series = sorted(daily_series, key=lambda x: x['t'])
-        
+
         # Calculate all consecutive changes
         changes = []
         for i in range(len(sorted_series) - 1):
             p1 = sorted_series[i]['p']
             p2 = sorted_series[i + 1]['p']
             changes.append(abs(p2 - p1))
-        
+
         # Need at least 10 historical changes for meaningful statistics
         min_history = 10
-        
+
         # Detect anomalies using rolling robust z-score
         for i in range(len(changes)):
             if i < min_history:
                 # Not enough history yet
                 continue
-            
+
             # Use local window: previous changes only (causal)
             start_idx = max(0, i - window_size)
             local_changes = changes[start_idx:i]
-            
+
             current_change = changes[i]
             z_score = self._compute_robust_z_score(local_changes, current_change)
-            
+
             if z_score > z_threshold:
                 t1, p1 = sorted_series[i]['t'], sorted_series[i]['p']
                 t2, p2 = sorted_series[i + 1]['t'], sorted_series[i + 1]['p']
-                
+
                 # Extract window history: points from start_idx to after point (inclusive)
                 window_end_idx = i + 2  # Include both before and after points
                 window_history = [
-                    {'t': float(sorted_series[j]['t']), 'p': round(sorted_series[j]['p'], 4)}
+                    {
+                        't': float(sorted_series[j]['t']),
+                        'p': round(sorted_series[j]['p'], 4),
+                    }
                     for j in range(start_idx, min(window_end_idx, len(sorted_series)))
                 ]
-                
-                breakpoints.append({
-                    'before': {'t': float(t1), 'p': round(p1, 4)},
-                    'after': {'t': float(t2), 'p': round(p2, 4)},
-                    'change': round(current_change, 4),
-                    'z_score': round(z_score, 2),
-                    'window_start': float(sorted_series[start_idx]['t']),
-                    'window_end': float(t2),
-                    'window_history': window_history,
-                })
-        
+
+                breakpoints.append(
+                    {
+                        'before': {'t': float(t1), 'p': round(p1, 4)},
+                        'after': {'t': float(t2), 'p': round(p2, 4)},
+                        'change': round(current_change, 4),
+                        'z_score': round(z_score, 2),
+                        'window_start': float(sorted_series[start_idx]['t']),
+                        'window_end': float(t2),
+                        'window_history': window_history,
+                    }
+                )
+
         return breakpoints
 
     def find_categories(self, tags: List[str]) -> List[PolymarketCategory]:
         """Find matching categories from tags.
-        
+
         Only returns categories that match: Crypto, Election, Politics.
         Returns empty list if no match found.
         """
@@ -231,15 +238,13 @@ class PolyMarketDataConverter:
                 outcome = self.parse_winning_outcome(outcome_options, outcome_prices)
             else:
                 outcome = None
-            start_date = (
-                market.get('startDate') or event.get('startDate')
-            )
+            start_date = market.get('startDate') or event.get('startDate')
             end_date = market.get('endDate') or event.get('endDate')
-            
+
             # Skip markets without dates
             if not start_date or not end_date:
                 return None
-            
+
             start_ts = self.parse_timestamp(start_date)
             end_ts = self.parse_timestamp(end_date)
             time_series = self.parse_time_series(market, outcome_options)
@@ -276,7 +281,7 @@ class PolyMarketDataConverter:
         markets = event.get('markets') or []
         if not markets:
             return []
-        
+
         markets_data = []
         for market in markets:
             market_data = self.process_market(market, event)
@@ -291,11 +296,13 @@ class KalshiDataConverter:
     def __init__(self, config: Optional[TimeSeriesConfig] = None):
         self.config = config or TimeSeriesConfig()
 
-        url = "https://api.elections.kalshi.com/trade-api/v2/series"
+        url = 'https://api.elections.kalshi.com/trade-api/v2/series'
         response = requests.get(url)
         response.raise_for_status()
         data = response.json()
-        self.series_ticker_dict = {series['ticker']: series['category'] for series in data['series']}
+        self.series_ticker_dict = {
+            series['ticker']: series['category'] for series in data['series']
+        }
 
     def _compute_robust_z_score(
         self,
@@ -303,26 +310,26 @@ class KalshiDataConverter:
         current_change: float,
     ) -> float:
         """Compute robust z-score using median and MAD (Median Absolute Deviation).
-        
+
         Args:
             changes: List of historical changes (local window)
             current_change: The change to compute z-score for
-            
+
         Returns:
             Robust z-score value
         """
         import statistics
-        
+
         if len(changes) < 10:
             return 0.0
-        
+
         median = statistics.median(changes)
         # MAD = median(|x_i - median|)
         mad = statistics.median([abs(c - median) for c in changes])
         # Scale MAD to approximate std (for normal distribution, MAD ≈ 0.6745 * std)
         scaled_mad = mad * 1.4826
         scaled_mad = max(scaled_mad, 0.01)  # Avoid division by zero
-        
+
         return (current_change - median) / scaled_mad
 
     def find_breakpoints(
@@ -330,83 +337,88 @@ class KalshiDataConverter:
         daily_series: List[Dict[str, float]],
     ) -> List[Dict[str, Any]]:
         """Detect anomalies in daily time series using rolling robust Z-score.
-        
+
         Algorithm:
         1. For each point, use a rolling window of previous changes
         2. Compute robust Z-score using median and MAD (Median Absolute Deviation)
         3. Detect changes where Z-score exceeds threshold
-        
+
         Args:
             daily_series: List of {'t': timestamp, 'p': price} sorted by time
-            
+
         Returns:
             List of breakpoint dicts with full point information
         """
         if not daily_series or len(daily_series) < 2:
             return []
-        
+
         breakpoints = []
         z_threshold = self.config.z_score_threshold
         window_size = self.config.rolling_window
-        
+
         # Sort by timestamp
         sorted_series = sorted(daily_series, key=lambda x: x['t'])
-        
+
         # Calculate all consecutive changes
         changes = []
         for i in range(len(sorted_series) - 1):
             p1 = sorted_series[i]['p']
             p2 = sorted_series[i + 1]['p']
             changes.append(abs(p2 - p1))
-        
+
         # Need at least 10 historical changes for meaningful statistics
         min_history = 10
-        
+
         # Detect anomalies using rolling robust z-score
         for i in range(len(changes)):
             if i < min_history:
                 # Not enough history yet
                 continue
-            
+
             # Use local window: previous changes only (causal)
             start_idx = max(0, i - window_size)
             local_changes = changes[start_idx:i]
-            
+
             current_change = changes[i]
             z_score = self._compute_robust_z_score(local_changes, current_change)
-            
+
             if z_score > z_threshold:
                 t1, p1 = sorted_series[i]['t'], sorted_series[i]['p']
                 t2, p2 = sorted_series[i + 1]['t'], sorted_series[i + 1]['p']
-                
+
                 # Extract window history: points from start_idx to after point (inclusive)
                 window_end_idx = i + 2  # Include both before and after points
                 window_history = [
-                    {'t': float(sorted_series[j]['t']), 'p': round(sorted_series[j]['p'], 4)}
+                    {
+                        't': float(sorted_series[j]['t']),
+                        'p': round(sorted_series[j]['p'], 4),
+                    }
                     for j in range(start_idx, min(window_end_idx, len(sorted_series)))
                 ]
-                
-                breakpoints.append({
-                    'before': {'t': float(t1), 'p': round(p1, 4)},
-                    'after': {'t': float(t2), 'p': round(p2, 4)},
-                    'change': round(current_change, 4),
-                    'z_score': round(z_score, 2),
-                    'window_start': float(sorted_series[start_idx]['t']),
-                    'window_end': float(t2),
-                    'window_history': window_history,
-                })
-        
+
+                breakpoints.append(
+                    {
+                        'before': {'t': float(t1), 'p': round(p1, 4)},
+                        'after': {'t': float(t2), 'p': round(p2, 4)},
+                        'change': round(current_change, 4),
+                        'z_score': round(z_score, 2),
+                        'window_start': float(sorted_series[start_idx]['t']),
+                        'window_end': float(t2),
+                        'window_history': window_history,
+                    }
+                )
+
         return breakpoints
 
     def find_categories(self, event_id: str, question: str) -> List[KalshiCategory]:
         """Get category from Kalshi series ticker.
-        
+
         Only returns categories that match the allowed list.
         Returns empty list if no match found.
         """
         series_ticker = event_id.split('-')[0]
         category_str = self.series_ticker_dict.get(series_ticker, '')
-        
+
         # Map API category strings to KalshiCategory enum
         # Exclude Sports and Climate and Weather
         category_mapping = {
@@ -426,7 +438,7 @@ class KalshiDataConverter:
             'transportation': KalshiCategory.TRANSPORTATION,
             'world': KalshiCategory.WORLD,
         }
-        
+
         category_lower = category_str.lower()
         if category_lower in category_mapping:
             return [category_mapping[category_lower]]
@@ -491,14 +503,15 @@ class KalshiDataConverter:
                 subtitle=market_data.get('yes_sub_title'),
             )
         except (KeyError, ValueError, TypeError) as e:
-            print(f"Error processing Kalshi market {market_data.get('market_id', 'unknown')}: {e}")
+            print(
+                f"Error processing Kalshi market {market_data.get('market_id', 'unknown')}: {e}"
+            )
             return None
 
     def convert(self, market_data: Dict[str, Any]) -> List[MarketData]:
         """Convert a single Kalshi market entry to list of MarketData."""
         result = self.process_market(market_data)
         return [result] if result else []
-
 
 
 class DailyNewsConverter:

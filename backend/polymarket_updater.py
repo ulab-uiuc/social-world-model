@@ -173,38 +173,43 @@ class PolymarketUpdater:
 
             # Use forward-fill to handle missing data points
             last_valid_prices = {}
-            
+
             for timestamp in sorted(all_timestamps):
                 current_prices = option_prices.get(timestamp, {})
-                
+
                 # Forward-fill missing prices from last valid state
                 for option in outcomes:
                     if option in current_prices:
                         last_valid_prices[option] = current_prices[option]
                     elif option in last_valid_prices:
                         current_prices[option] = last_valid_prices[option]
-                
+
                 # Only process if we have data for all options
                 if len(current_prices) == len(outcomes):
                     total_price = sum(current_prices.values())
                     if total_price <= 0:
-                        logger.debug(f'Skipping timestamp {timestamp} - zero total price')
+                        logger.debug(
+                            f'Skipping timestamp {timestamp} - zero total price'
+                        )
                         continue
 
                     votes = {}
                     for option, price in current_prices.items():
-                        percentage = (price / total_price * 100)
+                        percentage = price / total_price * 100
                         votes[option] = round(percentage, 2)
 
                     # Verify percentages add up to approximately 100%
                     total_percentage = sum(votes.values())
                     if abs(total_percentage - 100) > 5:  # Allow 5% tolerance
-                        logger.debug(f'Skipping timestamp {timestamp} - percentages dont add up: {total_percentage}%')
+                        logger.debug(
+                            f'Skipping timestamp {timestamp} - percentages dont add up: {total_percentage}%'
+                        )
                         continue
 
                     history_entry = {
                         'card_id': card_id,
-                        'timestamp': datetime.utcfromtimestamp(timestamp).isoformat() + 'Z',
+                        'timestamp': datetime.utcfromtimestamp(timestamp).isoformat()
+                        + 'Z',
                         'votes': votes,
                     }
                     result.append(history_entry)

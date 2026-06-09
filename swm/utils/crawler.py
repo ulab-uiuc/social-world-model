@@ -17,7 +17,8 @@ from tqdm import tqdm
 
 try:
     import kalshi_python
-    from kalshi_python.rest import ApiException
+    from kalshi_python.rest import ApiException  # noqa: F401
+
     HAS_KALSHI_SDK = True
 except ImportError:
     HAS_KALSHI_SDK = False
@@ -171,20 +172,20 @@ class MarketHistoryCrawler(MarketCrawler):
                 # Always use interval=max, filter by start_ts locally
                 url = f'{base_url}?market={token_id}&interval=max&fidelity={fidelity}'
                 response = httpx.get(url, timeout=30)
-                
+
                 if response.status_code == 200:
                     price_data = response.json()
                     history = price_data.get('history', [])
-                    
+
                     # Debug: print first attempt's response
                     if attempt == 0 and not history:
                         print(f'DEBUG: Empty history for token {token_id[:20]}...')
                         print(f'DEBUG: Response: {price_data}')
-                    
+
                     # Filter by start_ts if provided
                     if start_ts is not None and history:
                         history = [p for p in history if p.get('t', 0) >= start_ts]
-                    
+
                     return history
                 else:
                     raise Exception(f'HTTP {response.status_code}: {response.text}')
@@ -327,24 +328,24 @@ class KalshiCrawler:
         self.api_key_id = api_key_id or os.getenv('KALSHI_API_KEY_ID')
         self.private_key_path = private_key_path
         self.client = None
-        
+
         if HAS_KALSHI_SDK and self.api_key_id and self.private_key_path:
             self._init_sdk_client()
-        
+
         if not self.client:
             print('⚠️ Kalshi SDK client not initialized.')
-    
+
     def _init_sdk_client(self):
         try:
             configuration = kalshi_python.Configuration()
             configuration.host = self.base_url
-            
+
             with open(self.private_key_path, 'r') as f:
                 private_key_content = f.read()
-            
+
             configuration.api_key_id = self.api_key_id
             configuration.private_key_pem = private_key_content
-            
+
             if hasattr(kalshi_python, 'KalshiClient'):
                 self.client = kalshi_python.KalshiClient(configuration)
             elif hasattr(kalshi_python, 'ApiInstance'):
@@ -352,12 +353,13 @@ class KalshiCrawler:
                 self.client = kalshi_python.ApiInstance(api_client)
             else:
                 from kalshi_python.api_instance import ApiInstance
+
                 api_client = kalshi_python.ApiClient(configuration)
                 self.client = ApiInstance(api_client)
-            
-            print("✅ Kalshi SDK client initialized")
+
+            print('✅ Kalshi SDK client initialized')
         except Exception as e:
-            print(f"❌ Failed to initialize SDK client: {e}")
+            print(f'❌ Failed to initialize SDK client: {e}')
             self.client = None
 
     def _write_buffer(self) -> None:
@@ -381,38 +383,40 @@ class KalshiCrawler:
                 print(f'Error loading processed markets: {e}')
         return processed_tickers
 
-    def get_markets(self, limit: int = 100, series_ticker: Optional[str] = None) -> Dict:
-        url = f"https://api.elections.kalshi.com/trade-api/v2/markets?limit={limit}&series_ticker={series_ticker}"
+    def get_markets(
+        self, limit: int = 100, series_ticker: Optional[str] = None
+    ) -> Dict:
+        url = f'https://api.elections.kalshi.com/trade-api/v2/markets?limit={limit}&series_ticker={series_ticker}'
         try:
             response = requests.get(url)
             response.raise_for_status()
             return response.json()
         except Exception as e:
-            print(f"HTTP get_markets error: {e}")
+            print(f'HTTP get_markets error: {e}')
             return {'markets': [], 'cursor': None}
 
     def _format_market_for_output(self, market: Dict) -> Dict:
         start_ts = None
         end_ts = None
-        
+
         if 'open_time' in market:
             try:
                 dt = datetime.fromisoformat(market['open_time'].replace('Z', '+00:00'))
                 start_ts = int(dt.timestamp())
-            except:
+            except Exception:
                 pass
-        
+
         if 'close_time' in market:
             try:
                 dt = datetime.fromisoformat(market['close_time'].replace('Z', '+00:00'))
                 end_ts = int(dt.timestamp())
-            except:
+            except Exception:
                 pass
-        
+
         outcome = None
         if market.get('status') in ('settled', 'finalized'):
             outcome = market.get('result')
-        
+
         return {
             'event_id': market.get('event_ticker', ''),
             'market_id': market.get('ticker', ''),
@@ -427,32 +431,35 @@ class KalshiCrawler:
 
     def get_market_price(self, series_ticker: str, market_ticker: str) -> List[Dict]:
         try:
-            path = f"/series/{series_ticker}/markets/{market_ticker}/candlesticks"
+            path = f'/series/{series_ticker}/markets/{market_ticker}/candlesticks'
             now = datetime.now()
-            start_ts = int(now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()) - 86400 * 600
+            start_ts = (
+                int(now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
+                - 86400 * 600
+            )
             end_ts = start_ts + 86400 * 600
-            
+
             query_params = {
-                "start_ts": start_ts,
-                "end_ts": end_ts,
-                "period_interval": 1440,
+                'start_ts': start_ts,
+                'end_ts': end_ts,
+                'period_interval': 1440,
             }
             if self.client:
                 query_string = urlencode(query_params, doseq=True)
-                full_url = f"{self.base_url}{path}?{query_string}"
-                response = self.client.api_client.call_api("GET", full_url)
+                full_url = f'{self.base_url}{path}?{query_string}'
+                response = self.client.api_client.call_api('GET', full_url)
                 if hasattr(response, 'read'):
                     data = json.loads(response.read().decode('utf-8'))
                     return data.get('candlesticks', None)
             return []
         except Exception as e:
-            print(f"Error fetching price for {market_ticker}: {e}")
+            print(f'Error fetching price for {market_ticker}: {e}')
             return []
 
     def _process_price_to_ts(self, history: List[Dict]) -> List[Dict]:
         if not history or len(history) < 2:
             return []
-        
+
         price_data = []
         for entry in history:
             timestamp = entry.get('end_period_ts')
@@ -460,7 +467,7 @@ class KalshiCrawler:
             if raw_price is None:
                 continue
             price_data.append({'t': timestamp, 'p': float(raw_price)})
-        
+
         return price_data if len(price_data) >= 2 else []
 
     def collect_markets(
@@ -471,64 +478,63 @@ class KalshiCrawler:
         processed_tickers = self._load_processed_markets()
         total_collected = 0
         total_skipped = 0
-        
+
         if not self.client:
-            print("⚠️ SDK client not initialized.")
+            print('⚠️ SDK client not initialized.')
             return
 
         print(f'Starting collection (already processed: {len(processed_tickers)})')
-        
+
         try:
             if series_ticker:
                 series_tickers = [series_ticker]
             else:
                 series_resp = self.client.get_series()
                 series_tickers = [s.ticker for s in series_resp.series]
-                print(f"Found {len(series_tickers)} series")
+                print(f'Found {len(series_tickers)} series')
         except Exception as e:
-            print(f"Error fetching series: {e}")
+            print(f'Error fetching series: {e}')
             return
 
-        for s_ticker in tqdm(series_tickers, desc="Processing"):
+        for s_ticker in tqdm(series_tickers, desc='Processing'):
             if max_markets and total_collected >= max_markets:
                 break
 
             try:
                 result = self.get_markets(limit=1000, series_ticker=s_ticker)
                 markets = result.get('markets', [])
-                
+
                 for market in markets:
                     ticker = market.get('ticker')
-                    
+
                     if ticker in processed_tickers:
                         total_skipped += 1
                         continue
-                    
+
                     history = self.get_market_price(s_ticker, ticker)
                     time_series = self._process_price_to_ts(history) if history else []
-                    
+
                     if len(time_series) == 0:
                         continue
-                    
-                    
+
                     market['time_series'] = time_series
                     formatted_market = self._format_market_for_output(market)
                     self.event_buffer.append(formatted_market)
                     processed_tickers.add(ticker)
                     total_collected += 1
-                    
+
                     if len(self.event_buffer) >= self.cache_size:
                         self._write_buffer()
                         print(f'Collected {total_collected} (skipped {total_skipped})')
-                    
+
                     if max_markets and total_collected >= max_markets:
                         break
 
                 time.sleep(0.2)
             except Exception as e:
-                print(f"Error processing {s_ticker}: {e}")
+                print(f'Error processing {s_ticker}: {e}')
                 continue
-        
+
         self._write_buffer()
         print(f'\n✅ Collected {total_collected} markets, skipped {total_skipped}')
 
@@ -716,17 +722,17 @@ class GoogleNewsCrawler:
         self.proxy_index = 0
         self.session = requests.Session()
         self.headers = {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/120.0.0.0 Safari/537.36"
+            'User-Agent': (
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                'AppleWebKit/537.36 (KHTML, like Gecko) '
+                'Chrome/120.0.0.0 Safari/537.36'
             ),
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Connection": "keep-alive",
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Connection': 'keep-alive',
         }
         if proxy:
-            self.session.proxies = {"http": proxy, "https": proxy}
+            self.session.proxies = {'http': proxy, 'https': proxy}
 
     def _get_next_proxy(self) -> Optional[Dict[str, str]]:
         """Get next proxy from rotation list."""
@@ -734,7 +740,7 @@ class GoogleNewsCrawler:
             return None
         proxy = self.proxy_list[self.proxy_index % len(self.proxy_list)]
         self.proxy_index += 1
-        return {"http": proxy, "https": proxy}
+        return {'http': proxy, 'https': proxy}
 
     def _rotate_proxy(self):
         """Rotate to next proxy."""
@@ -742,60 +748,63 @@ class GoogleNewsCrawler:
             proxies = self._get_next_proxy()
             if proxies:
                 self.session.proxies = proxies
-                print(f"  🔄 Switched to proxy: {list(proxies.values())[0][:30]}...")
+                print(f'  🔄 Switched to proxy: {list(proxies.values())[0][:30]}...')
 
     def _random_delay(self):
         import random
+
         delay = random.uniform(self.min_delay, self.max_delay)
         time.sleep(delay)
 
     def _normalize_date(self, s: str) -> tuple[str, datetime]:
         s = s.strip()
         now = datetime.now()
-        if "-" in s:
-            dt = datetime.strptime(s, "%Y-%m-%d")
-            return dt.strftime("%m/%d/%Y"), dt
-        if "/" in s:
+        if '-' in s:
+            dt = datetime.strptime(s, '%Y-%m-%d')
+            return dt.strftime('%m/%d/%Y'), dt
+        if '/' in s:
             try:
-                dt = datetime.strptime(s, "%m/%d/%Y")
+                dt = datetime.strptime(s, '%m/%d/%Y')
                 return s, dt
             except ValueError:
                 pass
-        return now.strftime("%m/%d/%Y"), now
+        return now.strftime('%m/%d/%Y'), now
 
     def _parse_relative_date(self, text: str, ref: datetime) -> float:
         t = text.strip().lower()
-        
+
         # English: "5 days ago", "1 hour ago"
-        m = re.match(r"^\s*(\d+)\s+(second|minute|hour|day)s?\s+ago\s*$", t)
+        m = re.match(r'^\s*(\d+)\s+(second|minute|hour|day)s?\s+ago\s*$', t)
         if m:
             num, unit = int(m.group(1)), m.group(2)
             delta = {
-                "second": timedelta(seconds=num),
-                "minute": timedelta(minutes=num),
-                "hour": timedelta(hours=num),
-                "day": timedelta(days=num),
+                'second': timedelta(seconds=num),
+                'minute': timedelta(minutes=num),
+                'hour': timedelta(hours=num),
+                'day': timedelta(days=num),
             }[unit]
             return (ref - delta).timestamp()
-        
+
         # Absolute date formats
-        for fmt in ("%b %d, %Y", "%B %d, %Y"):
+        for fmt in ('%b %d, %Y', '%B %d, %Y'):
             try:
                 return datetime.strptime(text.strip(), fmt).timestamp()
             except ValueError:
                 continue
-        
+
         return ref.timestamp()
 
     def _clean_google_href(self, href: str) -> str:
-        if href.startswith("/url?"):
+        if href.startswith('/url?'):
             qs = parse_qs(urlparse(href).query)
-            if "q" in qs and qs["q"]:
-                return qs["q"][0]
+            if 'q' in qs and qs['q']:
+                return qs['q'][0]
         return href
 
-    def _find_snippet(self, card, title_text: str, source_text: str, date_text: str) -> str:
-        for div in card.find_all(["div", "span"]):
+    def _find_snippet(
+        self, card, title_text: str, source_text: str, date_text: str
+    ) -> str:
+        for div in card.find_all(['div', 'span']):
             text = div.get_text(strip=True)
             if not text or len(text) < 20:
                 continue
@@ -804,7 +813,7 @@ class GoogleNewsCrawler:
             if title_text in text and len(text) < len(title_text) + 50:
                 continue
             return text
-        return ""
+        return ''
 
     def _extract_content_from_url(self, url: str, max_chars: int = 10000) -> str:
         """Extract article content from URL."""
@@ -812,26 +821,26 @@ class GoogleNewsCrawler:
             time.sleep(0.5)
             resp = self.session.get(url, headers=self.headers, timeout=10)
             if resp.status_code != 200:
-                return ""
-            
-            soup = BeautifulSoup(resp.text, "html.parser")
-            
+                return ''
+
+            soup = BeautifulSoup(resp.text, 'html.parser')
+
             # Remove script and style elements
-            for tag in soup(["script", "style", "nav", "header", "footer", "aside"]):
+            for tag in soup(['script', 'style', 'nav', 'header', 'footer', 'aside']):
                 tag.decompose()
-            
+
             # Try common article content selectors
             selectors = [
-                "article p",
+                'article p',
                 "[itemprop='articleBody'] p",
-                ".article-content p",
-                ".article-body p",
-                ".post-content p",
-                ".entry-content p",
-                ".story-body p",
-                "main p",
+                '.article-content p',
+                '.article-body p',
+                '.post-content p',
+                '.entry-content p',
+                '.story-body p',
+                'main p',
             ]
-            
+
             for selector in selectors:
                 paragraphs = soup.select(selector)
                 if paragraphs:
@@ -841,19 +850,25 @@ class GoogleNewsCrawler:
                         if len(text) > 30:
                             texts.append(text)
                     if texts:
-                        content = " ".join(texts)
-                        return content[:max_chars] if len(content) > max_chars else content
-            
+                        content = ' '.join(texts)
+                        return (
+                            content[:max_chars] if len(content) > max_chars else content
+                        )
+
             # Fallback: get all paragraphs
-            paragraphs = soup.find_all("p")
-            texts = [p.get_text(strip=True) for p in paragraphs if len(p.get_text(strip=True)) > 50]
+            paragraphs = soup.find_all('p')
+            texts = [
+                p.get_text(strip=True)
+                for p in paragraphs
+                if len(p.get_text(strip=True)) > 50
+            ]
             if texts:
-                content = " ".join(texts[:5])
+                content = ' '.join(texts[:5])
                 return content[:max_chars] if len(content) > max_chars else content
-            
-            return ""
+
+            return ''
         except Exception:
-            return ""
+            return ''
 
     def fetch(
         self,
@@ -865,80 +880,83 @@ class GoogleNewsCrawler:
     ) -> List[Dict[str, Any]]:
         start_fmt, _ = self._normalize_date(start_date)
         end_fmt, ref_date = self._normalize_date(end_date)
-        
+
         results: List[Dict[str, Any]] = []
-        
+
         for page in range(max_pages):
             encoded_query = quote_plus(query)
             url = (
-                f"https://www.google.com/search?q={encoded_query}"
-                f"&tbs=cdr:1,cd_min:{start_fmt},cd_max:{end_fmt}"
-                f"&tbm=nws&start={page * 10}"
+                f'https://www.google.com/search?q={encoded_query}'
+                f'&tbs=cdr:1,cd_min:{start_fmt},cd_max:{end_fmt}'
+                f'&tbm=nws&start={page * 10}'
             )
-            
+
             try:
                 self._random_delay()
                 resp = self.session.get(url, headers=self.headers, timeout=15)
-                soup = BeautifulSoup(resp.text, "html.parser")
+                soup = BeautifulSoup(resp.text, 'html.parser')
             except Exception as e:
-                print(f"Request failed: {e}")
+                print(f'Request failed: {e}')
                 break
-            
-            cards = soup.select("div.SoaBEf")
+
+            cards = soup.select('div.SoaBEf')
             if not cards:
                 # Debug: check if we got blocked or HTML changed
-                if "captcha" in resp.text.lower() or "unusual traffic" in resp.text.lower():
-                    print("  ⚠️ Google blocked request (CAPTCHA detected)")
+                if (
+                    'captcha' in resp.text.lower()
+                    or 'unusual traffic' in resp.text.lower()
+                ):
+                    print('  ⚠️ Google blocked request (CAPTCHA detected)')
                     self._rotate_proxy()  # Try rotating proxy
                     continue
-                elif soup.select("div.g"):
-                    print("  ⚠️ HTML structure changed, trying fallback selector")
-                    cards = soup.select("div.g")
+                elif soup.select('div.g'):
+                    print('  ⚠️ HTML structure changed, trying fallback selector')
+                    cards = soup.select('div.g')
                 if not cards:
                     break
-            
+
             for el in cards:
                 try:
-                    a = el.find("a")
-                    if not a or "href" not in a.attrs:
+                    a = el.find('a')
+                    if not a or 'href' not in a.attrs:
                         continue
-                    
-                    link = self._clean_google_href(a["href"])
-                    title_el = el.select_one("div.MBeuO")
-                    date_el = el.select_one(".LfVVr")
-                    source_el = el.select_one(".NUnG9d span")
-                    
+
+                    link = self._clean_google_href(a['href'])
+                    title_el = el.select_one('div.MBeuO')
+                    date_el = el.select_one('.LfVVr')
+                    source_el = el.select_one('.NUnG9d span')
+
                     if not (title_el and date_el and source_el):
                         continue
-                    
+
                     title = title_el.get_text(strip=True)
                     source = source_el.get_text(strip=True)
                     date_text = date_el.get_text(strip=True)
-                    
+
                     snippet = self._find_snippet(el, title, source, date_text)
                     ts = self._parse_relative_date(date_text, ref_date)
-                    
+
                     result = {
-                        "link": link,
-                        "title": title,
-                        "snippet": snippet,
-                        "date": ts,
-                        "source": source,
+                        'link': link,
+                        'title': title,
+                        'snippet': snippet,
+                        'date': ts,
+                        'source': source,
                     }
-                    
+
                     # Fetch full content if requested
                     if fetch_full_content:
                         content = self._extract_content_from_url(link)
                         if content:
-                            result["content"] = content
-                    
+                            result['content'] = content
+
                     results.append(result)
                 except Exception:
                     continue
-            
-            if not soup.find("a", id="pnnext"):
+
+            if not soup.find('a', id='pnnext'):
                 break
-        
+
         return results
 
     def crawl(
@@ -952,33 +970,33 @@ class GoogleNewsCrawler:
     ) -> None:
         print(f"Fetching news for '{query}' from {start_date} to {end_date}")
         if fetch_full_content:
-            print("⚠️ Fetching full content (slower)")
-        
+            print('⚠️ Fetching full content (slower)')
+
         results = self.fetch(query, start_date, end_date, max_pages, fetch_full_content)
-        
+
         if not results:
-            print("No results found - possible reasons:")
-            print("  1. Google rate limiting (try increasing --min_delay)")
-            print("  2. No news for this query/date range")
-            print("  3. Query too specific (try simpler keywords)")
+            print('No results found - possible reasons:')
+            print('  1. Google rate limiting (try increasing --min_delay)')
+            print('  2. No news for this query/date range')
+            print('  3. Query too specific (try simpler keywords)')
             return
-        
-        results = sorted(results, key=lambda x: x["date"], reverse=True)
-        
+
+        results = sorted(results, key=lambda x: x['date'], reverse=True)
+
         mode = 'a' if os.path.exists(output_file) else 'w'
         with jsonlines.open(output_file, mode=mode) as writer:
             writer.write_all(results)
-        
-        print(f"✅ Saved {len(results)} articles to {output_file}")
+
+        print(f'✅ Saved {len(results)} articles to {output_file}')
 
 
 class GNewsCrawler:
     """
     Crawler using GNews API (gnews.io).
-    
+
     Free tier: 100 requests/day, 10 articles per request.
     Supports date filtering and multiple languages.
-    
+
     Get API key at: https://gnews.io/
     """
 
@@ -990,30 +1008,32 @@ class GNewsCrawler:
         Args:
             api_key: GNews API key. If not provided, uses GNEWS_API_KEY env var.
         """
-        self.api_key = api_key or os.environ.get("GNEWS_API_KEY")
+        self.api_key = api_key or os.environ.get('GNEWS_API_KEY')
         if not self.api_key:
-            raise ValueError("GNews API key required. Set GNEWS_API_KEY env var or pass api_key.")
-        self.base_url = "https://gnews.io/api/v4/search"
+            raise ValueError(
+                'GNews API key required. Set GNEWS_API_KEY env var or pass api_key.'
+            )
+        self.base_url = 'https://gnews.io/api/v4/search'
 
     def _format_query(self, query: str) -> str:
         """
         Format query for GNews API, properly quoting multi-word phrases.
-        
+
         Examples:
             "donald trump OR joe biden" -> '"donald trump" OR "joe biden"'
             "Bitcoin price" -> '"Bitcoin price"'
             "Tesla OR SpaceX" -> "Tesla OR SpaceX"
         """
         import re
-        
+
         # If query already has quotes, return as-is
         if '"' in query:
             return query
-        
+
         # Split by boolean operators while keeping them
         # Pattern matches: word OR word, word AND word, NOT word
         parts = re.split(r'\s+(AND|OR|NOT)\s+', query)
-        
+
         formatted_parts = []
         for part in parts:
             part = part.strip()
@@ -1027,7 +1047,7 @@ class GNewsCrawler:
                 formatted_parts.append(f'"{part}"')
             else:
                 formatted_parts.append(part)
-        
+
         return ' '.join(formatted_parts)
 
     def fetch(
@@ -1036,12 +1056,12 @@ class GNewsCrawler:
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         max_results: int = 10,
-        lang: str = "en",
-        country: str = "us",
+        lang: str = 'en',
+        country: str = 'us',
     ) -> List[Dict[str, Any]]:
         """
         Fetch news articles from GNews API.
-        
+
         Args:
             query: Search query
             start_date: Start date (YYYY-MM-DD format)
@@ -1049,54 +1069,56 @@ class GNewsCrawler:
             max_results: Max articles to return (max 100 per request on paid plans)
             lang: Language code (en, zh, etc.)
             country: Country code (us, cn, etc.)
-            
+
         Returns:
             List of article dicts with title, description, content, url, publishedAt, source
         """
         # Format query to properly quote multi-word phrases
         formatted_query = self._format_query(query)
         if formatted_query != query:
-            print(f"  Query formatted: {query} -> {formatted_query}")
-        
+            print(f'  Query formatted: {query} -> {formatted_query}')
+
         params = {
-            "q": formatted_query,
-            "token": self.api_key,
-            "lang": lang,
-            "country": country,
-            "max": max_results,  # Free tier: 10, Paid: up to 100
+            'q': formatted_query,
+            'token': self.api_key,
+            'lang': lang,
+            'country': country,
+            'max': max_results,  # Free tier: 10, Paid: up to 100
         }
-        
+
         # Add date filters if provided
         if start_date:
-            params["from"] = f"{start_date}T00:00:00Z"
+            params['from'] = f'{start_date}T00:00:00Z'
         if end_date:
-            params["to"] = f"{end_date}T23:59:59Z"
-        
+            params['to'] = f'{end_date}T23:59:59Z'
+
         try:
             response = requests.get(self.base_url, params=params, timeout=30)
             response.raise_for_status()
             data = response.json()
-            
-            if "articles" not in data:
+
+            if 'articles' not in data:
                 print(f"  GNews error: {data.get('errors', 'Unknown error')}")
                 return []
-            
+
             results = []
-            for article in data["articles"]:
-                results.append({
-                    "title": article.get("title", ""),
-                    "description": article.get("description", ""),
-                    "content": article.get("content", ""),
-                    "link": article.get("url", ""),
-                    "date": article.get("publishedAt", ""),
-                    "source": article.get("source", {}).get("name", ""),
-                    "image": article.get("image", ""),
-                })
-            
+            for article in data['articles']:
+                results.append(
+                    {
+                        'title': article.get('title', ''),
+                        'description': article.get('description', ''),
+                        'content': article.get('content', ''),
+                        'link': article.get('url', ''),
+                        'date': article.get('publishedAt', ''),
+                        'source': article.get('source', {}).get('name', ''),
+                        'image': article.get('image', ''),
+                    }
+                )
+
             return results
-            
+
         except requests.RequestException as e:
-            print(f"  GNews request failed: {e}")
+            print(f'  GNews request failed: {e}')
             return []
 
     def crawl(
@@ -1106,24 +1128,24 @@ class GNewsCrawler:
         end_date: str,
         output_file: str,
         max_results: int = 10,
-        lang: str = "en",
-        country: str = "us",
+        lang: str = 'en',
+        country: str = 'us',
     ) -> None:
         """
         Crawl news and save to file.
         """
         print(f"Fetching news for '{query}' from {start_date} to {end_date}")
-        
+
         results = self.fetch(query, start_date, end_date, max_results, lang, country)
-        
+
         if not results:
-            print("No results found")
+            print('No results found')
             return
-        
-        results = sorted(results, key=lambda x: x["date"], reverse=True)
-        
+
+        results = sorted(results, key=lambda x: x['date'], reverse=True)
+
         mode = 'a' if os.path.exists(output_file) else 'w'
         with jsonlines.open(output_file, mode=mode) as writer:
             writer.write_all(results)
-        
-        print(f"✅ Saved {len(results)} articles to {output_file}")
+
+        print(f'✅ Saved {len(results)} articles to {output_file}')

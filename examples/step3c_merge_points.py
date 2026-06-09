@@ -28,6 +28,7 @@ Output format (flat) - both breakpoints and normal_points have SAME structure:
     "news": [...]
 }
 """
+
 import argparse
 from pathlib import Path
 
@@ -70,7 +71,7 @@ def parse_args():
 
 def main():
     args = parse_args()
-    
+
     # Load normal points into a dict by market_id
     print(f'Loading normal points from {args.normal_points_file}...')
     normal_points_map = {}
@@ -86,32 +87,32 @@ def main():
                     'categories': item.get('categories', []),
                 }
     print(f'Loaded normal points for {len(normal_points_map)} markets')
-    
+
     # Load breakpoints data and merge
     print(f'Loading breakpoints from {args.breakpoints_file}...')
-    
+
     merged_count = 0
     total_count = 0
-    
+
     with jsonlines.open(args.breakpoints_file, 'r') as reader:
         markets = list(reader)
-    
+
     print(f'Loaded {len(markets)} markets with breakpoints')
-    
+
     # Prepare flat output
     flat_samples = []
     filtered_short_window = 0  # Count samples filtered due to short window_history
-    
+
     # Prepare nested output writer if needed
     nested_writer = None
     if args.output_file:
         Path(args.output_file).parent.mkdir(parents=True, exist_ok=True)
         nested_writer = jsonlines.open(args.output_file, 'w')
-    
+
     for market in tqdm(markets, desc='Merging'):
         total_count += 1
         market_id = str(market.get('market_id', ''))
-        
+
         # Market info for flat format
         market_info = {
             'market_id': market_id,
@@ -119,7 +120,7 @@ def main():
             'question': market.get('question', ''),
             'categories': market.get('categories', []),
         }
-        
+
         # Add breakpoints as flat samples (only if has news and sufficient window_history)
         for bp in market.get('daily_breakpoints', []):
             news = bp.get('news', [])
@@ -142,12 +143,12 @@ def main():
                 'news': news,
             }
             flat_samples.append(flat_sample)
-        
+
         # Add normal_points if available
         if market_id in normal_points_map:
             market['normal_points'] = normal_points_map[market_id]
             merged_count += 1
-            
+
             # Add normal points as flat samples (only if has news and sufficient window_history)
             # Normal points now have same structure as breakpoints
             for np in normal_points_map[market_id]:
@@ -173,13 +174,13 @@ def main():
                 flat_samples.append(flat_sample)
         else:
             market['normal_points'] = []
-        
+
         if nested_writer:
             nested_writer.write(market)
-    
+
     if nested_writer:
         nested_writer.close()
-    
+
     # Write flat output
     if args.flat_output_file:
         print(f'\nWriting flat samples to {args.flat_output_file}...')
@@ -187,9 +188,9 @@ def main():
         with jsonlines.open(args.flat_output_file, 'w') as writer:
             for sample in flat_samples:
                 writer.write(sample)
-    
+
     # Statistics
-    print(f'\nDone!')
+    print('\nDone!')
     print(f'  Total markets: {total_count}')
     print(f'  Markets with normal_points: {merged_count}')
     print(f'  Markets without normal_points: {total_count - merged_count}')
@@ -197,12 +198,14 @@ def main():
         print(f'  Nested output: {args.output_file}')
     if args.flat_output_file:
         print(f'  Flat output: {args.flat_output_file}')
-    
+
     # Count samples (all have news now)
     breakpoint_count = sum(1 for s in flat_samples if s['sample_type'] == 'breakpoint')
     normal_count = sum(1 for s in flat_samples if s['sample_type'] == 'normal_point')
-    
-    print(f'\nSample statistics (only samples with news and window_history >= {args.min_window_history}):')
+
+    print(
+        f'\nSample statistics (only samples with news and window_history >= {args.min_window_history}):'
+    )
     print(f'  Breakpoints (positive): {breakpoint_count}')
     print(f'  Normal points (negative): {normal_count}')
     print(f'  Total flat samples: {len(flat_samples)}')

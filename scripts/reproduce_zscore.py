@@ -32,11 +32,10 @@ import json
 import statistics
 from typing import Dict, List, Optional
 
-
-WINDOW = 30        # rolling window size (TimeSeriesConfig.rolling_window)
-MIN_HISTORY = 10   # need >= 10 local changes for a meaningful statistic
+WINDOW = 30  # rolling window size (TimeSeriesConfig.rolling_window)
+MIN_HISTORY = 10  # need >= 10 local changes for a meaningful statistic
 MAD_TO_STD = 1.4826  # MAD -> std scaling for a normal distribution
-MAD_FLOOR = 0.01   # floor on scaled MAD, avoids divide-by-zero / blowup
+MAD_FLOOR = 0.01  # floor on scaled MAD, avoids divide-by-zero / blowup
 
 
 def robust_zscore(
@@ -52,13 +51,10 @@ def robust_zscore(
 
     # Causal: sort by time exactly as the converter does.
     series = sorted(series, key=lambda x: x['t'])
-    changes = [
-        abs(series[i + 1]['p'] - series[i]['p'])
-        for i in range(len(series) - 1)
-    ]
+    changes = [abs(series[i + 1]['p'] - series[i]['p']) for i in range(len(series) - 1)]
 
-    cur = changes[-1]                      # the target change (last consecutive move)
-    local = changes[max(0, len(changes) - 1 - window):-1]  # previous `window` changes
+    cur = changes[-1]  # the target change (last consecutive move)
+    local = changes[max(0, len(changes) - 1 - window) : -1]  # previous `window` changes
     if len(local) < min_history:
         return 0.0
 
@@ -69,17 +65,27 @@ def robust_zscore(
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument('path', help='Path to a v6 *.jsonl file with z_score records.')
-    ap.add_argument('--tol', type=float, default=5e-3,
-                    help='Abs tolerance vs stored z_score (default 5e-3, covers rounding).')
-    ap.add_argument('--limit', type=int, default=None,
-                    help='Only check the first N records.')
+    ap.add_argument(
+        '--tol',
+        type=float,
+        default=5e-3,
+        help='Abs tolerance vs stored z_score (default 5e-3, covers rounding).',
+    )
+    ap.add_argument(
+        '--limit', type=int, default=None, help='Only check the first N records.'
+    )
     ap.add_argument('--window', type=int, default=WINDOW)
     ap.add_argument('--min-history', type=int, default=MIN_HISTORY)
-    ap.add_argument('--show', type=int, default=10,
-                    help='Number of mismatches to print (default 10).')
+    ap.add_argument(
+        '--show',
+        type=int,
+        default=10,
+        help='Number of mismatches to print (default 10).',
+    )
     args = ap.parse_args()
 
     n = matched = skipped = 0
@@ -97,14 +103,20 @@ def main() -> None:
                 skipped += 1
                 continue
             n += 1
-            z = robust_zscore(r['history'], r['target'],
-                              window=args.window, min_history=args.min_history)
+            z = robust_zscore(
+                r['history'],
+                r['target'],
+                window=args.window,
+                min_history=args.min_history,
+            )
             diff = abs(z - stored)
             worst = max(worst, diff)
             if diff <= args.tol:
                 matched += 1
             elif len(mismatches) < args.show:
-                mismatches.append((r.get('market_id'), round(z, 4), stored, round(diff, 4)))
+                mismatches.append(
+                    (r.get('market_id'), round(z, 4), stored, round(diff, 4))
+                )
             if args.limit and n >= args.limit:
                 break
 
@@ -113,7 +125,7 @@ def main() -> None:
     print(f'matched:   {matched}/{n} within tol={args.tol}')
     print(f'worst diff: {worst:.6f}')
     if mismatches:
-        print(f'\nmismatches (market_id, recomputed, stored, diff):')
+        print('\nmismatches (market_id, recomputed, stored, diff):')
         for m in mismatches:
             print(f'  {m}')
     else:

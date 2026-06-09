@@ -18,9 +18,9 @@ Usage:
         --vllm_url http://localhost:8234/v1 \
         --concurrency 64
 """
+
 import argparse
 import asyncio
-import json
 import os
 import sys
 import time
@@ -29,7 +29,6 @@ from pathlib import Path
 
 import jsonlines
 from openai import AsyncOpenAI
-from tqdm import tqdm
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -42,14 +41,19 @@ def parse_args():
     parser.add_argument('--output_file', type=str, default=None)
     parser.add_argument('--vllm_url', type=str, default='http://localhost:8234/v1')
     parser.add_argument('--model', type=str, default='Qwen/Qwen3.5-9B')
-    parser.add_argument('--max_news', type=int, default=100,
-                        help='Max news items to score per sample')
-    parser.add_argument('--concurrency', type=int, default=64,
-                        help='Max concurrent requests to VLLM')
+    parser.add_argument(
+        '--max_news', type=int, default=100, help='Max news items to score per sample'
+    )
+    parser.add_argument(
+        '--concurrency', type=int, default=64, help='Max concurrent requests to VLLM'
+    )
     parser.add_argument('--max_retries', type=int, default=3)
     parser.add_argument('--skip_existing', action='store_true')
-    parser.add_argument('--breakpoints_only', action='store_true',
-                        help='Only process breakpoint samples')
+    parser.add_argument(
+        '--breakpoints_only',
+        action='store_true',
+        help='Only process breakpoint samples',
+    )
     parser.add_argument('--limit', type=int, default=None)
     return parser.parse_args()
 
@@ -63,9 +67,17 @@ def build_breakpoint_prompt(sample: dict, news: dict) -> str:
     time_before = sample.get('before', {}).get('t')
     time_after = sample.get('after', {}).get('t')
     price_change = price_after - price_before
-    direction = "increased" if price_change > 0 else "decreased"
-    date_before = datetime.fromtimestamp(time_before).strftime('%Y-%m-%d %H:%M') if time_before else 'Unknown'
-    date_after = datetime.fromtimestamp(time_after).strftime('%Y-%m-%d %H:%M') if time_after else 'Unknown'
+    direction = 'increased' if price_change > 0 else 'decreased'
+    date_before = (
+        datetime.fromtimestamp(time_before).strftime('%Y-%m-%d %H:%M')
+        if time_before
+        else 'Unknown'
+    )
+    date_after = (
+        datetime.fromtimestamp(time_after).strftime('%Y-%m-%d %H:%M')
+        if time_after
+        else 'Unknown'
+    )
 
     pub_date = news.get('published_at') or news.get('date') or 'Unknown date'
     title = news.get('title', '')
@@ -107,7 +119,11 @@ def build_normal_prompt(sample: dict, news: dict) -> str:
     description = sample.get('description', '')
     price = sample.get('after', {}).get('p', 0.5)
     timestamp = sample.get('after', {}).get('t')
-    date = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d') if timestamp else 'Unknown'
+    date = (
+        datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d')
+        if timestamp
+        else 'Unknown'
+    )
 
     pub_date = news.get('published_at') or news.get('date') or 'Unknown date'
     title = news.get('title', '')
@@ -152,27 +168,26 @@ async def score_single_news(
             async with semaphore:
                 response = await client.chat.completions.create(
                     model=model,
-                    messages=[
-                        {"role": "user", "content": prompt}
-                    ],
+                    messages=[{'role': 'user', 'content': prompt}],
                     temperature=0,
                     max_tokens=20,
                     extra_body={
-                        "skip_special_tokens": True,
-                        "chat_template_kwargs": {"enable_thinking": False},
+                        'skip_special_tokens': True,
+                        'chat_template_kwargs': {'enable_thinking': False},
                     },
                 )
             content = response.choices[0].message.content.strip()
             # Extract integer from response (handle "85", "Score: 85", etc.)
             # Find the first number in the response
             import re
+
             numbers = re.findall(r'\b(\d+)\b', content)
             if numbers:
                 score = int(numbers[0])
                 return max(0, min(100, score)) / 100.0
             else:
-                raise ValueError(f"No number in response: {content!r}")
-        except Exception as e:
+                raise ValueError(f'No number in response: {content!r}')
+        except Exception:
             if attempt < max_retries - 1:
                 await asyncio.sleep(0.5)
             else:
@@ -214,18 +229,19 @@ async def process_sample(
 
     # Score all news in parallel
     tasks = [
-        score_single_news(client, model, p, semaphore, max_retries)
-        for p in prompts
+        score_single_news(client, model, p, semaphore, max_retries) for p in prompts
     ]
     scores = await asyncio.gather(*tasks)
 
     # Build attributions
     attributions = []
     for i, score in enumerate(scores):
-        attributions.append({
-            'news_idx': i,
-            'score': score,  # None if failed
-        })
+        attributions.append(
+            {
+                'news_idx': i,
+                'score': score,  # None if failed
+            }
+        )
 
     sample['attributions'] = attributions
     return sample
@@ -237,14 +253,14 @@ async def main_async():
     if args.output_file is None:
         input_path = Path(args.input_file)
         args.output_file = str(
-            input_path.parent / f"{input_path.stem}_vllm_attributed{input_path.suffix}"
+            input_path.parent / f'{input_path.stem}_vllm_attributed{input_path.suffix}'
         )
 
-    print(f"Input:  {args.input_file}")
-    print(f"Output: {args.output_file}")
-    print(f"VLLM:   {args.vllm_url}")
-    print(f"Model:  {args.model}")
-    print(f"Concurrency: {args.concurrency}")
+    print(f'Input:  {args.input_file}')
+    print(f'Output: {args.output_file}')
+    print(f'VLLM:   {args.vllm_url}')
+    print(f'Model:  {args.model}')
+    print(f'Concurrency: {args.concurrency}')
 
     # Load processed keys for resume
     processed_keys = set()
@@ -253,14 +269,14 @@ async def main_async():
             for item in r:
                 key = f"{item.get('market_id')}_{item.get('sample_type')}_{item.get('before', {}).get('t', 0)}"
                 processed_keys.add(key)
-        print(f"Resuming: {len(processed_keys)} already processed")
+        print(f'Resuming: {len(processed_keys)} already processed')
 
     # Load input data
-    print(f"Loading data...")
+    print('Loading data...')
     with jsonlines.open(args.input_file) as r:
         samples = list(r)
     if args.limit:
-        samples = samples[:args.limit]
+        samples = samples[: args.limit]
 
     # Filter out already processed
     to_process = []
@@ -273,11 +289,13 @@ async def main_async():
     bp_count = sum(1 for s in to_process if s.get('sample_type') == 'breakpoint')
     np_count = sum(1 for s in to_process if s.get('sample_type') == 'normal_point')
     total_news = sum(min(len(s.get('news', [])), args.max_news) for s in to_process)
-    print(f"To process: {len(to_process)} samples ({bp_count} breakpoints, {np_count} normal)")
-    print(f"Total individual LLM calls: {total_news}")
+    print(
+        f'To process: {len(to_process)} samples ({bp_count} breakpoints, {np_count} normal)'
+    )
+    print(f'Total individual LLM calls: {total_news}')
 
     # Init async client
-    client = AsyncOpenAI(base_url=args.vllm_url, api_key="dummy")
+    client = AsyncOpenAI(base_url=args.vllm_url, api_key='dummy')
     semaphore = asyncio.Semaphore(args.concurrency)
 
     # Process samples and write incrementally
@@ -292,12 +310,17 @@ async def main_async():
         # Process in chunks to show progress and write incrementally
         chunk_size = 10  # Process 10 samples at a time
         for chunk_start in range(0, len(to_process), chunk_size):
-            chunk = to_process[chunk_start:chunk_start + chunk_size]
+            chunk = to_process[chunk_start : chunk_start + chunk_size]
 
             tasks = [
                 process_sample(
-                    client, args.model, s, semaphore,
-                    args.max_news, args.max_retries, args.breakpoints_only,
+                    client,
+                    args.model,
+                    s,
+                    semaphore,
+                    args.max_news,
+                    args.max_retries,
+                    args.breakpoints_only,
                 )
                 for s in chunk
             ]
@@ -306,22 +329,29 @@ async def main_async():
             for result in results:
                 writer.write(result)
                 completed += 1
-                n_scored = sum(1 for a in result.get('attributions', []) if a.get('score') is not None)
+                n_scored = sum(
+                    1
+                    for a in result.get('attributions', [])
+                    if a.get('score') is not None
+                )
                 total_scored += n_scored
 
             elapsed = time.time() - start_time
             rate = total_scored / elapsed if elapsed > 0 else 0
             print(
-                f"\r[{completed}/{len(to_process)}] "
-                f"{total_scored} news scored, {rate:.1f} scores/sec, "
-                f"elapsed {elapsed:.0f}s",
-                end='', flush=True,
+                f'\r[{completed}/{len(to_process)}] '
+                f'{total_scored} news scored, {rate:.1f} scores/sec, '
+                f'elapsed {elapsed:.0f}s',
+                end='',
+                flush=True,
             )
 
     elapsed = time.time() - start_time
-    print(f"\n\nDone! {completed} samples, {total_scored} news scored in {elapsed:.0f}s")
-    print(f"Average: {total_scored/elapsed:.1f} scores/sec")
-    print(f"Output: {args.output_file}")
+    print(
+        f'\n\nDone! {completed} samples, {total_scored} news scored in {elapsed:.0f}s'
+    )
+    print(f'Average: {total_scored/elapsed:.1f} scores/sec')
+    print(f'Output: {args.output_file}')
 
 
 def main():

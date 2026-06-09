@@ -25,9 +25,17 @@ class KLDivergenceTrainer(Trainer):
     per-group forwards used to desync NCCL ALLREDUCE.
     """
 
-    def __init__(self, *args, logit_temperature: float = 1.0,
-                 routing_loss_weight: float = 0.0, reverse_kl: bool = False, neg_bce_weight: float = 0.0,
-                 per_news_bce: bool = False, head_lr_multiplier: float = 1.0, **kwargs):
+    def __init__(
+        self,
+        *args,
+        logit_temperature: float = 1.0,
+        routing_loss_weight: float = 0.0,
+        reverse_kl: bool = False,
+        neg_bce_weight: float = 0.0,
+        per_news_bce: bool = False,
+        head_lr_multiplier: float = 1.0,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
         self.logit_temperature = logit_temperature
         self.routing_loss_weight = routing_loss_weight
@@ -49,8 +57,16 @@ class KLDivergenceTrainer(Trainer):
         base_lr = self.args.learning_rate
         decay = self.args.weight_decay
         groups = {
-            'head_decay': {'params': [], 'lr': base_lr * self.head_lr_multiplier, 'weight_decay': decay},
-            'head_nodecay': {'params': [], 'lr': base_lr * self.head_lr_multiplier, 'weight_decay': 0.0},
+            'head_decay': {
+                'params': [],
+                'lr': base_lr * self.head_lr_multiplier,
+                'weight_decay': decay,
+            },
+            'head_nodecay': {
+                'params': [],
+                'lr': base_lr * self.head_lr_multiplier,
+                'weight_decay': 0.0,
+            },
             'other_decay': {'params': [], 'lr': base_lr, 'weight_decay': decay},
             'other_nodecay': {'params': [], 'lr': base_lr, 'weight_decay': 0.0},
         }
@@ -59,23 +75,33 @@ class KLDivergenceTrainer(Trainer):
                 continue
             is_head = 'regression_head' in name
             no_decay = param.ndim <= 1 or name.endswith('.bias')
-            key = ('head' if is_head else 'other') + ('_nodecay' if no_decay else '_decay')
+            key = ('head' if is_head else 'other') + (
+                '_nodecay' if no_decay else '_decay'
+            )
             groups[key]['params'].append(param)
         group_list = [g for g in groups.values() if g['params']]
         from transformers import Trainer as _Trainer
-        optimizer_cls, optimizer_kwargs = _Trainer.get_optimizer_cls_and_kwargs(self.args)
-        optimizer_kwargs.pop('lr', None); optimizer_kwargs.pop('weight_decay', None)
+
+        optimizer_cls, optimizer_kwargs = _Trainer.get_optimizer_cls_and_kwargs(
+            self.args
+        )
+        optimizer_kwargs.pop('lr', None)
+        optimizer_kwargs.pop('weight_decay', None)
         self.optimizer = optimizer_cls(group_list, **optimizer_kwargs)
         return self.optimizer
 
-    def _per_news_bce_loss(self, model, inputs: Dict[str, torch.Tensor]) -> torch.Tensor:
-        raw = inputs.pop('raw_scores')                  # per-prompt g_i in [0,1]
+    def _per_news_bce_loss(
+        self, model, inputs: Dict[str, torch.Tensor]
+    ) -> torch.Tensor:
+        raw = inputs.pop('raw_scores')  # per-prompt g_i in [0,1]
         group_ids = inputs.pop('group_ids').long()
-        inputs.pop('p_dist', None); inputs.pop('is_null', None)
+        inputs.pop('p_dist', None)
+        inputs.pop('is_null', None)
         for k in ('market_ids', 'event_ids', 'ts'):
             inputs.pop(k, None)
-        logits = model(input_ids=inputs['input_ids'],
-                       attention_mask=inputs['attention_mask']).view(-1)
+        logits = model(
+            input_ids=inputs['input_ids'], attention_mask=inputs['attention_mask']
+        ).view(-1)
         # Exclude the no-news prompt (always the LAST prompt of each contiguous
         # group) — it is not trained as a slot; routing is emergent at inference.
         is_last = torch.ones_like(group_ids, dtype=torch.bool)
@@ -87,13 +113,18 @@ class KLDivergenceTrainer(Trainer):
         # (g_i=0) down — the negative suppression forward-KL lacks — with NO
         # softmax competition, so it can't inflate the no-news signal.
         return torch.nn.functional.binary_cross_entropy_with_logits(
-            logits[news_mask], tgt[news_mask])
+            logits[news_mask], tgt[news_mask]
+        )
 
     @staticmethod
-    def _segment_softmax(logits: torch.Tensor, group_ids: torch.Tensor, n_groups: int) -> torch.Tensor:
+    def _segment_softmax(
+        logits: torch.Tensor, group_ids: torch.Tensor, n_groups: int
+    ) -> torch.Tensor:
         max_per = torch.full(
-            (n_groups,), float('-inf'),
-            device=logits.device, dtype=logits.dtype,
+            (n_groups,),
+            float('-inf'),
+            device=logits.device,
+            dtype=logits.dtype,
         )
         max_per.scatter_reduce_(0, group_ids, logits, reduce='amax', include_self=True)
         max_per = torch.where(max_per.isfinite(), max_per, torch.zeros_like(max_per))
@@ -125,9 +156,13 @@ class KLDivergenceTrainer(Trainer):
             # (irrelevant news) is heavily penalized -> actively suppresses
             # off-target news and sharpens the distribution. Gradient flows
             # through q (the model softmax); p (target) is constant.
-            kl_per_prompt = q * (torch.log(q.clamp(min=eps)) - torch.log(p.clamp(min=eps)))
+            kl_per_prompt = q * (
+                torch.log(q.clamp(min=eps)) - torch.log(p.clamp(min=eps))
+            )
         else:
-            kl_per_prompt = p * (torch.log(p.clamp(min=eps)) - torch.log(q.clamp(min=eps)))
+            kl_per_prompt = p * (
+                torch.log(p.clamp(min=eps)) - torch.log(q.clamp(min=eps))
+            )
         kl_per_group = torch.zeros(n_groups, device=logits.device, dtype=logits.dtype)
         kl_per_group.scatter_add_(0, group_ids, kl_per_prompt)
         loss = kl_per_group.mean()
@@ -138,9 +173,11 @@ class KLDivergenceTrainer(Trainer):
         if self.routing_loss_weight > 0 and is_null is not None:
             is_last = torch.ones_like(group_ids, dtype=torch.bool)
             is_last[:-1] = group_ids[1:] != group_ids[:-1]
-            q_no_news = q[is_last].clamp(eps, 1 - eps)            # (n_groups,), group order
+            q_no_news = q[is_last].clamp(eps, 1 - eps)  # (n_groups,), group order
             tgt = is_null.to(q_no_news.dtype)
-            bce = -(tgt * torch.log(q_no_news) + (1 - tgt) * torch.log(1 - q_no_news)).mean()
+            bce = -(
+                tgt * torch.log(q_no_news) + (1 - tgt) * torch.log(1 - q_no_news)
+            ).mean()
             loss = loss + self.routing_loss_weight * bce
 
         # Per-news relevance BCE: directly supply the negative-suppression signal
@@ -154,17 +191,28 @@ class KLDivergenceTrainer(Trainer):
             if news_mask.any():
                 rel_tgt = (p[news_mask] > 0).to(logits.dtype)
                 bce_rel = torch.nn.functional.binary_cross_entropy_with_logits(
-                    logits[news_mask], rel_tgt)
+                    logits[news_mask], rel_tgt
+                )
                 loss = loss + self.neg_bce_weight * bce_rel
         return loss
 
-    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
-        loss = self._per_news_bce_loss(model, inputs) if self.per_news_bce else self._kl_loss(model, inputs)
+    def compute_loss(
+        self, model, inputs, return_outputs=False, num_items_in_batch=None
+    ):
+        loss = (
+            self._per_news_bce_loss(model, inputs)
+            if self.per_news_bce
+            else self._kl_loss(model, inputs)
+        )
         return (loss, None) if return_outputs else loss
 
     def prediction_step(self, model, inputs, prediction_loss_only, ignore_keys=None):
         with torch.no_grad():
-            loss = self._per_news_bce_loss(model, inputs) if self.per_news_bce else self._kl_loss(model, inputs)
+            loss = (
+                self._per_news_bce_loss(model, inputs)
+                if self.per_news_bce
+                else self._kl_loss(model, inputs)
+            )
         return (loss, None, None)
 
 
@@ -215,8 +263,10 @@ class BasicPriorAttributer:
 
     def setup_model(self) -> None:
         config = LLMRegressorConfig(
-            base_model_name_or_path=self.model_name, max_length=self.max_seq_length,
-            max_news=self.max_news, target_temperature=self.target_temperature,
+            base_model_name_or_path=self.model_name,
+            max_length=self.max_seq_length,
+            max_news=self.max_news,
+            target_temperature=self.target_temperature,
             per_news_bce=self.per_news_bce,
         )
         self.model = LLMRegressor(config)
@@ -224,22 +274,29 @@ class BasicPriorAttributer:
         # refuses to flatten mixed-dtype params. Cast to uniform fp32; the
         # TrainingArguments bf16 flag then drives FSDP mixed precision.
         self.model = self.model.float()
-        if self.gradient_checkpointing and hasattr(self.model.llm, 'gradient_checkpointing_enable'):
+        if self.gradient_checkpointing and hasattr(
+            self.model.llm, 'gradient_checkpointing_enable'
+        ):
             self.model.llm.gradient_checkpointing_enable(
-                gradient_checkpointing_kwargs={"use_reentrant": False}
+                gradient_checkpointing_kwargs={'use_reentrant': False}
             )
-            print("Gradient checkpointing enabled (use_reentrant=False)")
+            print('Gradient checkpointing enabled (use_reentrant=False)')
 
     def _create_collate_fn(self):
         def collate_fn(batch):
             out = collate_padded_groups(
-                batch, self.tokenizer.pad_token_id, self.max_seq_length,
+                batch,
+                self.tokenizer.pad_token_id,
+                self.max_seq_length,
             )
             out['p_dist'] = torch.cat([item['p_dist'] for item in batch], dim=0)
             if 'raw_scores' in batch[0]:
-                out['raw_scores'] = torch.cat([item['raw_scores'] for item in batch], dim=0)
+                out['raw_scores'] = torch.cat(
+                    [item['raw_scores'] for item in batch], dim=0
+                )
             out['is_null'] = torch.tensor(
-                [float(item.get('is_null', False)) for item in batch], dtype=torch.float,
+                [float(item.get('is_null', False)) for item in batch],
+                dtype=torch.float,
             )
             return out
 
@@ -312,7 +369,9 @@ class BasicPriorAttributer:
             max_seq_length=self.max_seq_length,
         )
         dataloader = DataLoader(
-            dataset, batch_size=batch_size, shuffle=False,
+            dataset,
+            batch_size=batch_size,
+            shuffle=False,
             collate_fn=self._create_collate_fn(),
         )
 
@@ -338,13 +397,15 @@ class BasicPriorAttributer:
                     # softmax(logits / target_temperature); plain softmax here
                     # produced a different distribution than what was optimized).
                     q_dist = F.softmax(logits / self.target_temperature, dim=0)
-                    results.append({
-                        'event_id': batch['event_ids'][group_idx],
-                        'market_id': batch['market_ids'][group_idx],
-                        't': batch['ts'][group_idx],
-                        'q_dist': q_dist.cpu().numpy().tolist(),
-                        'p_dist': p_dist_batch[indices].cpu().numpy().tolist(),
-                    })
+                    results.append(
+                        {
+                            'event_id': batch['event_ids'][group_idx],
+                            'market_id': batch['market_ids'][group_idx],
+                            't': batch['ts'][group_idx],
+                            'q_dist': q_dist.cpu().numpy().tolist(),
+                            'p_dist': p_dist_batch[indices].cpu().numpy().tolist(),
+                        }
+                    )
 
         return results
 
@@ -356,7 +417,7 @@ class BasicPriorAttributer:
     ) -> List[Dict[str, Any]]:
         """Score each news item for a single v6 record (real-time inference)."""
         if self.model is None:
-            raise ValueError("Model not loaded. Call load() first.")
+            raise ValueError('Model not loaded. Call load() first.')
 
         news_list = record.news
         if not news_list:
@@ -364,11 +425,14 @@ class BasicPriorAttributer:
 
         target = record.target
         all_input_ids, all_attention_masks = [], []
-        for news in news_list[:self.max_news]:
+        for news in news_list[: self.max_news]:
             prompt = build_attributer_news_prompt(record, target, news)
             enc = self.tokenizer(
-                prompt, padding='max_length', truncation=True,
-                max_length=self.max_seq_length, return_tensors='pt',
+                prompt,
+                padding='max_length',
+                truncation=True,
+                max_length=self.max_seq_length,
+                return_tensors='pt',
             )
             all_input_ids.append(enc['input_ids'])
             all_attention_masks.append(enc['attention_mask'])
@@ -381,8 +445,11 @@ class BasicPriorAttributer:
         # *act* on that option, not whether it participates in the softmax.
         prompt = build_attributer_no_news_prompt(record, target)
         enc = self.tokenizer(
-            prompt, padding='max_length', truncation=True,
-            max_length=self.max_seq_length, return_tensors='pt',
+            prompt,
+            padding='max_length',
+            truncation=True,
+            max_length=self.max_seq_length,
+            return_tensors='pt',
         )
         all_input_ids.append(enc['input_ids'])
         all_attention_masks.append(enc['attention_mask'])
@@ -395,8 +462,8 @@ class BasicPriorAttributer:
         all_logits = []
         with torch.no_grad():
             for i in range(0, input_ids.size(0), chunk_size):
-                ids = input_ids[i:i + chunk_size].to(self.model.llm.device)
-                mask = attention_mask[i:i + chunk_size].to(self.model.llm.device)
+                ids = input_ids[i : i + chunk_size].to(self.model.llm.device)
+                mask = attention_mask[i : i + chunk_size].to(self.model.llm.device)
                 logits = self.model(input_ids=ids, attention_mask=mask)
                 if logits.dim() == 2 and logits.size(-1) == 1:
                     logits = logits.squeeze(-1)
@@ -410,7 +477,11 @@ class BasicPriorAttributer:
             news_scores = p[:n_news]
             # 1-max(p_i): robust emergent routing, invariant to #news (Π(1-p_i)
             # collapses toward 0 as candidates grow). null=>all p low=>~1; has-news=>~1-max.
-            no_news_score = float(1.0 - news_scores.clamp(min=0.0, max=1.0).max().item()) if news_scores.numel() else 1.0
+            no_news_score = (
+                float(1.0 - news_scores.clamp(min=0.0, max=1.0).max().item())
+                if news_scores.numel()
+                else 1.0
+            )
         else:
             scores = F.softmax(logits / self.target_temperature, dim=0)
             # Split off the no-news option (always last). news_scores keep their
@@ -420,13 +491,17 @@ class BasicPriorAttributer:
         if self.null_gate:
             max_news_score = news_scores.max().item() if n_news > 0 else 0.0
             thr = self.null_gate_threshold
-            is_null = (no_news_score >= thr) if thr is not None else (no_news_score >= max_news_score)
+            is_null = (
+                (no_news_score >= thr)
+                if thr is not None
+                else (no_news_score >= max_news_score)
+            )
             if is_null:
                 return []
         scores = news_scores
 
         attributions = []
-        for idx, (news, score) in enumerate(zip(news_list[:self.max_news], scores)):
+        for idx, (news, score) in enumerate(zip(news_list[: self.max_news], scores)):
             s = score.item()
             if score_threshold > 0 and s < score_threshold:
                 continue

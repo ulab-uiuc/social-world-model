@@ -3,6 +3,7 @@
 Each line of the v6 jsonl files is one record = one training example. No
 nesting; no daily_breakpoints. See data/v6/README.md for the full schema.
 """
+
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field

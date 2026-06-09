@@ -30,6 +30,7 @@ Output: Updated market data with news embedded in each breakpoint:
     ]
 }
 """
+
 import argparse
 import os
 import sys
@@ -134,7 +135,7 @@ def crawl_news_for_breakpoint(
     after_date = datetime.fromtimestamp(after_ts)
     start_date = (before_date - timedelta(days=days_before)).strftime('%Y-%m-%d')
     end_date = (after_date + timedelta(days=days_after)).strftime('%Y-%m-%d')
-    
+
     try:
         if use_gnews:
             articles = crawler.fetch(
@@ -150,20 +151,26 @@ def crawl_news_for_breakpoint(
                 end_date=end_date,
                 max_results=max_results,
             )
-        
+
         # Normalize article format
         news_list = []
         for article in articles:
-            news_list.append({
-                'title': article.get('title', ''),
-                'description': article.get('description', ''),
-                'url': article.get('url') or article.get('link', ''),
-                'published_at': article.get('published_at') or article.get('publishedAt') or article.get('date', ''),
-                'source': article.get('source', {}).get('name', '') if isinstance(article.get('source'), dict) else article.get('source', ''),
-            })
+            news_list.append(
+                {
+                    'title': article.get('title', ''),
+                    'description': article.get('description', ''),
+                    'url': article.get('url') or article.get('link', ''),
+                    'published_at': article.get('published_at')
+                    or article.get('publishedAt')
+                    or article.get('date', ''),
+                    'source': article.get('source', {}).get('name', '')
+                    if isinstance(article.get('source'), dict)
+                    else article.get('source', ''),
+                }
+            )
         return news_list
     except Exception as e:
-        print(f"  Error crawling: {e}")
+        print(f'  Error crawling: {e}')
         return []
 
 
@@ -178,7 +185,7 @@ def load_processed_market_ids(output_file: str) -> set:
                     if market_id is not None:
                         processed_ids.add(str(market_id))
         except Exception as e:
-            print(f"Warning: Error reading existing output file: {e}")
+            print(f'Warning: Error reading existing output file: {e}')
     return processed_ids
 
 
@@ -187,7 +194,7 @@ def main():
 
     # Prepare output file
     Path(args.output_file).parent.mkdir(parents=True, exist_ok=True)
-    
+
     # Load already processed market IDs for resume support
     processed_ids = set()
     if args.skip_existing and Path(args.output_file).exists():
@@ -201,85 +208,90 @@ def main():
     print(f'Loaded {len(markets)} markets')
 
     # Count breakpoints
-    total_breakpoints = sum(
-        len(m.get('daily_breakpoints', []))
-        for m in markets
-    )
+    total_breakpoints = sum(len(m.get('daily_breakpoints', [])) for m in markets)
     valid_breakpoints = sum(
-        len([bp for bp in m.get('daily_breakpoints', []) if bp.get('z_score', 0) >= args.z_score_threshold])
+        len(
+            [
+                bp
+                for bp in m.get('daily_breakpoints', [])
+                if bp.get('z_score', 0) >= args.z_score_threshold
+            ]
+        )
         for m in markets
     )
-    print(f'Total breakpoints: {total_breakpoints}, above threshold: {valid_breakpoints}')
+    print(
+        f'Total breakpoints: {total_breakpoints}, above threshold: {valid_breakpoints}'
+    )
 
     # Initialize crawler
     if args.use_gnews:
-        api_key = os.environ.get("GNEWS_API_KEY")
+        api_key = os.environ.get('GNEWS_API_KEY')
         if not api_key:
-            print("Error: GNEWS_API_KEY environment variable not set")
-            print("Get your free API key at: https://gnews.io/")
+            print('Error: GNEWS_API_KEY environment variable not set')
+            print('Get your free API key at: https://gnews.io/')
             return
         crawler = GNewsCrawler(api_key=api_key)
-        print("Using GNews API")
+        print('Using GNews API')
     else:
         crawler = GoogleNewsCrawler(
             min_delay=args.min_delay,
             max_delay=args.max_delay,
         )
-        print("Using Google News scraping")
+        print('Using Google News scraping')
 
     # Process each market and write incrementally
     crawled_count = 0
     skipped_markets = 0
     skipped_breakpoints = 0
-    
+
     # Open output file in append mode
     write_mode = 'a' if processed_ids else 'w'
-    
+
     with jsonlines.open(args.output_file, mode=write_mode) as writer:
         for market in tqdm(markets, desc='Processing markets'):
             market_id = str(market.get('market_id', ''))
-            
+
             # Skip if already processed
             if market_id in processed_ids:
                 skipped_markets += 1
                 continue
-            
+
             breakpoints = market.get('daily_breakpoints', [])
             question = market.get('question') or market.get('title', '')
-            
+
             if not breakpoints or not question:
                 # Write market as-is (no breakpoints to process)
                 writer.write(market)
                 continue
-            
+
             # Extract keywords if enabled
             search_query = question
             if args.use_llm_keywords:
                 keywords = extract_search_keywords(question, model=args.llm_model)
                 if keywords:
                     search_query = keywords
-            
+
             # Process each breakpoint
             for bp in breakpoints:
                 z_score = bp.get('z_score', 0)
-                
+
                 # Below threshold - set empty news list
                 if z_score < args.z_score_threshold:
                     if 'news' not in bp:
                         bp['news'] = []
                     continue
-                
+
                 # Skip if already has news in input data
                 if bp.get('news'):
                     skipped_breakpoints += 1
                     continue
-                
+
                 before_ts = bp.get('before', {}).get('t')
                 after_ts = bp.get('after', {}).get('t')
                 if before_ts is None or after_ts is None:
                     bp['news'] = []
                     continue
-                
+
                 # Crawl news
                 news = crawl_news_for_breakpoint(
                     crawler=crawler,
@@ -291,15 +303,15 @@ def main():
                     max_results=args.max_results,
                     use_gnews=args.use_gnews,
                 )
-                
+
                 # Embed news into breakpoint
                 bp['news'] = news
                 crawled_count += 1
                 tqdm.write(f'Found {len(news)} articles for breakpoint')
-            
+
             writer.write(market)
 
-    print(f'\nDone!')
+    print('\nDone!')
     print(f'  Crawled: {crawled_count} breakpoints')
     print(f'  Skipped markets: {skipped_markets} (already in output)')
     print(f'  Skipped breakpoints: {skipped_breakpoints} (already had news)')

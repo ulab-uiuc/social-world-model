@@ -2,6 +2,7 @@
 
 One v6 record == one training example. See data/v6/README.md for schema.
 """
+
 import random
 from typing import Any, Dict, List, Optional
 
@@ -13,7 +14,6 @@ from transformers import PreTrainedTokenizer
 
 from .data import Record
 from .utils.utils import unix_to_date
-
 
 NULL_SUBSAMPLE_SEED = 42
 
@@ -27,14 +27,18 @@ def _pack_prompts(
     ids_list, mask_list = [], []
     for p in prompts:
         enc = tokenizer(
-            p, padding=True, truncation=True,
-            max_length=max_seq_length, return_tensors='pt',
+            p,
+            padding=True,
+            truncation=True,
+            max_length=max_seq_length,
+            return_tensors='pt',
         )
         ids_list.append(enc['input_ids'].squeeze(0))
         mask_list.append(enc['attention_mask'].squeeze(0))
     return {
         'input_ids': pad_sequence(
-            ids_list, batch_first=True,
+            ids_list,
+            batch_first=True,
             padding_value=tokenizer.pad_token_id or 0,
         ),
         'attention_mask': pad_sequence(mask_list, batch_first=True, padding_value=0),
@@ -59,7 +63,9 @@ def collate_padded_groups(
     for group_idx, item in enumerate(batch):
         ids = item['input_ids'][:, :max_len]
         padded = torch.nn.functional.pad(
-            ids, (0, max_len - ids.size(-1)), value=pad_token_id,
+            ids,
+            (0, max_len - ids.size(-1)),
+            value=pad_token_id,
         )
         input_ids.append(padded)
         attention_mask.append((padded != pad_token_id).long())
@@ -78,7 +84,9 @@ def collate_padded_groups(
 
 
 def build_attributer_news_prompt(
-    record: Record, target: Dict[str, float], news: Dict[str, Any],
+    record: Record,
+    target: Dict[str, float],
+    news: Dict[str, Any],
 ) -> str:
     """Per-news causal-attribution prompt. Single source of truth for both the
     attributer training dataset and real-time inference (attribute_record)."""
@@ -103,9 +111,11 @@ def build_attributer_news_prompt(
         for day in record.history:
             lines.append(f"  {unix_to_date(day['t'])}: {day['p']:.3f}")
 
-    lines.append('\nDoes this news have a causal relationship with the price change of this prediction market? '
-                 'Rate higher only if the news could directly cause the market price to move. News that is merely '
-                 'topically related but would not causally drive a price change should receive a low score.')
+    lines.append(
+        '\nDoes this news have a causal relationship with the price change of this prediction market? '
+        'Rate higher only if the news could directly cause the market price to move. News that is merely '
+        'topically related but would not causally drive a price change should receive a low score.'
+    )
     return '\n'.join(lines)
 
 
@@ -197,7 +207,9 @@ class MultiEventForecasterDataset(Dataset):
                 # 1-sum is the implicit no-news mass). Use them AS-IS: clamp to
                 # [0,1], mask any None candidate to 0, NO odds transform, NO
                 # renorm. The no-news remainder -> 0 shrinks weak/null events.
-                is_news = torch.tensor([news is not None for news, _ in items], dtype=torch.float)
+                is_news = torch.tensor(
+                    [news is not None for news, _ in items], dtype=torch.float
+                )
                 weights = raw.clamp(0.0, 1.0) * is_news
             elif getattr(self, 'odds_null_categorical', False):
                 # Independent per-news Bernoulli scores a_i -> joint (k+1) categorical
@@ -213,7 +225,9 @@ class MultiEventForecasterDataset(Dataset):
                 # candidate) predicts 0 and contributes 0: mask its odds to 0 so
                 # null events aggregate to 0 (route-to-0), not the untrained
                 # no-news-prompt output. Has-news events have no None candidate.
-                is_news = torch.tensor([news is not None for news, _ in items], dtype=torch.float)
+                is_news = torch.tensor(
+                    [news is not None for news, _ in items], dtype=torch.float
+                )
                 a = raw.clamp(0.0, 1.0 - 1e-6)
                 o = (a + self.odds_eps) / (1.0 - a + self.odds_eps) * is_news
                 if self.odds_temp != 1.0:
@@ -229,32 +243,39 @@ class MultiEventForecasterDataset(Dataset):
                     weights = torch.full_like(weights, 1.0 / weights.numel())
 
             before_p = (
-                float(record.history[-1].get('p', 0.5)) if record.history
+                float(record.history[-1].get('p', 0.5))
+                if record.history
                 else float(target.get('p', 0.5))
             )
             target_p = float(target.get('p', 0.5))
             label_val = target_p - before_p if self.predict_delta else target_p
-            datapoints.append({
-                **_pack_prompts(self.tokenizer, prompts, self.max_seq_length),
-                'weights': weights,
-                'label': torch.tensor(label_val, dtype=torch.float),
-                'before_price': torch.tensor(before_p, dtype=torch.float),
-                'market_id': record.market_id,
-                'event_id': record.event_id,
-                't': target.get('t'),
-            })
+            datapoints.append(
+                {
+                    **_pack_prompts(self.tokenizer, prompts, self.max_seq_length),
+                    'weights': weights,
+                    'label': torch.tensor(label_val, dtype=torch.float),
+                    'before_price': torch.tensor(before_p, dtype=torch.float),
+                    'market_id': record.market_id,
+                    'event_id': record.event_id,
+                    't': target.get('t'),
+                }
+            )
 
         if self.null_subsample_ratio < 1.0:
             tot = null_kept + has_kept
-            print(f'[MultiEventForecasterDataset] null_subsample_ratio={self.null_subsample_ratio} '
-                  f'→ has_news={has_kept} ({100 * has_kept / max(tot, 1):.1f}%)  '
-                  f'null_kept={null_kept} ({100 * null_kept / max(tot, 1):.1f}%)  '
-                  f'null_dropped={null_dropped}')
+            print(
+                f'[MultiEventForecasterDataset] null_subsample_ratio={self.null_subsample_ratio} '
+                f'→ has_news={has_kept} ({100 * has_kept / max(tot, 1):.1f}%)  '
+                f'null_kept={null_kept} ({100 * null_kept / max(tot, 1):.1f}%)  '
+                f'null_dropped={null_dropped}'
+            )
 
         return datapoints
 
     def _select_items(
-        self, record: Record, rng: random.Random,
+        self,
+        record: Record,
+        rng: random.Random,
     ) -> Optional[List]:
         """List of (news_or_None, weight) tuples for this record, or None to drop."""
         positives = self._top_positives(record)
@@ -276,12 +297,14 @@ class MultiEventForecasterDataset(Dataset):
     def _top_positives(self, record: Record) -> List:
         n = len(record.news)
         # posterior (oracle) positive scores, idx -> score
-        post = {a['news_idx']: float(a['score'])
-                for a in record.attributions
-                if 0 <= a.get('news_idx', -1) < n and float(a.get('score') or 0) > 0}
+        post = {
+            a['news_idx']: float(a['score'])
+            for a in record.attributions
+            if 0 <= a.get('news_idx', -1) < n and float(a.get('score') or 0) > 0
+        }
         items = [(record.news[i], s) for i, s in post.items()]
         items.sort(key=lambda p: -p[1])
-        return items[:self.max_news]
+        return items[: self.max_news]
 
     def _build_prompt(
         self,
@@ -394,8 +417,10 @@ class PriorAttributerDataset(Dataset):
 
             use_idxs = self._select_news_idxs(record, scores_by_idx, rng)
             score_list = [scores_by_idx.get(i, 0.0) for i in use_idxs]
-            prompts = [build_attributer_news_prompt(record, target, record.news[i])
-                       for i in use_idxs]
+            prompts = [
+                build_attributer_news_prompt(record, target, record.news[i])
+                for i in use_idxs
+            ]
 
             prompts.append(build_attributer_no_news_prompt(record, target))
             # score_list keeps the RAW per-news scores (a_i) + no-news raw (1 if
@@ -406,43 +431,56 @@ class PriorAttributerDataset(Dataset):
                 # odds construction: news o_i = ((a_i+eps)/(1-a_i+eps))**(1/T),
                 # null slot raw mass = null_odds; normalize over (news ∪ {no-news}).
                 a = torch.tensor(
-                    [scores_by_idx.get(i, 0.0) for i in use_idxs], dtype=torch.float,
+                    [scores_by_idx.get(i, 0.0) for i in use_idxs],
+                    dtype=torch.float,
                 ).clamp(0.0, 1.0)
                 odds = (a + self.odds_eps) / (1.0 - a + self.odds_eps)
                 if self.odds_temp != 1.0:
                     odds = odds.pow(1.0 / self.odds_temp)
-                raw = torch.cat([odds, torch.tensor([self.null_odds], dtype=torch.float)])
+                raw = torch.cat(
+                    [odds, torch.tensor([self.null_odds], dtype=torch.float)]
+                )
                 p_dist = raw / raw.sum()
             else:
                 scores = torch.tensor(score_list, dtype=torch.float).clamp(min=0.0)
                 if self.target_sharpen != 1.0:
                     scores = scores.pow(self.target_sharpen)
                 total = scores.sum()
-                p_dist = scores / total if total > 0 else torch.full_like(scores, 1.0 / scores.size(0))
+                p_dist = (
+                    scores / total
+                    if total > 0
+                    else torch.full_like(scores, 1.0 / scores.size(0))
+                )
 
-            datapoints.append({
-                **_pack_prompts(self.tokenizer, prompts, self.max_seq_length),
-                'p_dist': p_dist,
-                # Raw per-news posterior relevance g_i in [0,1] (NOT normalized,
-                # NOT sharpened); last entry is the no-news prompt (1.0 if null).
-                # Used by the per-news-BCE attributer, which treats each news as
-                # an INDEPENDENT Bernoulli (sigmoid(logit_i) ≈ g_i) — matching the
-                # 235B posterior's actual per-news 0-1 labels — instead of a
-                # single softmax over (news ∪ no-news). no-news is then emergent:
-                # p(no relevant news) = Π_i (1 - sigmoid(logit_i)).
-                'raw_scores': torch.tensor(score_list, dtype=torch.float).clamp(0.0, 1.0),
-                'is_null': bool(is_null),  # for the routing classification loss
-                'market_id': record.market_id,
-                'event_id': record.event_id,
-                't': target.get('t'),
-            })
+            datapoints.append(
+                {
+                    **_pack_prompts(self.tokenizer, prompts, self.max_seq_length),
+                    'p_dist': p_dist,
+                    # Raw per-news posterior relevance g_i in [0,1] (NOT normalized,
+                    # NOT sharpened); last entry is the no-news prompt (1.0 if null).
+                    # Used by the per-news-BCE attributer, which treats each news as
+                    # an INDEPENDENT Bernoulli (sigmoid(logit_i) ≈ g_i) — matching the
+                    # 235B posterior's actual per-news 0-1 labels — instead of a
+                    # single softmax over (news ∪ no-news). no-news is then emergent:
+                    # p(no relevant news) = Π_i (1 - sigmoid(logit_i)).
+                    'raw_scores': torch.tensor(score_list, dtype=torch.float).clamp(
+                        0.0, 1.0
+                    ),
+                    'is_null': bool(is_null),  # for the routing classification loss
+                    'market_id': record.market_id,
+                    'event_id': record.event_id,
+                    't': target.get('t'),
+                }
+            )
 
         if self.null_subsample_ratio < 1.0:
             tot = null_kept + has_kept
-            print(f'[PriorAttributerDataset] null_subsample_ratio={self.null_subsample_ratio} '
-                  f'→ has_news={has_kept} ({100 * has_kept / max(tot, 1):.1f}%)  '
-                  f'null_kept={null_kept} ({100 * null_kept / max(tot, 1):.1f}%)  '
-                  f'null_dropped={null_dropped}')
+            print(
+                f'[PriorAttributerDataset] null_subsample_ratio={self.null_subsample_ratio} '
+                f'→ has_news={has_kept} ({100 * has_kept / max(tot, 1):.1f}%)  '
+                f'null_kept={null_kept} ({100 * null_kept / max(tot, 1):.1f}%)  '
+                f'null_dropped={null_dropped}'
+            )
         return datapoints
 
     def _positive_scores(self, record: Record) -> Dict[int, float]:
@@ -450,8 +488,7 @@ class PriorAttributerDataset(Dataset):
         return {
             a['news_idx']: float(a['score'])
             for a in record.attributions
-            if 0 <= a.get('news_idx', -1) < n
-            and float(a.get('score') or 0) > 0
+            if 0 <= a.get('news_idx', -1) < n and float(a.get('score') or 0) > 0
         }
 
     def _select_news_idxs(
@@ -465,10 +502,10 @@ class PriorAttributerDataset(Dataset):
             return list(range(min(n, self.max_news)))
         pos_idxs = sorted(scores_by_idx, key=lambda i: -scores_by_idx[i])
         if not self.include_negatives:
-            return pos_idxs[:self.max_news]
+            return pos_idxs[: self.max_news]
         neg_idxs = [i for i in range(n) if i not in scores_by_idx]
         if not neg_idxs:
-            return pos_idxs[:self.max_news]
+            return pos_idxs[: self.max_news]
         n_neg = min(len(neg_idxs), max(1, self.max_news // 2))
         n_pos = self.max_news - n_neg
         # Randomly sample negatives rather than always taking the first by

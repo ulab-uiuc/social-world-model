@@ -4,7 +4,11 @@ from pathlib import Path
 import jsonlines
 from tqdm import tqdm
 
-from swm.utils.converter import PolyMarketDataConverter, PolymarketCategory, TimeSeriesConfig
+from swm.utils.converter import (
+    PolymarketCategory,
+    PolyMarketDataConverter,
+    TimeSeriesConfig,
+)
 
 
 def parse_args():
@@ -18,8 +22,12 @@ def parse_args():
         '--output_dir', type=str, default='../data/processed_polymarket_v2_0102_test'
     )
     parser.add_argument('--z_score_threshold', type=float, default=2.0)
-    parser.add_argument('--rolling_window', type=int, default=15,
-                        help='Window size for rolling robust z-score calculation')
+    parser.add_argument(
+        '--rolling_window',
+        type=int,
+        default=15,
+        help='Window size for rolling robust z-score calculation',
+    )
     return parser.parse_args()
 
 
@@ -36,8 +44,8 @@ def main():
     converter = PolyMarketDataConverter(config)
 
     # Valid categories: Crypto, Election, Politics
-    valid_categories = {cat.value for cat in PolymarketCategory}
-    
+    {cat.value for cat in PolymarketCategory}
+
     processed_dataset = []
     seen_market_ids = set()
     for event_data in tqdm(dataset):
@@ -55,12 +63,10 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Save all processed data (combined file)
-    with jsonlines.open(
-        output_dir / 'polymarket_data_processed.jsonl', 'w'
-    ) as writer:
+    with jsonlines.open(output_dir / 'polymarket_data_processed.jsonl', 'w') as writer:
         for data in processed_dataset:
             writer.write(data.model_dump())
-    print(f'Saved combined file: polymarket_data_processed.jsonl')
+    print('Saved combined file: polymarket_data_processed.jsonl')
 
     # Group by category
     processed_dataset_with_categories = {}

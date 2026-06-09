@@ -10,49 +10,47 @@ import torch
 from ..data import Record
 
 
-def extract_search_keywords(question: str, model: str = "gpt-4o-mini") -> Optional[str]:
+def extract_search_keywords(question: str, model: str = 'gpt-4o-mini') -> Optional[str]:
     """Use GPT to extract search keywords from a market question.
-    
+
     Args:
         question: The market question (e.g., "Will Bitcoin hit 100k?")
         model: OpenAI model to use
-        
+
     Returns:
         Extracted search keywords with AND operator (e.g., "Bitcoin AND price")
     """
     try:
         import openai
-        client = openai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
-        
+
+        client = openai.OpenAI(api_key=os.environ.get('OPENAI_API_KEY'))
+
         response = client.chat.completions.create(
             model=model,
             messages=[
                 {
-                    "role": "system",
-                    "content": (
-                        "You are a search keyword extractor. Given a prediction market question, "
-                        "extract 2-3 key search terms that would find relevant news articles. "
+                    'role': 'system',
+                    'content': (
+                        'You are a search keyword extractor. Given a prediction market question, '
+                        'extract 2-3 key search terms that would find relevant news articles. '
                         "Focus on the main entity/topic names. Remove filler words like 'Will', 'by', 'in 2024'. "
                         "Output ONLY the keywords separated by ' OR ', nothing else. "
                         "Use full names like 'Donald Trump' instead of 'Trump'. "
-                        "For multi-word entities, keep them together. "
+                        'For multi-word entities, keep them together. '
                         "Example: 'Will Bitcoin price hit 100k?' -> 'Bitcoin AND price'\n"
                         "Example: 'Will Donald Trump win the election?' -> 'Donald Trump OR election'"
-                    )
+                    ),
                 },
-                {
-                    "role": "user", 
-                    "content": question
-                }
+                {'role': 'user', 'content': question},
             ],
             temperature=0,
             max_tokens=50,
         )
-        
+
         keywords = response.choices[0].message.content.strip()
         return keywords
     except Exception as e:
-        print(f"  Warning: Failed to extract keywords via GPT: {e}")
+        print(f'  Warning: Failed to extract keywords via GPT: {e}')
         return None
 
 
@@ -66,14 +64,14 @@ def date_to_unix(date_str: str) -> int:
 
 def filter_midnight_points(series: List[Dict[str, float]]) -> List[Dict[str, float]]:
     """Filter to get one point per day, closest to midnight (00:00).
-    
+
     For each date, finds the point with timestamp closest to midnight.
     If there's an exact midnight point, it will be selected.
     Otherwise, the closest point (before or after midnight) is chosen.
     """
     if not series:
         return []
-    
+
     # Group points by date
     date_points: Dict[str, List[Dict[str, float]]] = {}
     for point in series:
@@ -82,7 +80,7 @@ def filter_midnight_points(series: List[Dict[str, float]]) -> List[Dict[str, flo
         if date_str not in date_points:
             date_points[date_str] = []
         date_points[date_str].append(point)
-    
+
     # For each date, find the point closest to midnight (00:00)
     midnight_points = []
     for date_str, points in sorted(date_points.items()):
@@ -95,11 +93,11 @@ def filter_midnight_points(series: List[Dict[str, float]]) -> List[Dict[str, flo
             # Also consider distance to next midnight (24 hours - seconds)
             seconds_to_next_midnight = 86400 - seconds_since_midnight
             return min(seconds_since_midnight, seconds_to_next_midnight)
-        
+
         # Find the point with minimum distance to midnight
         closest_point = min(points, key=distance_to_midnight)
         midnight_points.append(closest_point)
-    
+
     return midnight_points
 
 

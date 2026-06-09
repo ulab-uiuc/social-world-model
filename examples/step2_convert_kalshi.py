@@ -4,7 +4,7 @@ from pathlib import Path
 import jsonlines
 from tqdm import tqdm
 
-from swm.utils.converter import KalshiDataConverter, KalshiCategory, TimeSeriesConfig
+from swm.utils.converter import KalshiCategory, KalshiDataConverter, TimeSeriesConfig
 
 
 def parse_args():
@@ -18,8 +18,12 @@ def parse_args():
         '--output_dir', type=str, default='../data/processed_kalshi_v2_0102_test'
     )
     parser.add_argument('--z_score_threshold', type=float, default=2.0)
-    parser.add_argument('--rolling_window', type=int, default=15,
-                        help='Window size for rolling robust z-score calculation')
+    parser.add_argument(
+        '--rolling_window',
+        type=int,
+        default=15,
+        help='Window size for rolling robust z-score calculation',
+    )
     return parser.parse_args()
 
 
@@ -40,8 +44,8 @@ def main():
     converter = KalshiDataConverter(config)
 
     # Valid categories for Kalshi
-    valid_categories = {cat.value for cat in KalshiCategory}
-    
+    {cat.value for cat in KalshiCategory}
+
     processed_dataset = []
     seen_market_ids = set()
     for market_data in tqdm(dataset, desc='Converting Kalshi markets'):
@@ -52,15 +56,15 @@ def main():
                 processed_dataset.append(data)
                 seen_market_ids.add(data.market_id)
 
-    print(f'Processed {len(processed_dataset)} unique markets with valid categories from {len(dataset)} entries')
+    print(
+        f'Processed {len(processed_dataset)} unique markets with valid categories from {len(dataset)} entries'
+    )
 
     # Save all processed data (combined file, deduplicated)
-    with jsonlines.open(
-        output_dir / 'kalshi_data_processed.jsonl', 'w'
-    ) as writer:
+    with jsonlines.open(output_dir / 'kalshi_data_processed.jsonl', 'w') as writer:
         for data in processed_dataset:
             writer.write(data.model_dump())
-    print(f'Saved combined file: kalshi_data_processed.jsonl')
+    print('Saved combined file: kalshi_data_processed.jsonl')
 
     # Group by category
     processed_dataset_with_categories = {}
@@ -83,4 +87,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

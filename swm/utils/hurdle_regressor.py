@@ -17,7 +17,7 @@ Bin design (defaults):
   - HL-Gauss sigma = 0.04 (≈1.6 bin widths, smooth but not too soft)
   - gate_threshold = 0.02 (matches "non-flat" definition used in diag)
 """
-import json
+
 from pathlib import Path
 from typing import Optional
 
@@ -65,14 +65,18 @@ class HurdleLLMRegressor(PreTrainedModel):
         mid_size = max(256, hidden_size // 4)
         # Gate head: scalar logit for P(active)
         self.gate_head = nn.Sequential(
-            nn.Linear(hidden_size, mid_size), nn.ReLU(),
-            nn.Linear(mid_size, 64), nn.ReLU(),
+            nn.Linear(hidden_size, mid_size),
+            nn.ReLU(),
+            nn.Linear(mid_size, 64),
+            nn.ReLU(),
             nn.Linear(64, 1),
         )
         # Magnitude head: logits over n_mag_bins (categorical → HL-Gauss target)
         self.mag_head = nn.Sequential(
-            nn.Linear(hidden_size, mid_size), nn.ReLU(),
-            nn.Linear(mid_size, 128), nn.ReLU(),
+            nn.Linear(hidden_size, mid_size),
+            nn.ReLU(),
+            nn.Linear(mid_size, 128),
+            nn.ReLU(),
             nn.Linear(128, config.n_mag_bins),
         )
         # Bin centres (registered so they move with .to(device))
@@ -106,14 +110,16 @@ class HurdleLLMRegressor(PreTrainedModel):
         h = out.hidden_states[-1]
         pooled = self._pool(h, attention_mask)
         gate_logits = self.gate_head(pooled).squeeze(-1)  # (B,)
-        mag_logits = self.mag_head(pooled)                # (B, n_bins)
+        mag_logits = self.mag_head(pooled)  # (B, n_bins)
         return {'gate_logits': gate_logits, 'mag_logits': mag_logits, 'pooled': pooled}
 
     # ----------------------- hurdle math helpers ---------------------------
 
     def hl_gauss_target(self, target):
         """target: (B,) -> smoothed prob distribution (B, n_bins)."""
-        diff = (target.unsqueeze(-1) - self.bin_centres.unsqueeze(0)) / self.config.gauss_sigma
+        diff = (
+            target.unsqueeze(-1) - self.bin_centres.unsqueeze(0)
+        ) / self.config.gauss_sigma
         log_p = -0.5 * diff * diff
         return torch.softmax(log_p, dim=-1)
 
@@ -133,9 +139,11 @@ class HurdleLLMRegressor(PreTrainedModel):
             self.lora_config.save_pretrained(save_directory)
         self.llm.save_pretrained(save_directory)
         torch.save(
-            {'gate': self.gate_head.state_dict(),
-             'mag':  self.mag_head.state_dict(),
-             'bin_centres': self.bin_centres.detach().cpu()},
+            {
+                'gate': self.gate_head.state_dict(),
+                'mag': self.mag_head.state_dict(),
+                'bin_centres': self.bin_centres.detach().cpu(),
+            },
             Path(save_directory) / 'hurdle_heads.bin',
         )
 
@@ -152,7 +160,9 @@ class HurdleLLMRegressor(PreTrainedModel):
             # Load LoRA config back for save round-trip
             model.lora_config = LoraConfig.from_pretrained(str(path))
 
-        heads = torch.load(path / 'hurdle_heads.bin', map_location='cpu', weights_only=False)
+        heads = torch.load(
+            path / 'hurdle_heads.bin', map_location='cpu', weights_only=False
+        )
         model.gate_head.load_state_dict(heads['gate'])
         model.mag_head.load_state_dict(heads['mag'])
         if 'bin_centres' in heads:

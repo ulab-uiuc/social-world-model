@@ -79,17 +79,21 @@ def generate_and_store_reasons_for_option(
 ) -> list:
     """Generate reasoning for a single option and return the reasons list"""
     llm = LLMGenerator(model_name=model_name)
-    logger.info(f'Generating reasoning for card {card_id}, option {option} using {model_name}')
+    logger.info(
+        f'Generating reasoning for card {card_id}, option {option} using {model_name}'
+    )
 
     # Check if the reasoning already exists
     existing = option_reasons_collection.find_one(
         {'card_id': card_id, 'option': option, 'model': model_name}
     )
-    
+
     if existing and any(
         reason.get('votes', 0) > 0 for reason in existing.get('reasons', [])
     ):
-        logger.info(f'Reasoning already exists with votes for {card_id}/{option}/{model_name}')
+        logger.info(
+            f'Reasoning already exists with votes for {card_id}/{option}/{model_name}'
+        )
         return existing.get('reasons', [])
 
     prompt = build_question_prompt(question, option)
@@ -158,7 +162,14 @@ def generate_and_store_reasons_for_option(
     # Store to database
     option_reasons_collection.update_one(
         {'card_id': card_id, 'option': option, 'model': model_name},
-        {'$set': {'card_id': card_id, 'option': option, 'model': model_name, 'reasons': reasons}},
+        {
+            '$set': {
+                'card_id': card_id,
+                'option': option,
+                'model': model_name,
+                'reasons': reasons,
+            }
+        },
         upsert=True,
     )
 
@@ -273,7 +284,14 @@ def generate_and_store_reasons(
 
             option_reasons_collection.update_one(
                 {'card_id': card_id, 'option': option, 'model': model_name},
-                {'$set': {'card_id': card_id, 'option': option, 'model': model_name, 'reasons': reasons}},
+                {
+                    '$set': {
+                        'card_id': card_id,
+                        'option': option,
+                        'model': model_name,
+                        'reasons': reasons,
+                    }
+                },
                 upsert=True,
             )
 
