@@ -23,7 +23,6 @@ class LLMRegressorConfig(PretrainedConfig):
         predict_delta: Optional[bool] = None,
         bounded_output: Optional[bool] = None,
         n_extra_features: Optional[int] = 0,
-        per_news_bce: Optional[bool] = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -38,10 +37,6 @@ class LLMRegressorConfig(PretrainedConfig):
         self.predict_delta = predict_delta
         self.bounded_output = bounded_output
         self.n_extra_features = n_extra_features or 0
-        # Attributer trained with per-news Bernoulli BCE (sigmoid per news, no
-        # softmax): inference must score sigmoid(logit) and derive no-news as
-        # Π(1-p_i) instead of taking a softmax over (news ∪ no-news).
-        self.per_news_bce = per_news_bce
 
 
 class LLMRegressor(PreTrainedModel):
@@ -139,7 +134,6 @@ class LLMRegressor(PreTrainedModel):
         'predict_delta',
         'bounded_output',
         'n_extra_features',
-        'per_news_bce',
     )
 
     def save_pretrained(self, save_directory: str, state_dict=None, **kwargs):

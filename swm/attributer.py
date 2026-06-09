@@ -29,21 +29,12 @@ class KLDivergenceTrainer(Trainer):
         self,
         *args,
         logit_temperature: float = 1.0,
-        routing_loss_weight: float = 0.0,
-        neg_bce_weight: float = 0.0,
-        per_news_bce: bool = False,
         head_lr_multiplier: float = 1.0,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
         self.logit_temperature = logit_temperature
-        self.routing_loss_weight = routing_loss_weight
-        self.neg_bce_weight = neg_bce_weight
         self.head_lr_multiplier = head_lr_multiplier
-        # per-news Bernoulli mode: drop the softmax/KL entirely; each news is an
-        # independent sigmoid trained with soft-target BCE to its 0-1 posterior
-        # relevance. no-news is NOT a competing slot — it emerges as Π(1-p_i).
-        self.per_news_bce = per_news_bce
 
     def create_optimizer(self):
         # Give the regression_head a larger LR than the backbone: with a uniform
@@ -88,32 +79,6 @@ class KLDivergenceTrainer(Trainer):
         self.optimizer = optimizer_cls(group_list, **optimizer_kwargs)
         return self.optimizer
 
-    def _per_news_bce_loss(
-        self, model, inputs: Dict[str, torch.Tensor]
-    ) -> torch.Tensor:
-        raw = inputs.pop('raw_scores')  # per-prompt g_i in [0,1]
-        group_ids = inputs.pop('group_ids').long()
-        inputs.pop('p_dist', None)
-        inputs.pop('is_null', None)
-        for k in ('market_ids', 'event_ids', 'ts'):
-            inputs.pop(k, None)
-        logits = model(
-            input_ids=inputs['input_ids'], attention_mask=inputs['attention_mask']
-        ).view(-1)
-        # Exclude the no-news prompt (always the LAST prompt of each contiguous
-        # group) — it is not trained as a slot; routing is emergent at inference.
-        is_last = torch.ones_like(group_ids, dtype=torch.bool)
-        is_last[:-1] = group_ids[1:] != group_ids[:-1]
-        news_mask = ~is_last
-        tgt = raw.to(logits.dtype).clamp(0.0, 1.0)
-        # soft-target BCE = per-news Bernoulli cross-entropy (= the factorized
-        # ELBO KL up to a target-only constant). Pulls gold up, pushes off-target
-        # (g_i=0) down — the negative suppression forward-KL lacks — with NO
-        # softmax competition, so it can't inflate the no-news signal.
-        return torch.nn.functional.binary_cross_entropy_with_logits(
-            logits[news_mask], tgt[news_mask]
-        )
-
     @staticmethod
     def _segment_softmax(
         logits: torch.Tensor, group_ids: torch.Tensor, n_groups: int
@@ -134,7 +99,6 @@ class KLDivergenceTrainer(Trainer):
     def _kl_loss(self, model, inputs: Dict[str, torch.Tensor]) -> torch.Tensor:
         targets = inputs.pop('p_dist')
         group_ids = inputs.pop('group_ids').long()
-        is_null = inputs.pop('is_null', None)
         for k in ('market_ids', 'event_ids', 'ts'):
             inputs.pop(k, None)
 
@@ -152,54 +116,17 @@ class KLDivergenceTrainer(Trainer):
         kl_per_prompt = p * (torch.log(p.clamp(min=eps)) - torch.log(q.clamp(min=eps)))
         kl_per_group = torch.zeros(n_groups, device=logits.device, dtype=logits.dtype)
         kl_per_group.scatter_add_(0, group_ids, kl_per_prompt)
-        loss = kl_per_group.mean()
-
-        # Routing classification: the no-news option is the LAST prompt of each
-        # (contiguous) group. BCE pushes its prob -> 1 for null records, 0 for
-        # has-news records, directly training the "is there causal news?" router.
-        if self.routing_loss_weight > 0 and is_null is not None:
-            is_last = torch.ones_like(group_ids, dtype=torch.bool)
-            is_last[:-1] = group_ids[1:] != group_ids[:-1]
-            q_no_news = q[is_last].clamp(eps, 1 - eps)  # (n_groups,), group order
-            tgt = is_null.to(q_no_news.dtype)
-            bce = -(
-                tgt * torch.log(q_no_news) + (1 - tgt) * torch.log(1 - q_no_news)
-            ).mean()
-            loss = loss + self.routing_loss_weight * bce
-
-        # Per-news relevance BCE: directly supply the negative-suppression signal
-        # that forward KL(p‖q) lacks (its p_i=0 terms vanish). For each NEWS prompt,
-        # push sigmoid(logit) -> 1 if gold-attributed (p_i>0) else -> 0. The no-news
-        # prompt is excluded here (handled by the routing BCE above).
-        if self.neg_bce_weight > 0:
-            is_last_n = torch.ones_like(group_ids, dtype=torch.bool)
-            is_last_n[:-1] = group_ids[1:] != group_ids[:-1]
-            news_mask = ~is_last_n
-            if news_mask.any():
-                rel_tgt = (p[news_mask] > 0).to(logits.dtype)
-                bce_rel = torch.nn.functional.binary_cross_entropy_with_logits(
-                    logits[news_mask], rel_tgt
-                )
-                loss = loss + self.neg_bce_weight * bce_rel
-        return loss
+        return kl_per_group.mean()
 
     def compute_loss(
         self, model, inputs, return_outputs=False, num_items_in_batch=None
     ):
-        loss = (
-            self._per_news_bce_loss(model, inputs)
-            if self.per_news_bce
-            else self._kl_loss(model, inputs)
-        )
+        loss = self._kl_loss(model, inputs)
         return (loss, None) if return_outputs else loss
 
     def prediction_step(self, model, inputs, prediction_loss_only, ignore_keys=None):
         with torch.no_grad():
-            loss = (
-                self._per_news_bce_loss(model, inputs)
-                if self.per_news_bce
-                else self._kl_loss(model, inputs)
-            )
+            loss = self._kl_loss(model, inputs)
         return (loss, None, None)
 
 
@@ -215,9 +142,6 @@ class BasicPriorAttributer:
         null_odds: float = 1.0,
         odds_eps: float = 1e-3,
         odds_temp: float = 1.0,
-        routing_loss_weight: float = 0.0,
-        neg_bce_weight: float = 0.0,
-        per_news_bce: bool = False,
         head_lr_multiplier: float = 1.0,
     ):
         self.head_lr_multiplier = head_lr_multiplier
@@ -232,9 +156,6 @@ class BasicPriorAttributer:
         self.null_odds = null_odds
         self.odds_eps = odds_eps
         self.odds_temp = odds_temp
-        self.routing_loss_weight = routing_loss_weight
-        self.neg_bce_weight = neg_bce_weight
-        self.per_news_bce = per_news_bce
         # Two-stage null gate (set by inference). null_gate=True scores the
         # "no relevant news" option; null_gate_threshold=None means parameter-
         # free (null when no-news ranks #1), otherwise null when its softmax
@@ -248,7 +169,6 @@ class BasicPriorAttributer:
             max_length=self.max_seq_length,
             max_news=self.max_news,
             target_temperature=self.target_temperature,
-            per_news_bce=self.per_news_bce,
         )
         self.model = LLMRegressor(config)
         # Full fine-tune: backbone is bf16 but the head is fp32, and FSDP
@@ -271,14 +191,6 @@ class BasicPriorAttributer:
                 self.max_seq_length,
             )
             out['p_dist'] = torch.cat([item['p_dist'] for item in batch], dim=0)
-            if 'raw_scores' in batch[0]:
-                out['raw_scores'] = torch.cat(
-                    [item['raw_scores'] for item in batch], dim=0
-                )
-            out['is_null'] = torch.tensor(
-                [float(item.get('is_null', False)) for item in batch],
-                dtype=torch.float,
-            )
             return out
 
         return collate_fn
@@ -320,9 +232,6 @@ class BasicPriorAttributer:
             eval_dataset=valid_dataset,
             data_collator=self._create_collate_fn(),
             logit_temperature=self.target_temperature,
-            routing_loss_weight=self.routing_loss_weight,
-            neg_bce_weight=self.neg_bce_weight,
-            per_news_bce=self.per_news_bce,
             head_lr_multiplier=self.head_lr_multiplier,
         )
 
@@ -446,24 +355,11 @@ class BasicPriorAttributer:
                 all_logits.append(logits.cpu())
             logits = torch.cat(all_logits, dim=0).to(self.model.llm.device)
 
-        if getattr(self, 'per_news_bce', False):
-            # Per-news Bernoulli: each news scored independently; no-news is the
-            # last prompt but NOT a competing slot — it emerges as Π(1-p_i).
-            p = torch.sigmoid(logits)
-            news_scores = p[:n_news]
-            # 1-max(p_i): robust emergent routing, invariant to #news (Π(1-p_i)
-            # collapses toward 0 as candidates grow). null=>all p low=>~1; has-news=>~1-max.
-            no_news_score = (
-                float(1.0 - news_scores.clamp(min=0.0, max=1.0).max().item())
-                if news_scores.numel()
-                else 1.0
-            )
-        else:
-            scores = F.softmax(logits / self.target_temperature, dim=0)
-            # Split off the no-news option (always last). news_scores keep their
-            # training-consistent scale (they sum to 1 - no_news_score).
-            no_news_score = scores[-1].item()
-            news_scores = scores[:n_news]
+        scores = F.softmax(logits / self.target_temperature, dim=0)
+        # Split off the no-news option (always last). news_scores keep their
+        # training-consistent scale (they sum to 1 - no_news_score).
+        no_news_score = scores[-1].item()
+        news_scores = scores[:n_news]
         if self.null_gate:
             max_news_score = news_scores.max().item() if n_news > 0 else 0.0
             thr = self.null_gate_threshold
@@ -501,5 +397,3 @@ class BasicPriorAttributer:
             self.max_news = cfg.max_news
         if getattr(cfg, 'target_temperature', None) is not None:
             self.target_temperature = cfg.target_temperature
-        if getattr(cfg, 'per_news_bce', None) is not None:
-            self.per_news_bce = bool(cfg.per_news_bce)

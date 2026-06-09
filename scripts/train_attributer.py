@@ -190,32 +190,10 @@ def parse_args():
         help='Smoothing T for odds**(1/T); T>1 flattens the target.',
     )
     parser.add_argument(
-        '--routing-loss-weight',
-        type=float,
-        default=0.0,
-        help='Weight of the routing BCE: pushes the no-news prob -> 1 for '
-        'null records, 0 for has-news, directly training the '
-        '"is there causal news?" classifier. Default 0 (off).',
-    )
-    parser.add_argument(
-        '--neg-bce-weight',
-        type=float,
-        default=0.0,
-        help='Per-news relevance BCE weight: pushes sigmoid(logit)->1 for gold-attributed news, 0 otherwise. Supplies forward-KL the negative-suppression it lacks.',
-    )
-    parser.add_argument(
         '--head-lr-multiplier',
         type=float,
         default=1.0,
         help='LR multiplier for the regression head. >1 fixes head under-fitting that keeps the attributer output flatter (eff~5) than the KL target (eff~2).',
-    )
-    parser.add_argument(
-        '--per-news-bce',
-        action='store_true',
-        help='Per-news Bernoulli mode: drop the softmax/KL; train each news as an '
-        'independent sigmoid with soft-target BCE to its 0-1 posterior relevance '
-        '(matches the 235B per-news labels). no-news is emergent = Π(1-p_i). '
-        'Decouples ranking from routing — no softmax competition.',
     )
     parser.add_argument(
         '--null-subsample-ratio',
@@ -304,9 +282,6 @@ def main():
         null_odds=args.null_odds,
         odds_eps=args.odds_eps,
         odds_temp=args.odds_temp,
-        routing_loss_weight=args.routing_loss_weight,
-        neg_bce_weight=args.neg_bce_weight,
-        per_news_bce=args.per_news_bce,
         head_lr_multiplier=args.head_lr_multiplier,
     )
 

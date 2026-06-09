@@ -390,16 +390,11 @@ class PriorAttributerDataset(Dataset):
                 has_kept += 1
 
             use_idxs = self._select_news_idxs(record, scores_by_idx, rng)
-            score_list = [scores_by_idx.get(i, 0.0) for i in use_idxs]
             prompts = [
                 build_attributer_news_prompt(record, target, record.news[i])
                 for i in use_idxs
             ]
-
             prompts.append(build_attributer_no_news_prompt(record, target))
-            # score_list keeps the RAW per-news scores (a_i) + no-news raw (1 if
-            # null else 0) — used as-is by the per-news-BCE path (raw_scores).
-            score_list.append(1.0 if is_null else 0.0)
 
             # odds construction: news o_i = ((a_i+eps)/(1-a_i+eps))**(1/T),
             # null slot raw mass = null_odds; normalize over (news ∪ {no-news}).
@@ -417,17 +412,6 @@ class PriorAttributerDataset(Dataset):
                 {
                     **_pack_prompts(self.tokenizer, prompts, self.max_seq_length),
                     'p_dist': p_dist,
-                    # Raw per-news posterior relevance g_i in [0,1] (NOT normalized,
-                    # NOT sharpened); last entry is the no-news prompt (1.0 if null).
-                    # Used by the per-news-BCE attributer, which treats each news as
-                    # an INDEPENDENT Bernoulli (sigmoid(logit_i) ≈ g_i) — matching the
-                    # 235B posterior's actual per-news 0-1 labels — instead of a
-                    # single softmax over (news ∪ no-news). no-news is then emergent:
-                    # p(no relevant news) = Π_i (1 - sigmoid(logit_i)).
-                    'raw_scores': torch.tensor(score_list, dtype=torch.float).clamp(
-                        0.0, 1.0
-                    ),
-                    'is_null': bool(is_null),  # for the routing classification loss
                     'market_id': record.market_id,
                     'event_id': record.event_id,
                     't': target.get('t'),
