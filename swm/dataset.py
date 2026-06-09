@@ -471,6 +471,19 @@ class PriorAttributerDataset(Dataset):
         # learned attributer is more decisive. Lowering target_temperature does
         # NOT do this (train/inference share it, so output ≈ target).
         self.target_sharpen = target_sharpen
+        # Target distribution construction over (news ∪ {no-news}):
+        #   'normalize' (legacy): p ∝ [scores..., 1 if null else 0]. A weak score
+        #     like [0.2,0,0] collapses to [1,0,0] (over-confident; no-news always
+        #     0 for has-news → forward-KL has no gradient to raise no-news).
+        #   'odds': map each score a_i to odds o_i=((a_i+eps)/(1-a_i+eps))**(1/T),
+        #     give the null slot a fixed raw mass rho_0=null_odds, then normalize.
+        #     Weak scores -> high no-news (e.g. [0.2,0,0]->[no-news .8, .2,0,0]),
+        #     null records -> no-news≈1 emerge naturally (no is_null special-case),
+        #     and no-news mass is nonzero for has-news -> KL gradient suppresses it.
+        self.target_mode = target_mode
+        self.null_odds = null_odds
+        self.odds_eps = odds_eps
+        self.odds_temp = odds_temp
         self.datapoints = self._create_datapoints()
         print(f'Created {len(self.datapoints)} datapoints')
 
@@ -505,19 +518,20 @@ class PriorAttributerDataset(Dataset):
                        for i in use_idxs]
 
             prompts.append(build_attributer_no_news_prompt(record, target))
+            # score_list keeps the RAW per-news scores (a_i) + no-news raw (1 if
+            # null else 0) — used as-is by the per-news-BCE path (raw_scores).
             score_list.append(1.0 if is_null else 0.0)
 
-            if getattr(self, 'target_mode', 'normalize') == 'odds':
-                # Independent per-news Bernoulli a_i -> joint (k+1) categorical via
-                # odds + null prior mass rho0 (last entry = no-news):
-                #   o_i = ((a_i+eps)/(1-a_i+eps))^(1/T),  o_0 = rho0,  pi = o/sum(o).
-                # Null events (all a_i=0) -> tiny news odds -> no-news dominates
-                # automatically, so rho0 is uniform across has-news/null.
-                a = torch.tensor(score_list[:-1], dtype=torch.float).clamp(0.0, 1.0 - 1e-6)
-                o = (a + self.odds_eps) / (1.0 - a + self.odds_eps)
+            if self.target_mode == 'odds':
+                # odds construction: news o_i = ((a_i+eps)/(1-a_i+eps))**(1/T),
+                # null slot raw mass = null_odds; normalize over (news ∪ {no-news}).
+                a = torch.tensor(
+                    [scores_by_idx.get(i, 0.0) for i in use_idxs], dtype=torch.float,
+                ).clamp(0.0, 1.0)
+                odds = (a + self.odds_eps) / (1.0 - a + self.odds_eps)
                 if self.odds_temp != 1.0:
-                    o = o.pow(1.0 / self.odds_temp)
-                raw = torch.cat([o, torch.tensor([self.null_odds], dtype=torch.float)])
+                    odds = odds.pow(1.0 / self.odds_temp)
+                raw = torch.cat([odds, torch.tensor([self.null_odds], dtype=torch.float)])
                 p_dist = raw / raw.sum()
             else:
                 scores = torch.tensor(score_list, dtype=torch.float).clamp(min=0.0)
