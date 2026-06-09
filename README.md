@@ -14,11 +14,9 @@
 **Social World Model (SWM)** models how collective beliefs change after
 real-world events. We represent social beliefs with prediction-market
 trajectories and learn an event-conditioned transition model
-
-$$ s_{t+1} \sim P_\theta(s_{t+1} \mid s_t, e_t) $$
-
-where $s_t$ is the current belief state and $e_t$ is a news/event signal. This
-repo provides the training method and a benchmark, **SWM-Bench**.
+$s_{t+1} \sim P_\theta(s_{t+1} \mid s_t, e_t)$, where $s_t$ is the current belief
+state and $e_t$ is a news/event signal. This repo provides the training method
+and a benchmark, **SWM-Bench**.
 
 ## Training Recipe
 
