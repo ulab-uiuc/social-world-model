@@ -14,6 +14,7 @@ Usage:
     python scripts/fix_zscore_standard.py <dir>          # rewrite 6 files in place (backup first)
     python scripts/fix_zscore_standard.py <dir> --dry    # just report, no write
 """
+
 import argparse
 import json
 import os
@@ -24,23 +25,33 @@ from typing import Dict, List
 WINDOW = 30
 MIN_HISTORY = 10
 FLOOR = 0.01
-FILES = ["test_kalshi_final.jsonl", "test_polymarket_final.jsonl", "train.jsonl",
-         "train_clean.jsonl", "valid_clean.jsonl", "valid_subset150.jsonl"]
+FILES = [
+    'test_kalshi_final.jsonl',
+    'test_polymarket_final.jsonl',
+    'train.jsonl',
+    'train_clean.jsonl',
+    'valid_clean.jsonl',
+    'valid_subset150.jsonl',
+]
 
 
-def standard_zscore(history: List[Dict], target: Dict,
-                    window: int = WINDOW, min_history: int = MIN_HISTORY) -> float:
+def standard_zscore(
+    history: List[Dict],
+    target: Dict,
+    window: int = WINDOW,
+    min_history: int = MIN_HISTORY,
+) -> float:
     series = list(history) + [target]
     if len(series) < 2:
         return 0.0
     series = sorted(series, key=lambda x: x['t'])
     changes = [abs(series[i + 1]['p'] - series[i]['p']) for i in range(len(series) - 1)]
     cur = changes[-1]
-    local = changes[max(0, len(changes) - 1 - window):-1]
+    local = changes[max(0, len(changes) - 1 - window) : -1]
     if len(local) < min_history:
         return 0.0
     mean = statistics.fmean(local)
-    std = statistics.pstdev(local)            # population std of the reference window
+    std = statistics.pstdev(local)  # population std of the reference window
     return (cur - mean) / max(std, FLOOR)
 
 
@@ -57,9 +68,10 @@ def main():
     for fname in FILES:
         path = os.path.join(args.data_dir, fname)
         if not os.path.exists(path):
-            print(f"SKIP (missing): {fname}"); continue
+            print(f'SKIP (missing): {fname}')
+            continue
         rows = [json.loads(l) for l in open(path)]
-        n = changed = noskip = 0
+        n = changed = 0
         old_vals, new_vals = [], []
         for r in rows:
             if 'history' not in r or 'target' not in r:
@@ -74,18 +86,21 @@ def main():
                 changed += 1
             r['z_score'] = new
         import numpy as np
+
         ov = np.array(old_vals) if old_vals else np.array([0.0])
         nv = np.array(new_vals)
-        print(f"{fname}: n={n} changed={changed} | "
-              f"OLD |z|>4:{int((np.abs(ov)>4).sum())} mean|z|={np.abs(ov).mean():.3f} | "
-              f"NEW |z|>4:{int((np.abs(nv)>4).sum())} mean|z|={np.abs(nv).mean():.3f}")
+        print(
+            f'{fname}: n={n} changed={changed} | '
+            f'OLD |z|>4:{int((np.abs(ov)>4).sum())} mean|z|={np.abs(ov).mean():.3f} | '
+            f'NEW |z|>4:{int((np.abs(nv)>4).sum())} mean|z|={np.abs(nv).mean():.3f}'
+        )
         if not args.dry:
-            shutil.copy2(path, os.path.join(bak, fname))     # backup original
+            shutil.copy2(path, os.path.join(bak, fname))  # backup original
             with open(path, 'w') as w:
                 for r in rows:
                     w.write(json.dumps(r) + '\n')
     if not args.dry:
-        print(f"\nOriginals backed up to {bak}")
+        print(f'\nOriginals backed up to {bak}')
 
 
 if __name__ == '__main__':

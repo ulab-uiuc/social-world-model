@@ -17,25 +17,29 @@ Output:
 """
 
 import argparse
+import re
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
-import re
 
 import jsonlines
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Split flat sample data by time')
-    parser.add_argument('--input_file', required=True, help='Input JSONL file (flat format)')
-    parser.add_argument('--output_dir', default=None, help='Output directory (default: same as input)')
+    parser.add_argument(
+        '--input_file', required=True, help='Input JSONL file (flat format)'
+    )
+    parser.add_argument(
+        '--output_dir', default=None, help='Output directory (default: same as input)'
+    )
     parser.add_argument('--cutoff_date', required=True, help='Cutoff date (YYYY-MM-DD)')
     return parser.parse_args()
 
 
 def get_sample_timestamp(sample: dict) -> float:
     """Get timestamp from a sample (breakpoint or normal_point).
-    
+
     Both types now have the same structure with 'after' field.
     """
     # Use the 'after' timestamp (when the change/observation happened)
@@ -75,7 +79,7 @@ def main():
     print(f'Loading {args.input_file}...')
     train_samples = []
     test_samples = []
-    
+
     with jsonlines.open(args.input_file) as reader:
         for sample in reader:
             ts = get_sample_timestamp(sample)
@@ -83,7 +87,7 @@ def main():
                 train_samples.append(sample)
             else:
                 test_samples.append(sample)
-    
+
     total = len(train_samples) + len(test_samples)
     print(f'Loaded {total} samples')
 
@@ -100,12 +104,18 @@ def main():
     print(f'Test:  {test_file} ({len(test_samples)} samples)')
 
     # Count by sample type
-    train_breakpoints = sum(1 for s in train_samples if s.get('sample_type') == 'breakpoint')
-    train_normal = sum(1 for s in train_samples if s.get('sample_type') == 'normal_point')
-    test_breakpoints = sum(1 for s in test_samples if s.get('sample_type') == 'breakpoint')
+    train_breakpoints = sum(
+        1 for s in train_samples if s.get('sample_type') == 'breakpoint'
+    )
+    train_normal = sum(
+        1 for s in train_samples if s.get('sample_type') == 'normal_point'
+    )
+    test_breakpoints = sum(
+        1 for s in test_samples if s.get('sample_type') == 'breakpoint'
+    )
     test_normal = sum(1 for s in test_samples if s.get('sample_type') == 'normal_point')
-    
-    print(f'\nSample type breakdown:')
+
+    print('\nSample type breakdown:')
     print(f'  Train: {train_breakpoints} breakpoints, {train_normal} normal_points')
     print(f'  Test:  {test_breakpoints} breakpoints, {test_normal} normal_points')
 
@@ -116,15 +126,20 @@ def main():
             train_by_cat[cat].append(sample)
 
     # Write train by category
-    print(f'\nTrain by category:')
+    print('\nTrain by category:')
     for cat, samples in sorted(train_by_cat.items(), key=lambda x: -len(x[1])):
-        cat_file = output_dir / f'{base_name}_train_{args.cutoff_date}_{sanitize_filename(cat)}.jsonl'
+        cat_file = (
+            output_dir
+            / f'{base_name}_train_{args.cutoff_date}_{sanitize_filename(cat)}.jsonl'
+        )
         with jsonlines.open(cat_file, 'w') as w:
             for sample in samples:
                 w.write(sample)
         bp_count = sum(1 for s in samples if s.get('sample_type') == 'breakpoint')
         np_count = sum(1 for s in samples if s.get('sample_type') == 'normal_point')
-        print(f'  {cat}: {len(samples)} ({bp_count} bp, {np_count} np) -> {cat_file.name}')
+        print(
+            f'  {cat}: {len(samples)} ({bp_count} bp, {np_count} np) -> {cat_file.name}'
+        )
 
     # Group test by category
     test_by_cat = defaultdict(list)
@@ -133,15 +148,20 @@ def main():
             test_by_cat[cat].append(sample)
 
     # Write test by category
-    print(f'\nTest by category:')
+    print('\nTest by category:')
     for cat, samples in sorted(test_by_cat.items(), key=lambda x: -len(x[1])):
-        cat_file = output_dir / f'{base_name}_test_{args.cutoff_date}_{sanitize_filename(cat)}.jsonl'
+        cat_file = (
+            output_dir
+            / f'{base_name}_test_{args.cutoff_date}_{sanitize_filename(cat)}.jsonl'
+        )
         with jsonlines.open(cat_file, 'w') as w:
             for sample in samples:
                 w.write(sample)
         bp_count = sum(1 for s in samples if s.get('sample_type') == 'breakpoint')
         np_count = sum(1 for s in samples if s.get('sample_type') == 'normal_point')
-        print(f'  {cat}: {len(samples)} ({bp_count} bp, {np_count} np) -> {cat_file.name}')
+        print(
+            f'  {cat}: {len(samples)} ({bp_count} bp, {np_count} np) -> {cat_file.name}'
+        )
 
 
 if __name__ == '__main__':

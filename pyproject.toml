@@ -82,6 +82,10 @@ line-length = 88
 fix = true
 target-version = "py310"
 
+[tool.ruff.lint]
+# E741: ambiguous one-letter names (e.g. `l` for a line) in analysis scripts.
+ignore = ["E741"]
+
 [tool.ruff.format]
 quote-style = "single"
 indent-style = "space"

@@ -1,23 +1,19 @@
 """
-Train PriorAttributer using KL divergence from PosteriorAttributer.
+Train MultiEventWorldModel using precomputed attributions.
 
 The input data should have attributions precomputed using precompute_attributions.py
-(which uses PosteriorAttributer). The PosteriorAttributer derives the target
-distribution with access to the realized future price; the PriorAttributer learns
-to reproduce that distribution from the news + history + question alone (i.e.
-without seeing the future outcome).
 
 Single GPU:
-    python train_attributer.py \
+    python train_multievent_world_model.py \
         --train-data-path ../data/attributed/train.jsonl \
         --valid-data-path ../data/attributed/valid.jsonl \
-        --output-dir ../saves/prior_attributer
+        --output-dir ../saves/multievent_world_model
 
 Multi-GPU (DDP):
-    torchrun --nproc_per_node=4 train_attributer.py \
+    torchrun --nproc_per_node=4 train_multievent_world_model.py \
         --train-data-path ../data/attributed/train.jsonl \
         --valid-data-path ../data/attributed/valid.jsonl \
-        --output-dir ../saves/prior_attributer
+        --output-dir ../saves/multievent_world_model
 """
 
 import argparse
@@ -28,8 +24,8 @@ import torch
 import torch.distributed as dist
 from transformers import TrainingArguments
 
-from swm.attributer import BasicPriorAttributer
 from swm.utils.utils import load_records, set_seed
+from swm.world_model import MultiEventWorldModel
 
 
 def is_main_process():
@@ -65,7 +61,7 @@ def print_main(*args, **kwargs):
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description='Train PriorAttributer using precomputed posterior attributions'
+        description='Train MultiEventWorldModel with precomputed attributions'
     )
     # Data paths
     parser.add_argument(
@@ -88,6 +84,12 @@ def parse_args():
 
     # Training config
     parser.add_argument('--epochs', type=int, default=3)
+    parser.add_argument(
+        '--max-steps',
+        type=int,
+        default=-1,
+        help='Cap total optimizer steps (-1=disabled). For quick save-path smoke tests.',
+    )
     parser.add_argument('--train-batch-size', type=int, default=8)
     parser.add_argument('--eval-batch-size', type=int, default=8)
     parser.add_argument('--learning-rate', type=float, default=5e-5)
@@ -107,24 +109,31 @@ def parse_args():
         '--save-total-limit',
         type=int,
         default=None,
-        help='Keep at most N checkpoints (best + most-recent). Prevents disk blowup for full-FT.',
-    )
-    parser.add_argument(
-        '--ddp-timeout',
-        type=int,
-        default=1800,
-        help='Distributed collective timeout (seconds). Raise well above the time a slow '
-        'NFS checkpoint write takes, so other ranks waiting at the next allreduce do '
-        'not trip the NCCL watchdog and abort the run mid-save.',
+        help='Cap number of saved checkpoints (HF keeps the most '
+        'recent N + the best). Use for full-FT (each ckpt is '
+        'GBs) to avoid filling the disk. None=keep all.',
     )
     parser.add_argument(
         '--save-only-model',
         action='store_true',
-        help='Save ONLY model weights, not optimizer/scheduler/rng. For FSDP full-FT this '
-        'skips the huge fp32 optimizer-state gather (~2x params) — checkpoints shrink '
-        'from ~3x to ~1x model size and save many minutes faster. No mid-run resume.',
+        help='Save ONLY model weights (skip optimizer/scheduler/rng '
+        'state). For full-FT this cuts checkpoint size ~3-4x '
+        '(no fp32 Adam state) and the slow FSDP optimizer gather. '
+        'Cannot resume training from these, but we only need the '
+        'final weights for inference.',
     )
     parser.add_argument('--eval-steps', type=int, default=500)
+    parser.add_argument(
+        '--no-mid-checkpoints',
+        action='store_true',
+        help='Disable mid-training checkpointing (save_strategy=no). '
+        'Forces the run to save ONCE at the end via '
+        'trainer.save_model(), which under FSDP goes through '
+        'accelerate.get_state_dict (correct gather of the root '
+        'embedding). Mid-training _save_checkpoint uses '
+        'save_fsdp_model which writes a FLAT embedding shard that '
+        'cannot be reloaded. Use for full-FT FSDP runs.',
+    )
     parser.add_argument('--fp16', action='store_true')
     parser.add_argument(
         '--bf16',
@@ -138,6 +147,12 @@ def parse_args():
         help='FSDP mode, e.g. "full_shard auto_wrap". Empty disables FSDP.',
     )
     parser.add_argument(
+        '--fsdp-min-num-params',
+        type=float,
+        default=0,
+        help='If >0, use size_based FSDP auto-wrap (wraps ANY module > this many params, incl. the embedding -> gathered on save). Overrides transformer-layer-cls.',
+    )
+    parser.add_argument(
         '--fsdp-transformer-layer-cls',
         type=str,
         default='',
@@ -147,6 +162,22 @@ def parse_args():
         '--gradient-checkpointing',
         action='store_true',
         help='Enable gradient checkpointing to save memory',
+    )
+
+    parser.add_argument(
+        '--pooling-method',
+        type=str,
+        default='last_token',
+        choices=['last_token', 'mean'],
+        help='Pooling method for hidden states',
+    )
+    parser.add_argument(
+        '--predict-delta',
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help='Predict target.p - before_price (delta) instead of '
+        'absolute price. Default: True. Use --no-predict-delta '
+        'for the old absolute-price target.',
     )
 
     # Other
@@ -166,55 +197,64 @@ def parse_args():
     parser.add_argument(
         '--max-news',
         type=int,
-        default=50,
-        help='Max news articles per record (default: 50)',
-    )
-    parser.add_argument(
-        '--target-temperature',
-        type=float,
-        default=0.5,
-        help='Softmax temperature (shared train+inference; does NOT change '
-        'output sharpness relative to target). Default 0.5.',
-    )
-    parser.add_argument(
-        '--null-odds',
-        type=float,
-        default=1.0,
-        help='Raw odds mass rho_0 for the no-news slot. Higher = more conservative (more null mass).',
-    )
-    parser.add_argument('--odds-eps', type=float, default=1e-3)
-    parser.add_argument(
-        '--odds-temp',
-        type=float,
-        default=1.0,
-        help='Smoothing T for odds**(1/T); T>1 flattens the target.',
+        default=30,
+        help='Max news articles per record (default: 30)',
     )
     parser.add_argument(
         '--head-lr-multiplier',
         type=float,
+        default=20.0,
+        help='LR multiplier for regression head (default: 20x base LR)',
+    )
+    parser.add_argument(
+        '--max-history-len',
+        type=int,
+        default=None,
+        help='Trim each record history to the last N days BEFORE training. '
+        'Small N (e.g. 1) removes the momentum trajectory, forcing the '
+        'model to read news for the delta. before_price is unchanged.',
+    )
+    parser.add_argument(
+        '--null-rho0',
+        type=float,
         default=1.0,
-        help='LR multiplier for the regression head. >1 fixes head under-fitting that keeps the attributer output flatter (eff~5) than the KL target (eff~2).',
+        help='Null event raw mass o_0=rho0 in the odds categorical.',
+    )
+    parser.add_argument(
+        '--odds-eps',
+        type=float,
+        default=1e-3,
+        help='Epsilon in odds o_i=(a+eps)/(1-a+eps).',
+    )
+    parser.add_argument(
+        '--odds-temp',
+        type=float,
+        default=1.0,
+        help='Smoothing temperature: o_i^(1/T). T>1 flattens. odds already '
+        'spreads the distribution so T=1 is the default (no extra sharpen).',
+    )
+    parser.add_argument(
+        '--train-attributed-only',
+        action='store_true',
+        help='Train/eval only on records that have >=1 positive-score '
+        'attribution (news-driven events), so the gradient is not '
+        'dominated by null/predict-mean records.',
     )
     parser.add_argument(
         '--null-subsample-ratio',
         type=float,
         default=1.0,
-        help='Fraction of null records (no positive attributions) to keep in TRAIN dataset. '
-        '1.0=keep all (default), <1.0 dilutes null supervision. Valid set always keeps ratio=1.0.',
+        help='Fraction of null events (no positive attributions) to keep in TRAIN dataset. '
+        '1.0=keep all (default), <1.0 rebalances toward has-news. '
+        'Valid set always keeps ratio=1.0.',
     )
+
+    # Wandb
     parser.add_argument(
         '--wandb-project',
         type=str,
         default='social-world-model',
-        help='Wandb project name (default: social-world-model)',
-    )
-    parser.add_argument(
-        '--resume-from-checkpoint',
-        type=str,
-        default=None,
-        nargs='?',
-        const='True',
-        help='Resume from checkpoint. Pass path or use flag alone for auto-detect.',
+        help='Wandb project name',
     )
 
     return parser.parse_args()
@@ -228,7 +268,7 @@ def main():
 
     set_seed(args.seed)
 
-    # Initialize wandb project (only on main process)
+    # Initialize wandb (only on main process)
     os.environ['WANDB_PROJECT'] = args.wandb_project
     if not is_main_process():
         os.environ['WANDB_DISABLED'] = 'true'
@@ -258,6 +298,29 @@ def main():
         args.save_steps = 50
         args.learning_rate = 1e-4
 
+    def _has_pos_attr(r):
+        n = len(r.news or [])
+        return any(
+            0 <= a.get('news_idx', -1) < n and float(a.get('score') or 0) > 0
+            for a in (r.attributions or [])
+        )
+
+    if args.train_attributed_only:
+        b_tr, b_va = len(train_records), len(valid_records)
+        train_records = [r for r in train_records if _has_pos_attr(r)]
+        valid_records = [r for r in valid_records if _has_pos_attr(r)]
+        print_main(
+            f'[attributed-only] train {b_tr}->{len(train_records)}, valid {b_va}->{len(valid_records)}'
+        )
+
+    if args.max_history_len is not None:
+        for r in train_records + valid_records:
+            if r.history and len(r.history) > args.max_history_len:
+                r.history = r.history[-args.max_history_len :]
+        print_main(
+            f'[max-history-len] trimmed history to last {args.max_history_len} day(s)'
+        )
+
     train_with_attr = sum(1 for r in train_records if r.attributions)
     valid_with_attr = sum(1 for r in valid_records if r.attributions)
     print_main(
@@ -272,22 +335,27 @@ def main():
 
     print_main('Full fine-tuning mode (FSDP)')
 
-    attributer = BasicPriorAttributer(
+    world_model = MultiEventWorldModel(
         model_name=args.model_name,
         max_seq_length=args.max_seq_length,
         gradient_checkpointing=args.gradient_checkpointing,
         max_news=args.max_news,
-        target_temperature=args.target_temperature,
+        head_lr_multiplier=args.head_lr_multiplier,
+        pooling_method=args.pooling_method,
         null_subsample_ratio=args.null_subsample_ratio,
-        null_odds=args.null_odds,
+        predict_delta=args.predict_delta,
+        null_rho0=args.null_rho0,
         odds_eps=args.odds_eps,
         odds_temp=args.odds_temp,
-        head_lr_multiplier=args.head_lr_multiplier,
     )
 
     # HF constraint: load_best_model_at_end=True requires save_steps to be
-    # a round multiple of eval_steps.
-    if args.eval_steps > 0 and args.save_steps % args.eval_steps != 0:
+    # a round multiple of eval_steps. (Skipped when mid-checkpoints are off.)
+    if (
+        not args.no_mid_checkpoints
+        and args.eval_steps > 0
+        and args.save_steps % args.eval_steps != 0
+    ):
         print_main(
             f'Adjusting save_steps from {args.save_steps} to {args.eval_steps} '
             'to satisfy load_best_model_at_end requirement.'
@@ -297,10 +365,16 @@ def main():
     fsdp_kwargs: Dict[str, Any] = {}
     if args.fsdp:
         fsdp_kwargs['fsdp'] = args.fsdp
-        # FULL_STATE_DICT so the root FSDP unit (embeddings/final norm) is gathered
-        # on save; otherwise it's written as an unloadable 1-D flat shard.
+        # FULL_STATE_DICT: gather the unsharded weights on save. Without it, the
+        # root FSDP unit (embeddings + final norm) is written as a flat shard
+        # (e.g. embed_tokens.weight saved as 1-D [hidden*vocab/world_size]),
+        # which can't be reloaded — only the auto-wrapped decoder layers survive.
         fsdp_config: Dict[str, Any] = {'state_dict_type': 'FULL_STATE_DICT'}
-        if args.fsdp_transformer_layer_cls:
+        if args.fsdp_min_num_params and args.fsdp_min_num_params > 0:
+            fsdp_config['min_num_params'] = int(
+                args.fsdp_min_num_params
+            )  # size-based: wraps embedding too
+        elif args.fsdp_transformer_layer_cls:
             fsdp_config['transformer_layer_cls_to_wrap'] = [
                 args.fsdp_transformer_layer_cls
             ]
@@ -309,29 +383,28 @@ def main():
     # Training arguments
     training_args = TrainingArguments(
         output_dir=args.output_dir,
-        run_name=f"prior_attributer_{args.model_name.split('/')[-1]}",
         num_train_epochs=args.epochs,
+        max_steps=args.max_steps,
         per_device_train_batch_size=args.train_batch_size,
         per_device_eval_batch_size=args.eval_batch_size,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         learning_rate=args.learning_rate,
         weight_decay=args.weight_decay,
         warmup_steps=args.warmup_steps,
-        max_grad_norm=args.max_grad_norm,
         lr_scheduler_type=args.lr_scheduler_type,
+        max_grad_norm=args.max_grad_norm,
         logging_steps=args.logging_steps,
         save_steps=args.save_steps,
         save_total_limit=args.save_total_limit,
         save_only_model=args.save_only_model,
-        ddp_timeout=args.ddp_timeout,
         eval_steps=args.eval_steps,
         eval_strategy='steps',
-        save_strategy='steps',
+        save_strategy='no' if args.no_mid_checkpoints else 'steps',
         fp16=args.fp16,
         bf16=args.bf16,
         **fsdp_kwargs,
         metric_for_best_model='eval_loss',
-        greater_is_better=False,  # Lower loss is better
+        greater_is_better=False,
         # load_best_model_at_end=True would torch.load at training end, which
         # tripped HF's CVE-2025-32434 check on torch<2.6. Skip the auto-reload;
         # `trainer.state.best_model_checkpoint` is still populated.
@@ -339,29 +412,24 @@ def main():
         save_safetensors=True,
         remove_unused_columns=False,
         report_to='wandb' if is_main_process() else 'none',
-        logging_first_step=True,
+        run_name=f"{args.model_name.replace('/', '_')}_{args.output_dir.split('/')[-1]}",
         # DDP settings
         ddp_find_unused_parameters=False,
         dataloader_pin_memory=True,
         local_rank=local_rank if world_size > 1 else -1,
     )
 
-    # Train using precomputed attributions (no need to pass posterior_attributer)
-    resume_ckpt = args.resume_from_checkpoint
-    if resume_ckpt == 'True':
-        resume_ckpt = True  # Auto-detect latest checkpoint
-    best_checkpoint = attributer.train(
+    best_checkpoint = world_model.train(
         train_records=train_records,
         valid_records=valid_records,
         training_args=training_args,
-        resume_from_checkpoint=resume_ckpt,
     )
 
     print_main(f'Best model saved to: {best_checkpoint}')
 
     # Only save on main process
     if is_main_process():
-        attributer.save(best_checkpoint)
+        world_model.save(best_checkpoint)
 
     # Cleanup distributed
     if dist.is_initialized():

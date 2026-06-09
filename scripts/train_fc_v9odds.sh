@@ -23,20 +23,20 @@ COMMON=(
   --output-dir "$SAVE/$TAG" --model-name "$MODEL"
   --train-batch-size 4 --gradient-accumulation-steps 1 --eval-batch-size 4
   --learning-rate 2e-5 --head-lr-multiplier 5 --warmup-steps 30 --bf16
-  --per-news-loss --odds-null-categorical --null-rho0 1.0 --odds-eps 1e-3 --odds-temp 1.0
+  --null-rho0 1.0 --odds-eps 1e-3 --odds-temp 1.0
   --epochs "$EP" --max-news 30 --max-seq-length 1024
   --eval-steps 50 --logging-steps 10 --gradient-checkpointing
 )
 
 if [ "$MODE" = "fsdp" ]; then
   CUDA_VISIBLE_DEVICES=$GPUS "$ENVDIR/bin/torchrun" --nproc_per_node=$NPROC --master_port=$PORT \
-    train_multievent_forecaster.py "${COMMON[@]}" \
+    train_multievent_world_model.py "${COMMON[@]}" \
     --fsdp "full_shard auto_wrap" --fsdp-transformer-layer-cls Qwen3DecoderLayer \
     --no-mid-checkpoints \
     > "$LOG/$TAG.log" 2>&1
 else
   CUDA_VISIBLE_DEVICES=$GPUS "$ENVDIR/bin/python" \
-    train_multievent_forecaster.py "${COMMON[@]}" --save-steps 50 \
+    train_multievent_world_model.py "${COMMON[@]}" --save-steps 50 \
     > "$LOG/$TAG.log" 2>&1
 fi
 echo "$TAG done (exit $?)"

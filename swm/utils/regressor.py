@@ -23,7 +23,6 @@ class LLMRegressorConfig(PretrainedConfig):
         predict_delta: Optional[bool] = None,
         bounded_output: Optional[bool] = None,
         n_extra_features: Optional[int] = 0,
-        per_news_bce: Optional[bool] = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -38,10 +37,6 @@ class LLMRegressorConfig(PretrainedConfig):
         self.predict_delta = predict_delta
         self.bounded_output = bounded_output
         self.n_extra_features = n_extra_features or 0
-        # Attributer trained with per-news Bernoulli BCE (sigmoid per news, no
-        # softmax): inference must score sigmoid(logit) and derive no-news as
-        # Π(1-p_i) instead of taking a softmax over (news ∪ no-news).
-        self.per_news_bce = per_news_bce
 
 
 class LLMRegressor(PreTrainedModel):
@@ -59,7 +54,7 @@ class LLMRegressor(PreTrainedModel):
         # this is bf16, which roughly halves base memory vs the fp32 default.
         base = AutoModel.from_pretrained(
             config.base_model_name_or_path,
-            torch_dtype="auto",
+            torch_dtype='auto',
         )
         hidden_size = base.config.hidden_size
         if lora_config is not None:
@@ -82,7 +77,7 @@ class LLMRegressor(PreTrainedModel):
         self.lora_config = lora_config
 
     def forward(self, input_ids, attention_mask=None, extra_features=None, **kwargs):
-        # Returns raw per-sequence predictions (batch, 1). The forecaster and
+        # Returns raw per-sequence predictions (batch, 1). The world_model and
         # attributer trainers pool these into their own weighted-MSE / KL losses;
         # this module never computes a loss itself.
         outputs = self.llm(
@@ -92,13 +87,19 @@ class LLMRegressor(PreTrainedModel):
         hidden_states = outputs.last_hidden_state  # (batch, seq_len, hidden)
 
         if self.config.pooling_method == 'mean':
-            mask = attention_mask.unsqueeze(-1) if attention_mask is not None else torch.ones_like(hidden_states[:, :, :1])
+            mask = (
+                attention_mask.unsqueeze(-1)
+                if attention_mask is not None
+                else torch.ones_like(hidden_states[:, :, :1])
+            )
             pooled = (hidden_states * mask).sum(dim=1) / mask.sum(dim=1)
         else:
             # Last non-padded token pooling.
             if attention_mask is not None:
                 seq_lengths = attention_mask.sum(dim=1).long() - 1
-                batch_indices = torch.arange(hidden_states.shape[0], device=hidden_states.device)
+                batch_indices = torch.arange(
+                    hidden_states.shape[0], device=hidden_states.device
+                )
                 pooled = hidden_states[batch_indices, seq_lengths]
             else:
                 pooled = hidden_states[:, -1, :]
@@ -106,11 +107,17 @@ class LLMRegressor(PreTrainedModel):
         # autocast handled this during training; inference has no autocast).
         pooled = pooled.to(self.regression_head[0].weight.dtype)
         if getattr(self, 'n_extra_features', 0):
-            ef = extra_features.to(pooled.dtype) if extra_features is not None else pooled.new_zeros(pooled.size(0), self.n_extra_features)
+            ef = (
+                extra_features.to(pooled.dtype)
+                if extra_features is not None
+                else pooled.new_zeros(pooled.size(0), self.n_extra_features)
+            )
             pooled = torch.cat([pooled, ef], dim=-1)
         out = self.regression_head(pooled)
         if getattr(self.config, 'bounded_output', False):
-            out = torch.sigmoid(out)  # bound per-news pred to [0,1]=target_p; delta=target_p-before respects [-bp,1-bp]
+            out = torch.sigmoid(
+                out
+            )  # bound per-news pred to [0,1]=target_p; delta=target_p-before respects [-bp,1-bp]
         return out
 
     # Regressor-specific config fields. These CANNOT live in config.json: for
@@ -119,14 +126,20 @@ class LLMRegressor(PreTrainedModel):
     # sidecar the backbone can't clobber.
     _SIDECAR = 'llm_regressor_config.json'
     _SIDECAR_FIELDS = (
-        'base_model_name_or_path', 'max_length', 'pooling_method',
-        'max_news', 'target_temperature', 'predict_delta', 'bounded_output', 'n_extra_features',
-        'per_news_bce',
+        'base_model_name_or_path',
+        'max_length',
+        'pooling_method',
+        'max_news',
+        'target_temperature',
+        'predict_delta',
+        'bounded_output',
+        'n_extra_features',
     )
 
     def save_pretrained(self, save_directory: str, state_dict=None, **kwargs):
         Path(save_directory).mkdir(parents=True, exist_ok=True)
         import torch.distributed as dist
+
         rank0 = (not dist.is_initialized()) or dist.get_rank() == 0
 
         head_sd_override = None
@@ -142,31 +155,47 @@ class LLMRegressor(PreTrainedModel):
         if state_dict is not None and self.lora_config is None:
             if not rank0:
                 return
+
             def _clean(k):
                 return k.replace('_fsdp_wrapped_module.', '')
+
             sd = {_clean(k): v for k, v in state_dict.items()}
-            backbone_sd = {k[len('llm.'):]: v for k, v in sd.items() if k.startswith('llm.')}
-            head_sd_override = {k[len('regression_head.'):]: v
-                                for k, v in sd.items() if k.startswith('regression_head.')}
+            backbone_sd = {
+                k[len('llm.') :]: v for k, v in sd.items() if k.startswith('llm.')
+            }
+            head_sd_override = {
+                k[len('regression_head.') :]: v
+                for k, v in sd.items()
+                if k.startswith('regression_head.')
+            }
             inner = self.llm.module if hasattr(self.llm, 'module') else self.llm
             inner.save_pretrained(save_directory, state_dict=backbone_sd)
         else:
             # Fallback: FSDP without a passed state_dict (gather self ourselves),
             # or LoRA / single-GPU / DDP (direct save).
             try:
-                from torch.distributed.fsdp import (
-                    FullyShardedDataParallel as FSDP, StateDictType, FullStateDictConfig)
+                from torch.distributed.fsdp import FullStateDictConfig
+                from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+                from torch.distributed.fsdp import StateDictType
+
                 is_fsdp = any(isinstance(m, FSDP) for m in self.llm.modules())
             except Exception:
                 is_fsdp = False
             if is_fsdp and self.lora_config is None:
                 cfg = FullStateDictConfig(offload_to_cpu=True, rank0_only=True)
                 with FSDP.state_dict_type(self, StateDictType.FULL_STATE_DICT, cfg):
-                    full = self.state_dict()             # collective: ALL ranks enter
+                    full = self.state_dict()  # collective: ALL ranks enter
                 if rank0:
-                    backbone_sd = {k[len('llm.'):]: v for k, v in full.items() if k.startswith('llm.')}
-                    head_sd_override = {k[len('regression_head.'):]: v
-                                        for k, v in full.items() if k.startswith('regression_head.')}
+                    backbone_sd = {
+                        k[len('llm.') :]: v
+                        for k, v in full.items()
+                        if k.startswith('llm.')
+                    }
+                    head_sd_override = {
+                        k[len('regression_head.') :]: v
+                        for k, v in full.items()
+                        if k.startswith('regression_head.')
+                    }
                     inner = self.llm.module if hasattr(self.llm, 'module') else self.llm
                     inner.save_pretrained(save_directory, state_dict=backbone_sd)
             elif rank0:
@@ -177,7 +206,9 @@ class LLMRegressor(PreTrainedModel):
         if self.lora_config is not None:
             self.lora_config.save_pretrained(save_directory)
         torch.save(
-            head_sd_override if head_sd_override is not None else self.regression_head.state_dict(),
+            head_sd_override
+            if head_sd_override is not None
+            else self.regression_head.state_dict(),
             Path(save_directory) / 'regression_head.bin',
         )
         sidecar = {f: getattr(self.config, f, None) for f in self._SIDECAR_FIELDS}

@@ -32,13 +32,14 @@ Output format (separate file for negative samples):
     ]
 }
 """
+
 import argparse
 import os
 import random
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import List, Dict, Set, Tuple
+from typing import Dict, List, Set
 
 import jsonlines
 from tqdm import tqdm
@@ -169,52 +170,52 @@ def sample_normal_points(
     1. Small price change (below threshold)
     2. At least min_days_from_breakpoint away from any breakpoint
     3. Have enough history (at least window_size points)
-    
+
     Returns points with same structure as breakpoints:
     - before, after, change, z_score, window_start, window_end, window_history
     """
     daily_ts = market.get('daily_time_series', [])
     if not daily_ts or len(daily_ts) < 5:
         return []
-    
+
     # Get breakpoint days to avoid
     breakpoint_days = get_breakpoint_timestamps(market)
-    
+
     # Expand breakpoint days to include buffer zone
     excluded_days = set()
     for bp_day in breakpoint_days:
         for offset in range(-min_days_from_breakpoint, min_days_from_breakpoint + 1):
             excluded_days.add(bp_day + offset)
-    
+
     # Find candidate normal points
     candidates = []
     for i, point in enumerate(daily_ts):
         ts = point.get('t')
         if ts is None:
             continue
-        
+
         day = int(ts // 86400)
-        
+
         # Skip if too close to breakpoint
         if day in excluded_days:
             continue
-        
+
         # Skip first few days (need some history for window)
         if i < window_size:
             continue
-        
+
         # Calculate price change from previous day
         prev_point = daily_ts[i - 1]
         prev_ts = prev_point.get('t')
         prev_price = prev_point.get('p', prev_point.get('yes_price', 0))
         curr_price = point.get('p', point.get('yes_price', 0))
-        
+
         if prev_price is None or curr_price is None or prev_ts is None:
             continue
-        
+
         price_change = curr_price - prev_price
         abs_change = abs(price_change)
-        
+
         # We want points with small price changes (normal days)
         if abs_change < price_change_threshold:
             # Build window_history (same structure as breakpoints)
@@ -222,48 +223,56 @@ def sample_normal_points(
             window_start_idx = max(0, i - window_size)
             window_end_idx = i + 2  # Include both before (i) and after (i+1) points
             window_history = [
-                {'t': daily_ts[j].get('t'), 'p': daily_ts[j].get('p', daily_ts[j].get('yes_price'))}
+                {
+                    't': daily_ts[j].get('t'),
+                    'p': daily_ts[j].get('p', daily_ts[j].get('yes_price')),
+                }
                 for j in range(window_start_idx, min(window_end_idx, len(daily_ts)))
             ]
-            
+
             # Calculate a simple z_score based on rolling std
             if len(window_history) > 2:
                 prices = [p['p'] for p in window_history if p['p'] is not None]
                 if len(prices) > 2:
                     import statistics
+
                     try:
                         std = statistics.stdev(prices[:-1])  # Exclude current point
                         z_score = abs_change / std if std > 0 else 0
-                    except:
+                    except Exception:
                         z_score = 0
                 else:
                     z_score = 0
             else:
                 z_score = 0
-            
-            candidates.append({
-                # Same structure as breakpoints
-                'before': {'t': prev_ts, 'p': prev_price},
-                'after': {'t': ts, 'p': curr_price},
-                'change': price_change,
-                'z_score': z_score,
-                'window_start': window_history[0]['t'] if window_history else prev_ts,
-                'window_end': ts,
-                'window_history': window_history,
-                # Keep index for internal use
-                '_index': i,
-            })
-    
+
+            candidates.append(
+                {
+                    # Same structure as breakpoints
+                    'before': {'t': prev_ts, 'p': prev_price},
+                    'after': {'t': ts, 'p': curr_price},
+                    'change': price_change,
+                    'z_score': z_score,
+                    'window_start': window_history[0]['t']
+                    if window_history
+                    else prev_ts,
+                    'window_end': ts,
+                    'window_history': window_history,
+                    # Keep index for internal use
+                    '_index': i,
+                }
+            )
+
     # Randomly sample from candidates
     if len(candidates) <= num_samples:
         sampled = candidates
     else:
         sampled = random.sample(candidates, num_samples)
-    
+
     # Remove internal fields
     for point in sampled:
         point.pop('_index', None)
-    
+
     return sampled
 
 
@@ -280,7 +289,7 @@ def crawl_news_for_point(
     point_date = datetime.fromtimestamp(timestamp)
     start_date = (point_date - timedelta(days=days_before)).strftime('%Y-%m-%d')
     end_date = (point_date + timedelta(days=days_after)).strftime('%Y-%m-%d')
-    
+
     try:
         articles = crawler.fetch(
             query=query,
@@ -288,20 +297,26 @@ def crawl_news_for_point(
             end_date=end_date,
             max_results=max_results,
         )
-        
+
         # Normalize article format
         news_list = []
         for article in articles:
-            news_list.append({
-                'title': article.get('title', ''),
-                'description': article.get('description', ''),
-                'url': article.get('url') or article.get('link', ''),
-                'published_at': article.get('published_at') or article.get('publishedAt') or article.get('date', ''),
-                'source': article.get('source', {}).get('name', '') if isinstance(article.get('source'), dict) else article.get('source', ''),
-            })
+            news_list.append(
+                {
+                    'title': article.get('title', ''),
+                    'description': article.get('description', ''),
+                    'url': article.get('url') or article.get('link', ''),
+                    'published_at': article.get('published_at')
+                    or article.get('publishedAt')
+                    or article.get('date', ''),
+                    'source': article.get('source', {}).get('name', '')
+                    if isinstance(article.get('source'), dict)
+                    else article.get('source', ''),
+                }
+            )
         return news_list
     except Exception as e:
-        print(f"  Error crawling: {e}")
+        print(f'  Error crawling: {e}')
         return []
 
 
@@ -316,75 +331,74 @@ def load_processed_market_ids(output_file: str) -> Set[str]:
                     if market_id is not None:
                         processed_ids.add(str(market_id))
         except Exception as e:
-            print(f"Warning: Error reading existing output file: {e}")
+            print(f'Warning: Error reading existing output file: {e}')
     return processed_ids
 
 
 def main():
     args = parse_args()
-    
+
     # Set random seed
     random.seed(args.seed)
-    
+
     # Prepare output file
     Path(args.output_file).parent.mkdir(parents=True, exist_ok=True)
-    
+
     # Load already processed market IDs for resume support
     processed_ids = set()
     if args.skip_existing and Path(args.output_file).exists():
         processed_ids = load_processed_market_ids(args.output_file)
         print(f'Found {len(processed_ids)} already processed markets in output file')
-    
+
     # Load market data
     print(f'Loading data from {args.input_file}...')
     with jsonlines.open(args.input_file, 'r') as reader:
         markets = list(reader)
     print(f'Loaded {len(markets)} markets')
-    
+
     # Count markets with enough data
     eligible_markets = sum(
-        1 for m in markets
-        if len(m.get('daily_time_series', [])) >= 10
+        1 for m in markets if len(m.get('daily_time_series', [])) >= 10
     )
     print(f'Markets with enough time series data: {eligible_markets}')
-    
+
     # Initialize crawler
     if args.use_gnews:
-        api_key = os.environ.get("GNEWS_API_KEY")
+        api_key = os.environ.get('GNEWS_API_KEY')
         if not api_key:
-            print("Error: GNEWS_API_KEY environment variable not set")
-            print("Get your free API key at: https://gnews.io/")
+            print('Error: GNEWS_API_KEY environment variable not set')
+            print('Get your free API key at: https://gnews.io/')
             return
         crawler = GNewsCrawler(api_key=api_key)
-        print("Using GNews API")
+        print('Using GNews API')
     else:
         crawler = GoogleNewsCrawler(
             min_delay=args.min_delay,
             max_delay=args.max_delay,
         )
-        print("Using Google News scraping")
-    
+        print('Using Google News scraping')
+
     # Process each market
     crawled_count = 0
     skipped_markets = 0
     markets_with_samples = 0
-    
+
     # Open output file in append mode
     write_mode = 'a' if processed_ids else 'w'
-    
+
     with jsonlines.open(args.output_file, mode=write_mode) as writer:
         for market in tqdm(markets, desc='Processing markets'):
             market_id = str(market.get('market_id', ''))
-            
+
             # Skip if already processed
             if market_id in processed_ids:
                 skipped_markets += 1
                 continue
-            
+
             question = market.get('question') or market.get('title', '')
             if not question:
                 continue
-            
+
             # Sample normal points
             normal_points = sample_normal_points(
                 market=market,
@@ -392,17 +406,17 @@ def main():
                 price_change_threshold=args.price_change_threshold,
                 min_days_from_breakpoint=args.min_days_from_breakpoint,
             )
-            
+
             if not normal_points:
                 continue
-            
+
             # Extract keywords if enabled
             search_query = question
             if args.use_llm_keywords:
                 keywords = extract_search_keywords(question, model=args.llm_model)
                 if keywords:
                     search_query = keywords
-            
+
             # Crawl news for each normal point
             for point in normal_points:
                 # Get timestamp from 'after' field (new format)
@@ -418,11 +432,13 @@ def main():
                 )
                 point['news'] = news
                 crawled_count += 1
-                
+
                 if news:
                     point_date = datetime.fromtimestamp(point_ts).strftime('%Y-%m-%d')
-                    tqdm.write(f'Found {len(news)} articles for normal point on {point_date}')
-            
+                    tqdm.write(
+                        f'Found {len(news)} articles for normal point on {point_date}'
+                    )
+
             # Write result
             result = {
                 'market_id': market_id,
@@ -434,8 +450,8 @@ def main():
             writer.write(result)
             writer._fp.flush()  # Flush to disk immediately
             markets_with_samples += 1
-    
-    print(f'\nDone!')
+
+    print('\nDone!')
     print(f'  Markets with samples: {markets_with_samples}')
     print(f'  Total points crawled: {crawled_count}')
     print(f'  Skipped markets: {skipped_markets} (already in output)')

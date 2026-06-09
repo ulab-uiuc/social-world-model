@@ -89,12 +89,7 @@ def get_option_reasons(card_id, option):
 
         if not reason_doc:
             return jsonify(
-                {
-                    'card_id': card_id,
-                    'option': option,
-                    'model': model,
-                    'reasons': []
-                }
+                {'card_id': card_id, 'option': option, 'model': model, 'reasons': []}
             ), 200
 
         return jsonify(reason_doc), 200
@@ -105,49 +100,42 @@ def get_option_reasons(card_id, option):
 @app.route('/api/generate_reasons', methods=['POST'])
 def generate_reasons():
     try:
-        import sys
         import os
+        import sys
+
         sys.path.append(os.path.join(os.path.dirname(__file__), 'utils'))
         from llm_reasoning_generator import generate_and_store_reasons_for_option
-        
+
         data = request.json
         card_id = data.get('card_id')
         option = data.get('option')
         model = data.get('model', 'gpt-4o-mini')
-        
+
         if not card_id or not option:
             return jsonify({'error': 'Missing card_id or option'}), 400
-        
+
         # Check if the reasoning already exists
-        existing = option_reasons_collection.find_one({
-            'card_id': card_id, 
-            'option': option, 
-            'model': model
-        })
-        
+        existing = option_reasons_collection.find_one(
+            {'card_id': card_id, 'option': option, 'model': model}
+        )
+
         if existing:
             return jsonify(existing), 200
-            
+
         # Get card information
         card = cards_collection.find_one({'card_id': card_id}, {'_id': 0})
         if not card:
             return jsonify({'error': 'Card not found'}), 404
-            
+
         # Generate reasoning
         reasons = generate_and_store_reasons_for_option(
-            card_id=card_id,
-            question=card['question'], 
-            option=option,
-            model_name=model
+            card_id=card_id, question=card['question'], option=option, model_name=model
         )
-        
-        return jsonify({
-            'card_id': card_id,
-            'option': option, 
-            'model': model,
-            'reasons': reasons
-        }), 200
-        
+
+        return jsonify(
+            {'card_id': card_id, 'option': option, 'model': model, 'reasons': reasons}
+        ), 200
+
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -166,7 +154,12 @@ def vote():
         if reason_id:
             model = data.get('model', 'gpt-4o-mini')
             option_reasons_collection.update_one(
-                {'card_id': card_id, 'option': option, 'model': model, 'reasons.reason_id': reason_id},
+                {
+                    'card_id': card_id,
+                    'option': option,
+                    'model': model,
+                    'reasons.reason_id': reason_id,
+                },
                 {'$inc': {'reasons.$.votes': 1}},
                 upsert=False,
             )
@@ -188,7 +181,7 @@ def get_vote_history(card_id):
             query['timestamp'] = {'$gte': cutoff_date.isoformat()}
 
         history = list(history_collection.find(query, {'_id': 0}).sort('timestamp', 1))
-        
+
         # Return raw data without any cleaning or processing
         return jsonify(history), 200
     except Exception as e:
