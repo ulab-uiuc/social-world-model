@@ -11,25 +11,26 @@
   <a href="https://pytorch.org/"><img src="https://img.shields.io/badge/PyTorch-2.x-ee4c2c?logo=pytorch" alt="PyTorch"></a>
 </p>
 
-A **Social World Model (SWM)** predicts how a market's collective belief (a
-prediction-market price) shifts in response to news. Given a question, its price
-history, and recent news, it forecasts the next price move — and, crucially,
-*which* news drove it.
+**Social World Model (SWM)** models how collective beliefs change after
+real-world events. We represent social beliefs with prediction-market
+trajectories and learn an event-conditioned transition model
 
-This repo provides a **training method** and a benchmark (**SWM-Bench**) for
-that task. An SWM is built from two components that share the same forecasting
-objective:
+$$ s_{t+1} \sim P_\theta(s_{t+1} \mid s_t, e_t) $$
 
-- a **social attributor**, which scores how responsible each news item is for a
-  belief shift, and
-- a **world model**, which predicts the price move from the attributed news and
-  history.
+where $s_t$ is the current belief state and $e_t$ is a news/event signal. This
+repo provides the training method and a benchmark, **SWM-Bench**.
 
-We train both and run them jointly at inference. The attributor comes in two
-forms: a large prompted LLM **posterior** attributor that scores news with
-knowledge of the realized move (the training signal and an oracle ceiling), and
-a small fine-tuned **prior** attributor that imitates it without seeing the
-future (the deployable system).
+## Training Recipe
+
+SWM uses a **posterior-guided training recipe**. A frozen hindsight LLM first
+identifies which candidate event best explains the observed belief shift. We then
+use these attribution weights to train:
+
+- a **prior attributor** that predicts event relevance *before* seeing the future;
+- a **world model** that predicts the belief change caused by each event.
+
+At inference, SWM either forecasts future beliefs from real news or simulates
+belief shifts under hypothetical events.
 
 ## Installation
 
