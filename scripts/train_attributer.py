@@ -338,7 +338,7 @@ def main():
         load_best_model_at_end=False,
         save_safetensors=True,
         remove_unused_columns=False,
-        report_to='wandb' if is_main_process() else 'none',
+        report_to='none',
         logging_first_step=True,
         # DDP settings
         ddp_find_unused_parameters=False,

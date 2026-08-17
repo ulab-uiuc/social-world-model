@@ -4,11 +4,37 @@ from typing import Any, Dict, List, Union
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-from transformers import AutoTokenizer, Trainer, TrainingArguments
+from transformers import (
+    AutoTokenizer,
+    Trainer,
+    TrainerCallback,
+    TrainingArguments,
+)
 
 from .data import Record
 from .dataset import MultiEventWorldModelDataset, collate_padded_groups
 from .utils.regressor import LLMRegressor, LLMRegressorConfig
+
+
+class _BestEvalSaver(TrainerCallback):
+    """Save an FSDP-safe checkpoint whenever eval_loss hits a new minimum.
+
+    Training can dip into a good region (eval_loss ~0.012) then revert to the
+    predict-zero collapse floor (~0.0155); --no-mid-checkpoints keeps only the
+    final epoch, so without this we lose the good model.
+    """
+
+    def __init__(self, save_fn):
+        self.best = float('inf')
+        self._save_fn = save_fn
+
+    def on_evaluate(self, args, state, control, metrics=None, **kwargs):
+        if not metrics:
+            return
+        loss = metrics.get('eval_loss')
+        if loss is not None and loss < self.best:
+            self.best = loss
+            self._save_fn()
 
 
 class WeightedTrainer(Trainer):
@@ -241,12 +267,60 @@ class MultiEventWorldModel:
             head_lr_multiplier=self.head_lr_multiplier,
         )
 
+        best_dir = Path(training_args.output_dir) / 'best-model'
+        saver = _BestEvalSaver(lambda: self._fsdp_safe_save(trainer, best_dir))
+        trainer.add_callback(saver)
+
         self._safe_train(trainer)
-        if trainer.state.best_model_checkpoint:
-            return trainer.state.best_model_checkpoint
+
         final = Path(training_args.output_dir) / 'final-model'
-        trainer.save_model(final)
+        self._fsdp_safe_save(trainer, final)
+
+        # Prefer the best-eval checkpoint. Training can escape the predict-zero
+        # basin mid-run and then REVERT to it (eval_loss dips to ~0.012 around
+        # epoch 3 then climbs back to the ~0.0155 collapse floor). With
+        # --no-mid-checkpoints, only the final epoch is saved, so we would keep
+        # the collapsed model. The best-eval callback captures the good one.
+        if saver.best < float('inf') and (best_dir / 'config.json').exists():
+            print(f'[world_model] using best-model (eval_loss={saver.best:.5f}) -> {best_dir}')
+            return str(best_dir)
         return str(final)
+
+    def _fsdp_safe_save(self, trainer, dest: Path) -> None:
+        """Gather the full (unsharded) state dict on rank 0 and save_pretrained.
+
+        trainer.save_model() writes flat shards for the root FSDP unit
+        (embed_tokens / final norm), which cannot be reloaded; this gathers
+        FULL_STATE_DICT first so the checkpoint is loadable.
+        """
+        try:
+            import torch.distributed as dist
+            from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+            from torch.distributed.fsdp import (
+                FullStateDictConfig,
+                StateDictType,
+            )
+            model = trainer.accelerator.unwrap_model(trainer.model)
+            if isinstance(trainer.model, FSDP) or any(
+                isinstance(m, FSDP) for m in trainer.model.modules()
+            ):
+                cfg = FullStateDictConfig(offload_to_cpu=True, rank0_only=True)
+                with FSDP.state_dict_type(trainer.model, StateDictType.FULL_STATE_DICT, cfg):
+                    sd = trainer.model.state_dict()
+                if not dist.is_initialized() or dist.get_rank() == 0:
+                    dest.mkdir(parents=True, exist_ok=True)
+                    clean_sd = {
+                        k.replace('_fsdp_wrapped_module.', ''): v
+                        for k, v in sd.items()
+                    }
+                    model.save_pretrained(dest, state_dict=clean_sd, safe_serialization=True)
+                if dist.is_initialized():
+                    dist.barrier()
+            else:
+                trainer.save_model(dest)
+        except Exception as e:
+            print(f'[world_model] FSDP-safe save failed ({e}); falling back to trainer.save_model()')
+            trainer.save_model(dest)
 
     def predict(
         self,
