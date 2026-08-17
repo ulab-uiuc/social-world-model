@@ -42,9 +42,15 @@ def setup_distributed():
         world_size = int(os.environ['WORLD_SIZE'])
         local_rank = int(os.environ.get('LOCAL_RANK', 0))
 
-        # Initialize process group
+        # Initialize process group. Use a long timeout: the end-of-training
+        # best-model / final-model save does an FSDP FULL_STATE_DICT gather with
+        # offload_to_cpu (slow for 3B), during which idle ranks would otherwise
+        # hit the default 10-min NCCL watchdog and SIGABRT the whole job.
         if not dist.is_initialized():
-            dist.init_process_group(backend='nccl')
+            from datetime import timedelta
+            dist.init_process_group(
+                backend='nccl', timeout=timedelta(minutes=60)
+            )
 
         # Set device for this process
         torch.cuda.set_device(local_rank)
@@ -411,7 +417,7 @@ def main():
         load_best_model_at_end=False,
         save_safetensors=True,
         remove_unused_columns=False,
-        report_to='wandb' if is_main_process() else 'none',
+        report_to='none',
         run_name=f"{args.model_name.replace('/', '_')}_{args.output_dir.split('/')[-1]}",
         # DDP settings
         ddp_find_unused_parameters=False,
