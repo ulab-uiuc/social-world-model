@@ -12,6 +12,8 @@ odds transform in MultiEventWorldModelDataset sees a comparable scale to the
 0.75/0.95 oracle scores.
 """
 
+import random
+import statistics
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Optional
@@ -25,6 +27,13 @@ QUERY_PREFIX = 'Represent this sentence for searching relevant passages: '
 @dataclass
 class RetrievedNews:
     news_index: int
+    score: float
+    similarity: float
+
+
+@dataclass
+class RetrievedMarket:
+    market_id: str
     score: float
     similarity: float
 
@@ -124,6 +133,51 @@ class EmbeddingRetriever:
             for (idx, sim), score in zip(kept, scores)
         ]
 
+    def top_markets(
+        self,
+        news_index: int,
+        market_ids: Sequence[str],
+        k: int,
+        min_similarity: float = 0.0,
+        temperature: float = 0.05,
+        calibration: Optional['Calibration'] = None,
+    ) -> list[RetrievedMarket]:
+        """Top-k markets for one headline -- the reverse of `top_k`.
+
+        Used by the news-driven backtest: iterate the wire in time order and, for
+        each headline, surface the markets it is most about. The same
+        `calibration` is reused so an off-topic headline scores every market near
+        zero and the builder can decline to trade -- exactly the null-routing the
+        forward direction depends on. Scoring is on *absolute* similarity, not a
+        softmax over the candidate markets, for the same reason.
+        """
+        if self._news is None or k <= 0 or len(market_ids) == 0:
+            return []
+        ids = [m for m in market_ids if m in self._markets]
+        if not ids:
+            return []
+        news_vec = self._news[news_index]
+        mat = np.stack([self._markets[m] for m in ids])
+        sims = mat @ news_vec
+        order = np.argsort(-sims)[:k]
+        kept = [(ids[i], float(sims[i])) for i in order]
+        kept = [(mid, sim) for mid, sim in kept if sim >= min_similarity]
+        if not kept:
+            return []
+
+        if calibration is not None:
+            scores = [calibration(sim) for _, sim in kept]
+        else:
+            raw = np.array([sim for _, sim in kept], 'float64')
+            weights = np.exp((raw - raw.max()) / max(temperature, 1e-6))
+            weights = weights / weights.max()
+            scores = [float(0.95 * w) for w in weights]
+
+        return [
+            RetrievedMarket(market_id=mid, score=float(score), similarity=sim)
+            for (mid, sim), score in zip(kept, scores)
+        ]
+
 
 @dataclass
 class Calibration:
@@ -175,3 +229,81 @@ def calibrate(
     if hi <= lo:
         hi = lo + 1e-3
     return Calibration(lo=float(lo), hi=float(hi))
+
+
+def fit_calibration(
+    train_records: Sequence[dict],
+    retriever: EmbeddingRetriever,
+    n_records: int,
+    seed: int,
+    verbose: bool = True,
+) -> Calibration:
+    """Similarity gap between oracle-positive and unattributed headlines.
+
+    Fit on train records only. Both sides are measured inside the same record so
+    the comparison is per-market, not across markets of differing verbosity.
+    Shared by the grid and news-driven cell builders so they gate relevance on
+    an identical, out-of-sample-safe mapping.
+    """
+    rng = random.Random(seed)
+    sample = (
+        list(train_records)
+        if len(train_records) <= n_records
+        else rng.sample(list(train_records), n_records)
+    )
+    market_ids, texts, seen_markets = [], [], set()
+    for record in sample:
+        mid = str(record['market_id'])
+        if mid in seen_markets:
+            continue
+        seen_markets.add(mid)
+        market_ids.append(mid)
+        texts.append(
+            f'{record.get("question", "")}\n{(record.get("description") or "")[:400]}'
+        )
+    retriever.fit_markets(market_ids, texts)
+
+    news_texts, index_of = [], {}
+    for record in sample:
+        for item in record.get('news') or []:
+            key = ((item.get('title') or '').strip(), item.get('published_at'))
+            if key in index_of:
+                continue
+            index_of[key] = len(news_texts)
+            body = (item.get('description') or '').strip()
+            title = (item.get('title') or '').strip()
+            news_texts.append(f'{title}\n{body}' if body != title else title)
+    retriever.fit_news(news_texts)
+
+    positives, negatives = [], []
+    for record in sample:
+        mid = str(record['market_id'])
+        news = record.get('news') or []
+        pos_idx = {
+            a['news_idx']
+            for a in record.get('attributions') or []
+            if 0 <= a.get('news_idx', -1) < len(news) and float(a.get('score') or 0) > 0
+        }
+        if not pos_idx:
+            continue
+        corpus_idx, is_pos = [], []
+        for i, item in enumerate(news):
+            key = ((item.get('title') or '').strip(), item.get('published_at'))
+            if key not in index_of:
+                continue
+            corpus_idx.append(index_of[key])
+            is_pos.append(i in pos_idx)
+        if not corpus_idx:
+            continue
+        sims = retriever.similarities(mid, corpus_idx)
+        for sim, flag in zip(sims, is_pos):
+            (positives if flag else negatives).append(float(sim))
+
+    calibration = calibrate(positives, negatives)
+    if verbose and positives and negatives:
+        print(
+            f'[calib] positives={len(positives)} (mean {statistics.fmean(positives):.3f}) '
+            f'negatives={len(negatives)} (mean {statistics.fmean(negatives):.3f}) '
+            f'-> lo={calibration.lo:.3f} hi={calibration.hi:.3f}'
+        )
+    return calibration

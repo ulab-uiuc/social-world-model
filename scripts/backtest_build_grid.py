@@ -28,7 +28,6 @@ holding period. Those are labels for the P&L only -- the prompt is built from
 import argparse
 import datetime as dt
 import json
-import statistics
 import sys
 from pathlib import Path
 
@@ -37,7 +36,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tqdm import tqdm
 
 from swm.backtest.newsstream import NewsStream
-from swm.backtest.retrieval import EmbeddingRetriever, calibrate
+from swm.backtest.retrieval import EmbeddingRetriever, fit_calibration
 from swm.backtest.universe import (
     DAY,
     MIN_HISTORY_POINTS,
@@ -96,73 +95,6 @@ def oracle_news(record, max_news):
     )
 
 
-def fit_calibration(train_records, stream, retriever, n_records, seed):
-    """Similarity gap between oracle-positive and unattributed headlines.
-
-    Fit on train records only. Both sides are measured inside the same record so
-    the comparison is per-market, not across markets of differing verbosity.
-    """
-    import random
-
-    rng = random.Random(seed)
-    sample = train_records if len(train_records) <= n_records else rng.sample(
-        train_records, n_records
-    )
-    market_ids, texts, seen_markets = [], [], set()
-    for record in sample:
-        mid = str(record['market_id'])
-        if mid in seen_markets:
-            continue
-        seen_markets.add(mid)
-        market_ids.append(mid)
-        texts.append(f'{record.get("question", "")}\n{(record.get("description") or "")[:400]}')
-    retriever.fit_markets(market_ids, texts)
-
-    news_texts, index_of = [], {}
-    for record in sample:
-        for item in record.get('news') or []:
-            key = ((item.get('title') or '').strip(), item.get('published_at'))
-            if key in index_of:
-                continue
-            index_of[key] = len(news_texts)
-            body = (item.get('description') or '').strip()
-            title = (item.get('title') or '').strip()
-            news_texts.append(f'{title}\n{body}' if body != title else title)
-    retriever.fit_news(news_texts)
-
-    positives, negatives = [], []
-    for record in sample:
-        mid = str(record['market_id'])
-        news = record.get('news') or []
-        pos_idx = {
-            a['news_idx']
-            for a in record.get('attributions') or []
-            if 0 <= a.get('news_idx', -1) < len(news) and float(a.get('score') or 0) > 0
-        }
-        if not pos_idx:
-            continue
-        corpus_idx, is_pos = [], []
-        for i, item in enumerate(news):
-            key = ((item.get('title') or '').strip(), item.get('published_at'))
-            if key not in index_of:
-                continue
-            corpus_idx.append(index_of[key])
-            is_pos.append(i in pos_idx)
-        if not corpus_idx:
-            continue
-        sims = retriever.similarities(mid, corpus_idx)
-        for sim, flag in zip(sims, is_pos):
-            (positives if flag else negatives).append(float(sim))
-
-    calibration = calibrate(positives, negatives)
-    print(
-        f'[calib] positives={len(positives)} (mean {statistics.fmean(positives):.3f}) '
-        f'negatives={len(negatives)} (mean {statistics.fmean(negatives):.3f}) '
-        f'-> lo={calibration.lo:.3f} hi={calibration.hi:.3f}'
-    )
-    return calibration
-
-
 def main():
     args = parse_args()
     lookback = int(args.lookback_hours * HOUR)
@@ -210,7 +142,7 @@ def main():
     if args.news == 'retrieval':
         retriever = EmbeddingRetriever(args.embed_model, device=args.embed_device)
         calibration = fit_calibration(
-            train, stream, retriever, args.calib_records, args.seed
+            train, retriever, args.calib_records, args.seed
         )
         # Re-fit both corpora on everything the test window needs.
         uniq = {}
