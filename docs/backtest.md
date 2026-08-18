@@ -114,8 +114,10 @@ original record, along with identical `before_price`, history length and target.
 The `attributions` field is a posterior label. `--news retrieval` replaces it
 with something a live system could actually compute:
 
-1. Union every record's headline list into the global jin10 wire — **114,316**
-   de-duplicated English items with timestamps.
+1. Union every record's headline list into a **reconstructed news stream** —
+   114,316 de-duplicated English items with timestamps. See the caveat in §6:
+   this is not the jin10 wire, it is the union of the one-hour windows around
+   detected breakpoints.
 2. At each decision, slice the wire to the news window and collapse
    re-publications of the same headline.
 3. Score each headline against the market text with the bi-encoder, keep top 8.
@@ -151,6 +153,34 @@ The grid is 231 decision times x 52–134 live markets each (median 71). Only
 a live system must decline. Example: at 2026-06-20 19:00 UTC the same Iran
 headlines are scored against 134 markets simultaneously, one of which is
 "Will Solana dip to $60 in June?".
+
+### The timeline is breakpoint-driven, not news-driven
+
+The 231 decision times are the `target.t` of the test records — the moments a
+breakpoint was detected — not the moments news arrived. Over the 30-day test
+window that is 7.7 decisions per day, with a median gap of 1h between
+consecutive decisions but a p90 of 9h and a maximum of **73h**.
+
+This is a property of the source file, not a choice. The reconstructed news
+stream is assembled from per-record news lists, so it only exists near
+breakpoints:
+
+| Test-window hours | Count | Headlines in the stream |
+|---|---|---|
+| Covered by some decision window | 261 | 11,094 |
+| Not covered | 467 | **0** |
+
+**467 of 728 hours contain no news at all.** Iterating the stream
+chronologically instead of iterating decision times would therefore produce the
+identical 231 decision points — there is nothing to iterate over in between.
+
+So the backtest answers "when news lands, does the model pick the right market
+and the right direction?" It cannot answer "run this 24/7 for a year and does
+it profit", because for 64% of the wall-clock there is no input. Doing that
+needs the raw jin10 archive over the window plus a price series that can settle
+at arbitrary times — `swmbench_2h_1year_with_jin10_news.jsonl` and
+`polymarket_*_series.jsonl` in the same HF repo have both, but that file's news
+is untranslated Chinese while this checkpoint was trained on English.
 
 ## 7. One position, filled once
 
@@ -439,6 +469,9 @@ tests/test_backtest_engine.py
 * **Heterogeneous holding periods in grid mode**: quiet markets are quoted daily,
   so they hold ~24h against the breakpoint cells' 2h. `strata.by_hold` exposes
   this.
+* **The news stream is not a wire.** It exists only in the 261 of 728
+  test-window hours that sit near a breakpoint (§6). Every number here is
+  conditional on news having landed; none of it measures idle time.
 
 ## 16. What would make it tradeable
 
