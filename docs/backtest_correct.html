@@ -1,0 +1,162 @@
+<title>SWM News-Driven Backtest</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root {
+  --ground:#F1F5F6; --surface:#FFFFFF; --raised:#F7FAFA;
+  --ink:#12212A; --body:#2C3D45; --muted:#5E727B; --faint:#8FA1A8;
+  --rule:#D6E0E3; --rule-soft:#E6EDEF;
+  --accent:#1A5C64; --accent-soft:#E2EFF0; --gold:#9A6E1C;
+  --gain:#1F7350; --loss:#A83535;
+  --shadow:0 1px 2px rgba(18,33,42,.05), 0 8px 24px -12px rgba(18,33,42,.16);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground:#0C1518; --surface:#141F23; --raised:#1A272C;
+    --ink:#E7F0F2; --body:#C3D2D6; --muted:#8DA2A9; --faint:#63787F;
+    --rule:#25353A; --rule-soft:#1D2B30;
+    --accent:#5FB3BC; --accent-soft:#123336; --gold:#D2A44E;
+    --gain:#4FBC8C; --loss:#E37070;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 28px -14px rgba(0,0,0,.7);
+  }
+}
+:root[data-theme="dark"] {
+  --ground:#0C1518; --surface:#141F23; --raised:#1A272C;
+  --ink:#E7F0F2; --body:#C3D2D6; --muted:#8DA2A9; --faint:#63787F;
+  --rule:#25353A; --rule-soft:#1D2B30;
+  --accent:#5FB3BC; --accent-soft:#123336; --gold:#D2A44E;
+  --gain:#4FBC8C; --loss:#E37070;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 28px -14px rgba(0,0,0,.7);
+}
+* { box-sizing:border-box; }
+body {
+  margin:0; background:var(--ground); color:var(--body);
+  font-family:"IBM Plex Sans","Helvetica Neue",Arial,sans-serif;
+  font-size:16.5px; line-height:1.66; -webkit-font-smoothing:antialiased;
+}
+.doc { max-width:1000px; margin:0 auto; padding:56px 28px 96px; }
+.doc > *:not(.scroll):not(pre):not(hr):not(.lead) { max-width:70ch; }
+h1, h2, h3 {
+  font-family:Newsreader,Georgia,"Times New Roman",serif; color:var(--ink);
+  text-wrap:balance; font-weight:600; letter-spacing:-.012em;
+}
+h1 { font-size:clamp(2.1rem,4.4vw,3rem); line-height:1.08; letter-spacing:-.025em; margin:0 0 1.4rem; }
+h2 { font-size:clamp(1.4rem,2.4vw,1.8rem); line-height:1.2; margin:3.4rem 0 .9rem; padding-top:1.6rem; border-top:1px solid var(--rule); }
+h3 { font-size:1.14rem; margin:2.2rem 0 .6rem; }
+p { margin:0 0 1.05rem; }
+a { color:var(--accent); text-underline-offset:3px; }
+strong { color:var(--ink); font-weight:600; }
+em { color:var(--ink); }
+hr { border:none; border-top:1px solid var(--rule); margin:3.2rem 0; }
+h1 + p, h1 + p + p { font-size:1.1rem; color:var(--muted); }
+h1 + p strong, h1 + p + p strong { color:var(--ink); }
+ul { margin:0 0 1.05rem; padding-left:1.25rem; }
+li { margin-bottom:.45rem; }
+code {
+  font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:.85em; background:var(--raised); border:1px solid var(--rule-soft);
+  border-radius:4px; padding:1px 5px; color:var(--ink);
+}
+pre {
+  background:var(--raised); border:1px solid var(--rule); border-radius:8px;
+  padding:16px 18px; overflow-x:auto; font-size:.82rem; line-height:1.7;
+  margin:1.4rem 0; max-width:100%;
+}
+pre code { background:none; border:none; padding:0; font-size:inherit; color:var(--body); }
+.scroll { overflow-x:auto; margin:1.5rem 0; border:1px solid var(--rule);
+          border-radius:9px; background:var(--surface); box-shadow:var(--shadow); }
+table { width:100%; border-collapse:collapse; font-size:.88rem; font-variant-numeric:tabular-nums; }
+th, td { padding:9px 14px; text-align:right; border-bottom:1px solid var(--rule-soft); white-space:nowrap; }
+th {
+  font-family:"IBM Plex Mono",monospace; font-size:.66rem; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--faint); font-weight:500;
+  border-bottom:1px solid var(--rule); background:var(--raised); position:sticky; top:0; text-align:right;
+}
+td:first-child, th:first-child { text-align:left; white-space:normal; min-width:12ch; }
+tbody tr:last-child td { border-bottom:none; }
+tbody tr:hover td { background:var(--accent-soft); }
+.up { color:var(--gain); } .down { color:var(--loss); }
+:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:3px; }
+@media (max-width:640px) { .doc { padding:32px 18px 64px; } body { font-size:15.5px; } h2 { margin-top:2.6rem; } }
+</style>
+<div class="doc">
+<h1>SWM news-driven backtest</h1>
+<p>The <a href="backtest.html">grid backtest</a> run from the opposite axis: <strong>walk the
+jin10 wire in time order, and for each important headline retrieve the markets it
+is about and trade them.</strong> Model under test: <code>world_model_qwen2p5_3b_jin10d_bal</code>
+— a Qwen2.5-<strong>7B</strong> world model (the dir name's "3b" is a leftover) trained on the
+debiased daily jin10 set.</p>
+<p><strong>Same verdict, opposite direction: a small, statistically real directional edge
+worth about as much as the bid-ask spread — no more.</strong></p>
+<hr />
+
+<h2>1. Design</h2>
+<pre><code>for each important jin10 headline, in publication order:
+    reverse-retrieve the top-5 markets the headline is about
+    open a position now, hold ~24h to the next daily quote, settle</code></pre>
+<p>One bi-encoder, two directions: <strong>reverse retrieval</strong> picks which markets a
+headline may trade; <strong>forward retrieval</strong> fills each prompt with that market's
+recent news so the input matches training. Everything after cell-building — the
+7B model, the P&amp;L, the baselines — is the grid backtest's code unchanged; only
+<code>scripts/backtest_build_news_grid.py</code> is new. Every input is anchored at the
+headline time (no look-ahead); the settle quote is a P&amp;L label only.</p>
+
+<h2>2. Universe and how a trade is decided</h2>
+<p><strong>2,067</strong> out-of-sample headlines (2026-06-17 onward) → <strong>2,812</strong> scored cells →
+<strong>1,297</strong> distinct positions → <strong>589</strong> trades, across 183 markets. The set is
+<strong>balanced</strong>: 38% up, mean move -0.2c, mean entry 0.271 — so buying YES blind
+<em>loses</em>, and a positive return must come from calling direction.</p>
+<p>The 589 falls out of three filters (model and baselines alike): dedup a
+daily-quoted market to one position → keep only <code>|pred − entry| ≥ 0.05</code> → drop
+unaffordable fills. Baselines ignore the signal and trade all 1,297. (Entry and
+the 24h anchor coincide here, so <code>momentum</code>/<code>contrarian</code> fire on zero cells and
+SWM's edge is pure forecast, not mean-reversion.)</p>
+
+<h2>3. Results — exit at next quote</h2>
+<p>Threshold 0.05, 1c spread, $1 per trade.</p>
+<div class="scroll"><table>
+<thead><tr><th>strategy</th><th>trades</th><th>return</th><th>95% CI</th><th>hit</th><th>net/share</th></tr></thead>
+<tbody>
+<tr><td><strong>SWM</strong></td><td>589</td><td><strong class="up">+1.01%</strong></td><td>-7.3 to +10.0%</td><td>38.0%</td><td>-0.16c</td></tr>
+<tr><td>Always YES</td><td>1,297</td><td class="down">-2.22%</td><td>-8.2 to +4.3%</td><td>31.5%</td><td>-0.89c</td></tr>
+<tr><td>Always NO</td><td>1,297</td><td class="down">-0.24%</td><td>-2.7 to +2.7%</td><td>39.5%</td><td>-1.11c</td></tr>
+<tr><td>Random</td><td>1,297</td><td class="up">+0.63%</td><td>-3.5 to +4.8%</td><td>36.8%</td><td>-0.45c</td></tr>
+<tr><td>Perfect direction</td><td>528</td><td class="up">+53.04%</td><td>+42.9 to +63.2%</td><td>100%</td><td>+13.90c</td></tr>
+</tbody>
+</table></div>
+<p>On <strong>SWM's own 589 positions</strong>, blind YES returns -3.1% and blind NO -0.4% —
+no drift to ride, so the +1.0% is a genuine directional call. Perfect direction
+on those positions makes +26%: the information is abundant, the model captures a
+sliver. (Holding to <code>resolution</code> instead gives -2.4% with a -33%→+46% CI — pure
+noise, reported for completeness only.)</p>
+
+<h2>4. Real signal, eaten by the spread</h2>
+<p>Set the spread to zero and the edge is unmistakable and monotone in confidence;
+put 1c back and it collapses:</p>
+<div class="scroll"><table>
+<thead><tr><th>threshold</th><th>trades</th><th>ROI frictionless</th><th>ROI with 1c spread</th></tr></thead>
+<tbody>
+<tr><td>0.00</td><td>1,297</td><td class="up">+8.64%</td><td class="up">+0.91%</td></tr>
+<tr><td>0.02</td><td>1,005</td><td class="up">+10.08%</td><td class="up">+1.73%</td></tr>
+<tr><td>0.05</td><td>589</td><td class="up">+10.45%</td><td class="up">+1.01%</td></tr>
+<tr><td>0.08</td><td>234</td><td class="up">+16.30%</td><td class="up">+5.02%</td></tr>
+<tr><td>0.10</td><td>111</td><td class="up">+6.23%</td><td class="down">-3.26%</td></tr>
+</tbody>
+</table></div>
+<p>Gross edge is ~0.8–1.2c/share; the spread is 1c. The regression agrees the
+signal is real — forecast vs. tradeable move correlates <strong>+0.086, t = +3.1</strong> over
+1,297 positions, direction accuracy 51.6% — but on capital after costs the
+strategy is indistinguishable from flat (<strong>t = 0.38</strong>). What little survives is
+<strong>fragile</strong>: the +1.0% leans on ~35 trades in the 0.75–0.98 price bucket (+30%)
+and flips between June (-2.1%) and July (+6.1%).</p>
+
+<h2>5. Reproduce</h2>
+<pre><code>bash scripts/backtest_news_slurm.sh          # build -&gt; predict -&gt; report, 1 A100
+# knobs: --top-markets, --hold-hours (build); --threshold, --cost (report)
+# full threshold x cost sweep lands in results/backtest/report_news.json</code></pre>
+<p><strong>Bottom line:</strong> from the news side, the same story as the grid — the model has
+learned which markets a headline moves and in which direction (t = +3.1,
++8–16% frictionless), and that skill is not yet worth more than it costs to
+trade (+1.0%, CI straddling zero).</p>
+</div>
