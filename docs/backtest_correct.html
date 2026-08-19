@@ -292,86 +292,119 @@ strategy is indistinguishable from flat (<strong>t = 0.38</strong>). What little
 and flips between June (-2.1%) and July (+6.1%).</p>
 
 <h2>5. Why it wins, when it wins</h2>
-<p>Four trades SWM made money on. Each shows the triggering jin10 headline, the
-market, where the model's forecast pointed relative to the price it could buy at
-(<em>entry</em>), and where the market actually <em>settled</em> ~24–48h later. The pattern is
-always the same: the headline carries real directional information, the model
-reads it the right way, and the settle confirms it.</p>
-<p class="exleg"><span>○ entry price</span><span>◆ model forecast</span>
-<span style="color:var(--gain)">● where it settled</span>
-<span>bar = the move the trade captured</span></p>
+<p>Four trades SWM made money on. Each plots the market's <strong>real price path</strong>
+around the trade — the triggering jin10 headline (dashed line), the price the
+model actually bought at (<em>entry</em>), and where the market <em>settled</em> ~24–48h later.
+The forecast direction is noted under each chart.</p>
+<p class="exleg"><span>&mdash; actual market price</span><span>○ price bought at</span>
+<span style="color:var(--gain)">● where it settled</span><span>┆ headline time</span></p>
 
 <div class="ex">
   <div class="news">jin10 · Fox News: US VP Vance says envoy Witkoff, Kushner have arrived for Iran talks</div>
   <div class="q">Will JD Vance have a diplomatic meeting with Iran by June 30, 2026? <span class="badge yes">BOUGHT YES</span></div>
-  <svg viewBox="0 0 760 50" role="img" aria-label="entry 0.375, model 0.461, settled 1.00">
-    <rect x="40" y="22" width="680" height="6" rx="3" fill="var(--rule-soft)"/>
-    <rect x="295" y="21" width="425" height="8" rx="4" fill="var(--gain)" opacity="0.28"/>
-    <circle cx="295" cy="25" r="5" fill="var(--surface)" stroke="var(--faint)" stroke-width="2"/>
-    <path d="M347,25 l7,-6 l7,6 l-7,6 z" fill="var(--accent)"/>
-    <circle cx="720" cy="25" r="6" fill="var(--gain)"/>
-    <g font-family="IBM Plex Mono" font-size="9.5" fill="var(--faint)">
-      <text x="295" y="45" text-anchor="middle">entry .375</text>
-      <text x="354" y="14" text-anchor="middle">model .46</text>
-      <text x="720" y="14" text-anchor="end" fill="var(--gain)">settled 1.00</text></g>
+  <svg viewBox="0 0 760 178" role="img" aria-label="JD Vance / Iran meeting price path, entry 0.38 settle 1.00">
+    <line class="svg-grid" x1="50" y1="150.0" x2="740" y2="150.0"/>
+    <text class="svg-lab" x="44" y="153.0" font-size="9" text-anchor="end">0</text>
+    <line class="svg-grid" x1="50" y1="85.0" x2="740" y2="85.0"/>
+    <text class="svg-lab" x="44" y="88.0" font-size="9" text-anchor="end">.5</text>
+    <line class="svg-grid" x1="50" y1="20.0" x2="740" y2="20.0"/>
+    <text class="svg-lab" x="44" y="23.0" font-size="9" text-anchor="end">1</text>
+    <text class="svg-lab" x="185.2" y="170" font-size="8.5" text-anchor="middle">06-16</text>
+    <text class="svg-lab" x="371.4" y="170" font-size="8.5" text-anchor="middle">06-18</text>
+    <text class="svg-lab" x="557.7" y="170" font-size="8.5" text-anchor="middle">06-20</text>
+    <line x1="608.6" y1="20" x2="608.6" y2="150" stroke="var(--faint)" stroke-width="1" stroke-dasharray="3 3"/>
+    <text class="svg-lab" x="608.6" y="16" font-size="8.5" text-anchor="middle">headline</text>
+    <polyline points="57.2,101.9 61.1,101.9 68.9,105.2 80.5,106.4 88.3,42.1 150.3,55.1 154.2,55.8 162.0,47.3 181.4,44.7 243.4,36.2 247.3,36.2 274.5,36.2 336.5,33.6 340.4,46.6 367.6,49.2 425.8,54.5 429.6,54.5 433.5,45.3 460.7,73.3 522.8,77.8 553.8,80.5 608.1,101.2 615.9,39.5 646.9,24.7 716.7,20.1" fill="none" stroke="var(--accent)" stroke-width="1.6"/>
+    <circle cx="608.1" cy="101.2" r="5" fill="var(--surface)" stroke="var(--faint)" stroke-width="2"/>
+    <circle cx="716.7" cy="20.1" r="6" fill="var(--gain)"/>
+    <text class="svg-s" x="608.1" y="117.2" font-size="9" text-anchor="middle">buy 0.38</text>
+    <text class="svg-s" x="700.0" y="10.1" font-size="9" text-anchor="middle" fill="var(--gain)">settle 1.00</text>
   </svg>
-  <div class="res">Envoys arriving → a meeting is more likely. Model nudged YES; it settled <b>YES</b>. <span class="badge win">+61.5c / share</span></div>
+  <div class="res">Envoys arriving → a meeting is more likely. Model nudged YES (0.38→0.46); it settled <b>YES</b>. <span class="badge win">+61.5c / share</span></div>
 </div>
 
 <div class="ex">
   <div class="news">jin10 · U.S. Revokes Iranian Sales Authorization; International Oil Prices Rise</div>
   <div class="q">Will WTI Crude Oil hit $80 (HIGH) in July? <span class="badge yes">BOUGHT YES</span></div>
-  <svg viewBox="0 0 760 50" role="img" aria-label="entry 0.225, model 0.283, settled 0.585">
-    <rect x="40" y="22" width="680" height="6" rx="3" fill="var(--rule-soft)"/>
-    <rect x="193" y="21" width="245" height="8" rx="4" fill="var(--gain)" opacity="0.28"/>
-    <circle cx="193" cy="25" r="5" fill="var(--surface)" stroke="var(--faint)" stroke-width="2"/>
-    <path d="M225,25 l7,-6 l7,6 l-7,6 z" fill="var(--accent)"/>
-    <circle cx="438" cy="25" r="6" fill="var(--gain)"/>
-    <g font-family="IBM Plex Mono" font-size="9.5" fill="var(--faint)">
-      <text x="193" y="45" text-anchor="middle">entry .225</text>
-      <text x="232" y="14" text-anchor="middle">model .28</text>
-      <text x="438" y="14" text-anchor="middle" fill="var(--gain)">settled .585</text></g>
+  <svg viewBox="0 0 760 178" role="img" aria-label="WTI crude to $80 price path, entry 0.23 settle 0.58">
+    <line class="svg-grid" x1="50" y1="150.0" x2="740" y2="150.0"/>
+    <text class="svg-lab" x="44" y="153.0" font-size="9" text-anchor="end">0</text>
+    <line class="svg-grid" x1="50" y1="85.0" x2="740" y2="85.0"/>
+    <text class="svg-lab" x="44" y="88.0" font-size="9" text-anchor="end">.5</text>
+    <line class="svg-grid" x1="50" y1="20.0" x2="740" y2="20.0"/>
+    <text class="svg-lab" x="44" y="23.0" font-size="9" text-anchor="end">1</text>
+    <text class="svg-lab" x="163.6" y="170" font-size="8.5" text-anchor="middle">07-03</text>
+    <text class="svg-lab" x="351.8" y="170" font-size="8.5" text-anchor="middle">07-05</text>
+    <text class="svg-lab" x="540.0" y="170" font-size="8.5" text-anchor="middle">07-07</text>
+    <text class="svg-lab" x="728.2" y="170" font-size="8.5" text-anchor="middle">07-09</text>
+    <line x1="614.6" y1="20" x2="614.6" y2="150" stroke="var(--faint)" stroke-width="1" stroke-dasharray="3 3"/>
+    <text class="svg-lab" x="614.6" y="16" font-size="8.5" text-anchor="middle">headline</text>
+    <polyline points="53.8,127.2 57.8,127.2 61.7,127.2 65.6,127.2 108.7,133.8 128.3,133.8 132.3,133.8 132.3,133.8 140.1,135.1 147.9,133.1 151.9,133.1 155.8,132.4 159.7,132.4 202.8,132.4 222.4,131.2 226.4,131.2 226.4,131.2 234.2,131.2 242.0,131.2 246.0,131.2 249.9,131.2 253.8,126.0 296.9,126.0 316.5,126.0 320.5,125.3 320.5,125.3 328.3,124.7 336.1,127.2 340.1,127.2 344.0,127.2 347.9,127.2 391.0,127.2 410.6,121.4 414.6,121.4 414.6,120.8 422.4,120.8 430.3,122.0 434.2,122.0 438.1,124.0 442.0,130.5 485.1,132.4 504.7,132.4 508.7,132.4 508.7,132.4 516.5,131.2 524.4,131.2 528.3,131.2 532.2,131.2 536.1,131.2 579.2,131.2 594.9,131.2 598.9,131.2 602.8,126.0 602.8,123.3 610.6,120.8 610.6,120.8 618.5,105.8 622.4,109.7 626.3,107.1 630.2,103.8 630.2,103.8 665.5,106.4 673.3,79.1 689.0,90.8 693.0,90.8 696.9,65.5 696.9,65.5 704.7,89.5 708.6,89.5 716.5,74.0 720.4,74.0 724.3,74.6" fill="none" stroke="var(--accent)" stroke-width="1.6"/>
+    <circle cx="610.6" cy="120.8" r="5" fill="var(--surface)" stroke="var(--faint)" stroke-width="2"/>
+    <circle cx="716.5" cy="74.0" r="6" fill="var(--gain)"/>
+    <text class="svg-s" x="610.6" y="136.8" font-size="9" text-anchor="middle">buy 0.23</text>
+    <text class="svg-s" x="700.0" y="64.0" font-size="9" text-anchor="middle" fill="var(--gain)">settle 0.58</text>
   </svg>
-  <div class="res">Sanctions push oil up → the $80 target gets nearer. Model lifted YES; price rose. <span class="badge win">+35.0c / share</span></div>
+  <div class="res">Sanctions push oil up → the $80 target gets nearer. Model lifted YES (0.23→0.28); price rose. <span class="badge win">+35.0c / share</span></div>
 </div>
 
 <div class="ex">
   <div class="news">jin10 · Night session opens: silver drops nearly 4%, tin and other metals fall</div>
   <div class="q">Will Silver hit $60 (LOW) by end of June? <span class="badge yes">BOUGHT YES</span></div>
-  <svg viewBox="0 0 760 50" role="img" aria-label="entry 0.480, model 0.558, settled 1.00">
-    <rect x="40" y="22" width="680" height="6" rx="3" fill="var(--rule-soft)"/>
-    <rect x="366" y="21" width="354" height="8" rx="4" fill="var(--gain)" opacity="0.28"/>
-    <circle cx="366" cy="25" r="5" fill="var(--surface)" stroke="var(--faint)" stroke-width="2"/>
-    <path d="M412,25 l7,-6 l7,6 l-7,6 z" fill="var(--accent)"/>
-    <circle cx="720" cy="25" r="6" fill="var(--gain)"/>
-    <g font-family="IBM Plex Mono" font-size="9.5" fill="var(--faint)">
-      <text x="366" y="45" text-anchor="middle">entry .480</text>
-      <text x="419" y="14" text-anchor="middle">model .56</text>
-      <text x="720" y="14" text-anchor="end" fill="var(--gain)">settled 1.00</text></g>
+  <svg viewBox="0 0 760 178" role="img" aria-label="Silver to $60 low price path, entry 0.48 settle 1.00">
+    <line class="svg-grid" x1="50" y1="150.0" x2="740" y2="150.0"/>
+    <text class="svg-lab" x="44" y="153.0" font-size="9" text-anchor="end">0</text>
+    <line class="svg-grid" x1="50" y1="85.0" x2="740" y2="85.0"/>
+    <text class="svg-lab" x="44" y="88.0" font-size="9" text-anchor="end">.5</text>
+    <line class="svg-grid" x1="50" y1="20.0" x2="740" y2="20.0"/>
+    <text class="svg-lab" x="44" y="23.0" font-size="9" text-anchor="end">1</text>
+    <text class="svg-lab" x="181.2" y="170" font-size="8.5" text-anchor="middle">06-19</text>
+    <text class="svg-lab" x="361.2" y="170" font-size="8.5" text-anchor="middle">06-21</text>
+    <text class="svg-lab" x="541.2" y="170" font-size="8.5" text-anchor="middle">06-23</text>
+    <text class="svg-lab" x="721.2" y="170" font-size="8.5" text-anchor="middle">06-25</text>
+    <line x1="590.0" y1="20" x2="590.0" y2="150" stroke="var(--faint)" stroke-width="1" stroke-dasharray="3 3"/>
+    <text class="svg-lab" x="590.0" y="16" font-size="8.5" text-anchor="middle">headline</text>
+    <polyline points="87.5,133.8 132.5,137.7 140.0,126.6 177.5,114.9 230.0,102.6 267.5,113.0 320.0,109.7 357.5,109.7 410.0,110.3 447.5,108.4 500.0,122.7 537.5,123.3 590.0,87.6 627.5,88.9 672.5,83.0 680.0,32.3 717.5,20.1" fill="none" stroke="var(--accent)" stroke-width="1.6"/>
+    <circle cx="590.0" cy="87.6" r="5" fill="var(--surface)" stroke="var(--faint)" stroke-width="2"/>
+    <circle cx="717.5" cy="20.1" r="6" fill="var(--gain)"/>
+    <text class="svg-s" x="590.0" y="103.6" font-size="9" text-anchor="middle">buy 0.48</text>
+    <text class="svg-s" x="700.0" y="10.1" font-size="9" text-anchor="middle" fill="var(--gain)">settle 1.00</text>
   </svg>
-  <div class="res">Silver selling off → more likely to touch the low. Model raised YES; it hit. <span class="badge win">+51.0c / share</span></div>
+  <div class="res">Silver selling off → more likely to touch the low. Model raised YES (0.48→0.56); it hit. <span class="badge win">+51.0c / share</span></div>
 </div>
 
 <div class="ex">
   <div class="news">jin10 · Pre-market: SpaceX (SPCX.O) down over 5%, US AI-related stocks mixed</div>
   <div class="q">SpaceX IPO: closing price up at end of first month? <span class="badge no">BOUGHT NO</span></div>
-  <svg viewBox="0 0 760 50" role="img" aria-label="entry 0.850, model 0.786, settled 0.415">
-    <rect x="40" y="22" width="680" height="6" rx="3" fill="var(--rule-soft)"/>
-    <rect x="322" y="21" width="296" height="8" rx="4" fill="var(--gain)" opacity="0.28"/>
-    <circle cx="618" cy="25" r="5" fill="var(--surface)" stroke="var(--faint)" stroke-width="2"/>
-    <path d="M568,25 l7,-6 l7,6 l-7,6 z" fill="var(--accent)"/>
-    <circle cx="322" cy="25" r="6" fill="var(--gain)"/>
-    <g font-family="IBM Plex Mono" font-size="9.5" fill="var(--faint)">
-      <text x="618" y="45" text-anchor="middle">entry .850</text>
-      <text x="575" y="14" text-anchor="middle">model .79</text>
-      <text x="322" y="14" text-anchor="middle" fill="var(--gain)">settled .415</text></g>
+  <svg viewBox="0 0 760 178" role="img" aria-label="SpaceX closes up price path, entry 0.85 settle 0.41">
+    <line class="svg-grid" x1="50" y1="150.0" x2="740" y2="150.0"/>
+    <text class="svg-lab" x="44" y="153.0" font-size="9" text-anchor="end">0</text>
+    <line class="svg-grid" x1="50" y1="85.0" x2="740" y2="85.0"/>
+    <text class="svg-lab" x="44" y="88.0" font-size="9" text-anchor="end">.5</text>
+    <line class="svg-grid" x1="50" y1="20.0" x2="740" y2="20.0"/>
+    <text class="svg-lab" x="44" y="23.0" font-size="9" text-anchor="end">1</text>
+    <text class="svg-lab" x="188.8" y="170" font-size="8.5" text-anchor="middle">06-18</text>
+    <text class="svg-lab" x="366.3" y="170" font-size="8.5" text-anchor="middle">06-20</text>
+    <text class="svg-lab" x="543.9" y="170" font-size="8.5" text-anchor="middle">06-22</text>
+    <text class="svg-lab" x="721.5" y="170" font-size="8.5" text-anchor="middle">06-24</text>
+    <line x1="582.7" y1="20" x2="582.7" y2="150" stroke="var(--faint)" stroke-width="1" stroke-dasharray="3 3"/>
+    <text class="svg-lab" x="582.7" y="16" font-size="8.5" text-anchor="middle">headline</text>
+    <polyline points="77.8,37.5 166.6,38.2 255.4,47.3 336.8,60.9 344.2,50.5 362.7,53.2 451.4,42.8 540.2,39.5 629.0,90.2 717.8,96.1" fill="none" stroke="var(--accent)" stroke-width="1.6"/>
+    <circle cx="540.2" cy="39.5" r="5" fill="var(--surface)" stroke="var(--faint)" stroke-width="2"/>
+    <circle cx="717.8" cy="96.1" r="6" fill="var(--gain)"/>
+    <text class="svg-s" x="540.2" y="30.5" font-size="9" text-anchor="middle">buy 0.85</text>
+    <text class="svg-s" x="700.0" y="86.1" font-size="9" text-anchor="middle" fill="var(--gain)">settle 0.41</text>
   </svg>
-  <div class="res">Shares down 5% pre-market → "closes up" less likely. Model shaded NO; price fell. <span class="badge win">+42.5c / share</span></div>
+  <div class="res">Shares down 5% pre-market → "closes up" less likely. Model shaded NO (0.85→0.79); price fell. <span class="badge win">+42.5c / share</span></div>
 </div>
 
 <p>This is the machinery behind the frictionless +8–16%: on the trades it takes,
 the forecast leans the right way often enough to capture a real slice of the
-move. The catch from §4 still holds — average that edge across <em>all</em> trades,
+move. Two honesty notes the full paths make visible: the model's own edge is
+<em>small</em> (it nudged JD Vance only 0.38→0.46) — most of the realised P&amp;L is the
+market then moving a lot in that direction; and entries are read off a
+daily-sampled series, so some are dips (JD Vance) or a few hours stale (SpaceX).
+And the catch from §4 still holds — average this edge across <em>all</em> trades,
 subtract the 1c spread, and the typical trade clears little more than costs.
 These are the tail where it worked, not the mean.</p>
 
