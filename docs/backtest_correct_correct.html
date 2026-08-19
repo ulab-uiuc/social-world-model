@@ -148,8 +148,44 @@ strictly apart: the <strong>daily history</strong> the model was trained on goes
 prompt; the <strong>hourly book</strong> is used only to fill and settle the trade. Nothing
 published after the headline ever reaches the model.</p>
 
+<h3>The news stream</h3>
+<p>The out-of-sample slice of the jin10 wire runs <strong>2026-06-17 → 2026-07-17</strong> — one
+month, <strong>2,067 <code>important</code> headlines</strong>, none seen in training. It is a
+macro / markets / geopolitics feed: rates and FX, commodities, single-name
+equities, and a running Middle-East tracker. A typical stretch of the wire:</p>
+<pre><code>06-19 00:39  Japan FM Katayama: ready to act against forex speculation
+06-19 00:50  MPOB: July crude palm oil seen 4,400-4,650 ringgit/tonne
+06-19 01:04  USD/JPY dips below 161, down 0.22% on day
+06-19 01:06  White House: Vance cancels Switzerland trip; itinerary pending
+06-19 01:18  SK Hynix shares extend gains to 7%
+06-19 05:35  WTI crude rises over 1% intraday, trading at $76.18/barrel
+06-19 05:40  Key economic data and events to watch today</code></pre>
+<p>Each headline is stepped through in publication order. <strong>853</strong> of them retrieve at
+least one market above the relevance floor and become trades; the rest — the
+palm-oil and FX ticks above — are about things no live market is asking, and are
+skipped.</p>
+
+<h3>One headline → the markets it trades</h3>
+<p>At each headline, reverse retrieval scores it against every live market and keeps
+the top 5 above the calibrated floor. When the wire reports the Iran delegation's
+Switzerland trip is unconfirmed, the markets it surfaces are exactly the
+"where will the meeting be" family:</p>
+<div class="scroll"><table>
+<thead><tr><th>2026-06-18 14:04 — "Iranian media: Iranian delegation's trip to Switzerland not yet confirmed"</th><th>similarity</th></tr></thead>
+<tbody>
+<tr><td>Will the next diplomatic US–Iran meeting be in Switzerland?</td><td>0.769</td></tr>
+<tr><td>Will the next diplomatic US–Iran meeting be in Italy?</td><td>0.718</td></tr>
+<tr><td>Will the next diplomatic US–Iran meeting be in Pakistan?</td><td>0.716</td></tr>
+<tr><td>Will the next diplomatic US–Iran meeting be in another European country?</td><td>0.715</td></tr>
+<tr><td>Will no qualifying diplomatic US–Iran meeting occur by June 30?</td><td>0.714</td></tr>
+</tbody>
+</table></div>
+<p>The world model then forecasts each of those five, and the strategy trades the
+ones where its forecast differs from the entry price by ≥5c — filling at the next
+hourly tick, holding 24h.</p>
+
 <h2>2. Universe and how a trade is decided</h2>
-<p><strong>2,067</strong> out-of-sample headlines (2026-06-17 onward) → <strong>2,175</strong> scored cells →
+<p>The <strong>853</strong> headlines that trade produce <strong>2,175</strong> scored cells →
 <strong>1,733</strong> distinct positions → <strong>817</strong> trades, across 184 markets that have an
 hourly book. The set is <strong>balanced</strong>: 37.7% up, mean move −0.2c, mean entry 0.265 —
 so buying YES blind <em>loses</em>, and a positive return must come from direction.</p>
