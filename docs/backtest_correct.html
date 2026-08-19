@@ -102,6 +102,7 @@ tbody tr:hover td { background:var(--accent-soft); }
 .badge.yes { background:var(--accent-soft); color:var(--accent); }
 .badge.no  { background:var(--raised); color:var(--gold); border:1px solid var(--rule); }
 .badge.win { background:var(--gain); color:var(--surface); }
+.badge.loss { background:var(--loss); color:var(--surface); }
 .exleg { font-family:"IBM Plex Mono",monospace; font-size:.72rem; color:var(--faint); margin:.4rem 0 1rem; }
 .exleg span { margin-right:16px; }
 :focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:3px; }
@@ -407,6 +408,90 @@ daily-sampled series, so some are dips (JD Vance) or a few hours stale (SpaceX).
 And the catch from §4 still holds — average this edge across <em>all</em> trades,
 subtract the 1c spread, and the typical trade clears little more than costs.
 These are the tail where it worked, not the mean.</p>
+
+<h3>…and three it got wrong</h3>
+<p>The losing side, same format (settle dot in red). These are why the hit rate is
+only ~38% and the confidence interval straddles zero — the model reads some
+headlines exactly backwards.</p>
+
+<div class="ex">
+  <div class="news">jin10 · Iran Foreign Ministry: Switzerland meeting postponed, rescheduling underway</div>
+  <div class="q">Will the next US–Iran meeting be in Switzerland? <span class="badge no">BOUGHT NO</span></div>
+  <svg viewBox="0 0 760 178" role="img" aria-label="US-Iran meeting in Switzerland price path, entry 0.22 settle 0.98">
+    <line class="svg-grid" x1="50" y1="150.0" x2="740" y2="150.0"/>
+    <text class="svg-lab" x="44" y="153.0" font-size="9" text-anchor="end">0</text>
+    <line class="svg-grid" x1="50" y1="85.0" x2="740" y2="85.0"/>
+    <text class="svg-lab" x="44" y="88.0" font-size="9" text-anchor="end">.5</text>
+    <line class="svg-grid" x1="50" y1="20.0" x2="740" y2="20.0"/>
+    <text class="svg-lab" x="44" y="23.0" font-size="9" text-anchor="end">1</text>
+    <text class="svg-lab" x="178.4" y="170" font-size="8.5" text-anchor="middle">06-15</text>
+    <text class="svg-lab" x="359.3" y="170" font-size="8.5" text-anchor="middle">06-17</text>
+    <text class="svg-lab" x="540.2" y="170" font-size="8.5" text-anchor="middle">06-19</text>
+    <text class="svg-lab" x="721.1" y="170" font-size="8.5" text-anchor="middle">06-21</text>
+    <line x1="592.8" y1="20" x2="592.8" y2="150" stroke="var(--faint)" stroke-width="1" stroke-dasharray="3 3"/>
+    <text class="svg-lab" x="592.8" y="16" font-size="8.5" text-anchor="middle">headline</text>
+    <polyline points="54.0,140.1 61.5,137.1 84.1,123.0 84.1,123.0 99.2,129.7 118.1,132.1 144.5,132.1 152.0,132.0 167.1,120.0 174.6,46.3 189.7,56.3 208.5,95.9 234.9,95.3 242.5,66.7 265.1,58.0 280.1,55.7 299.0,62.9 317.8,62.6 325.4,46.1 355.5,46.6 370.6,44.6 389.5,43.9 446.0,56.6 461.1,67.8 479.9,43.3 536.5,60.8 544.0,64.1 551.5,91.8 562.8,92.4 570.4,121.8 626.9,64.1 717.4,22.8" fill="none" stroke="var(--accent)" stroke-width="1.6"/>
+    <circle cx="570.4" cy="121.8" r="5" fill="var(--surface)" stroke="var(--faint)" stroke-width="2"/>
+    <circle cx="717.4" cy="22.8" r="6" fill="var(--loss)"/>
+    <text class="svg-s" x="570.4" y="137.8" font-size="9" text-anchor="middle">buy 0.22</text>
+    <text class="svg-s" x="700.0" y="12.8" font-size="9" text-anchor="middle" fill="var(--loss)">settle 0.98</text>
+  </svg>
+  <div class="res"><b>Read a scary word too literally.</b> "Postponed" ≠ cancelled — the meeting still happened in Switzerland. Model shorted it to 0.11; it settled <b>YES</b>. <span class="badge loss">−77.2c / share</span></div>
+</div>
+
+<div class="ex">
+  <div class="news">jin10 · Spot gold falls 2% intraday, trading at $4,108/oz</div>
+  <div class="q">Will Gold hit $4,000 (LOW) in June? <span class="badge no">BOUGHT NO</span></div>
+  <svg viewBox="0 0 760 178" role="img" aria-label="Gold to $4,000 low price path, entry 0.24 settle 0.68">
+    <line class="svg-grid" x1="50" y1="150.0" x2="740" y2="150.0"/>
+    <text class="svg-lab" x="44" y="153.0" font-size="9" text-anchor="end">0</text>
+    <line class="svg-grid" x1="50" y1="85.0" x2="740" y2="85.0"/>
+    <text class="svg-lab" x="44" y="88.0" font-size="9" text-anchor="end">.5</text>
+    <line class="svg-grid" x1="50" y1="20.0" x2="740" y2="20.0"/>
+    <text class="svg-lab" x="44" y="23.0" font-size="9" text-anchor="end">1</text>
+    <text class="svg-lab" x="206.8" y="170" font-size="8.5" text-anchor="middle">06-19</text>
+    <text class="svg-lab" x="393.6" y="170" font-size="8.5" text-anchor="middle">06-21</text>
+    <text class="svg-lab" x="580.4" y="170" font-size="8.5" text-anchor="middle">06-23</text>
+    <line x1="610.4" y1="20" x2="610.4" y2="150" stroke="var(--faint)" stroke-width="1" stroke-dasharray="3 3"/>
+    <text class="svg-lab" x="610.4" y="16" font-size="8.5" text-anchor="middle">headline</text>
+    <polyline points="58.9,137.9 70.6,137.9 78.4,138.0 90.1,139.7 97.8,128.1 109.5,125.2 152.3,133.6 164.0,131.0 171.8,131.3 202.9,116.5 245.7,102.0 257.4,108.3 265.2,95.9 296.3,109.2 339.1,106.3 350.8,104.8 389.7,104.7 432.5,104.2 444.2,103.7 483.1,93.8 525.9,106.8 537.6,121.3 576.5,119.4 611.6,80.3 619.4,89.7 631.0,90.4 669.9,98.8 716.6,62.0 724.4,20.1 728.3,20.1" fill="none" stroke="var(--accent)" stroke-width="1.6"/>
+    <circle cx="576.5" cy="119.4" r="5" fill="var(--surface)" stroke="var(--faint)" stroke-width="2"/>
+    <circle cx="716.6" cy="62.0" r="6" fill="var(--loss)"/>
+    <text class="svg-s" x="576.5" y="135.4" font-size="9" text-anchor="middle">buy 0.24</text>
+    <text class="svg-s" x="700.0" y="52.0" font-size="9" text-anchor="middle" fill="var(--loss)">settle 0.68</text>
+  </svg>
+  <div class="res"><b>Faded a move that kept going.</b> Gold down 2% → model bet it would <em>not</em> reach the low; the slide continued toward it. <span class="badge loss">−45.2c / share</span></div>
+</div>
+
+<div class="ex">
+  <div class="news">jin10 · U.S. June CPI and core CPI (MoM / YoY) due today</div>
+  <div class="q">Will the Fed pause at all three of the next decisions (Apr–Jun–Jul)? <span class="badge no">BOUGHT NO</span></div>
+  <svg viewBox="0 0 760 178" role="img" aria-label="Fed pause x3 price path, entry 0.62 settle 0.96">
+    <line class="svg-grid" x1="50" y1="150.0" x2="740" y2="150.0"/>
+    <text class="svg-lab" x="44" y="153.0" font-size="9" text-anchor="end">0</text>
+    <line class="svg-grid" x1="50" y1="85.0" x2="740" y2="85.0"/>
+    <text class="svg-lab" x="44" y="88.0" font-size="9" text-anchor="end">.5</text>
+    <line class="svg-grid" x1="50" y1="20.0" x2="740" y2="20.0"/>
+    <text class="svg-lab" x="44" y="23.0" font-size="9" text-anchor="end">1</text>
+    <text class="svg-lab" x="183.3" y="170" font-size="8.5" text-anchor="middle">07-10</text>
+    <text class="svg-lab" x="362.6" y="170" font-size="8.5" text-anchor="middle">07-12</text>
+    <text class="svg-lab" x="542.0" y="170" font-size="8.5" text-anchor="middle">07-14</text>
+    <text class="svg-lab" x="721.3" y="170" font-size="8.5" text-anchor="middle">07-16</text>
+    <line x1="588.0" y1="20" x2="588.0" y2="150" stroke="var(--faint)" stroke-width="1" stroke-dasharray="3 3"/>
+    <text class="svg-lab" x="588.0" y="16" font-size="8.5" text-anchor="middle">headline</text>
+    <polyline points="56.2,50.5 89.9,50.5 145.9,42.8 179.5,38.9 235.6,38.9 269.2,51.8 325.3,50.5 358.9,50.5 414.9,48.6 448.6,48.0 504.6,48.6 538.2,65.5 586.8,69.4 594.3,28.4 627.9,31.0 717.6,25.8" fill="none" stroke="var(--accent)" stroke-width="1.6"/>
+    <circle cx="586.8" cy="69.4" r="5" fill="var(--surface)" stroke="var(--faint)" stroke-width="2"/>
+    <circle cx="717.6" cy="25.8" r="6" fill="var(--loss)"/>
+    <text class="svg-s" x="586.8" y="60.4" font-size="9" text-anchor="middle">buy 0.62</text>
+    <text class="svg-s" x="700.0" y="15.8" font-size="9" text-anchor="middle" fill="var(--loss)">settle 0.96</text>
+  </svg>
+  <div class="res"><b>Traded a headline with no signal.</b> "CPI due today" says nothing about the outcome; the model leaned NO into a market that resolved <b>YES</b>. <span class="badge loss">−34.6c / share</span></div>
+</div>
+
+<p>Winners and losers together are the whole point of §4: the model is right a
+little more than half the time on direction, so the gross edge is positive — but
+these losses are big and frequent enough that, after the spread, the net is a
+coin toss. It has real signal; it does not have a moat.</p>
 
 <h2>6. Reproduce</h2>
 <pre><code>bash scripts/backtest_news_slurm.sh          # build -&gt; predict -&gt; report, 1 A100
