@@ -1,0 +1,465 @@
+<title>SWM News-Driven Backtest (hourly fills)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root {
+  --ground:#F1F5F6; --surface:#FFFFFF; --raised:#F7FAFA;
+  --ink:#12212A; --body:#2C3D45; --muted:#5E727B; --faint:#8FA1A8;
+  --rule:#D6E0E3; --rule-soft:#E6EDEF;
+  --accent:#1A5C64; --accent-soft:#E2EFF0; --gold:#9A6E1C;
+  --gain:#1F7350; --loss:#A83535;
+  --shadow:0 1px 2px rgba(18,33,42,.05), 0 8px 24px -12px rgba(18,33,42,.16);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground:#0C1518; --surface:#141F23; --raised:#1A272C;
+    --ink:#E7F0F2; --body:#C3D2D6; --muted:#8DA2A9; --faint:#63787F;
+    --rule:#25353A; --rule-soft:#1D2B30;
+    --accent:#5FB3BC; --accent-soft:#123336; --gold:#D2A44E;
+    --gain:#4FBC8C; --loss:#E37070;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 28px -14px rgba(0,0,0,.7);
+  }
+}
+:root[data-theme="dark"] {
+  --ground:#0C1518; --surface:#141F23; --raised:#1A272C;
+  --ink:#E7F0F2; --body:#C3D2D6; --muted:#8DA2A9; --faint:#63787F;
+  --rule:#25353A; --rule-soft:#1D2B30;
+  --accent:#5FB3BC; --accent-soft:#123336; --gold:#D2A44E;
+  --gain:#4FBC8C; --loss:#E37070;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 28px -14px rgba(0,0,0,.7);
+}
+* { box-sizing:border-box; }
+body { margin:0; background:var(--ground); color:var(--body);
+  font-family:"IBM Plex Sans","Helvetica Neue",Arial,sans-serif;
+  font-size:16.5px; line-height:1.66; -webkit-font-smoothing:antialiased; }
+.doc { max-width:1000px; margin:0 auto; padding:56px 28px 96px; }
+.doc > *:not(.scroll):not(pre):not(hr):not(.lead) { max-width:70ch; }
+h1, h2, h3 { font-family:Newsreader,Georgia,"Times New Roman",serif; color:var(--ink);
+  text-wrap:balance; font-weight:600; letter-spacing:-.012em; }
+h1 { font-size:clamp(2.1rem,4.4vw,3rem); line-height:1.08; letter-spacing:-.025em; margin:0 0 1.4rem; }
+h2 { font-size:clamp(1.4rem,2.4vw,1.8rem); line-height:1.2; margin:3.4rem 0 .9rem; padding-top:1.6rem; border-top:1px solid var(--rule); }
+h3 { font-size:1.14rem; margin:2.2rem 0 .6rem; }
+p { margin:0 0 1.05rem; }
+a { color:var(--accent); text-underline-offset:3px; }
+strong { color:var(--ink); font-weight:600; }
+em { color:var(--ink); }
+hr { border:none; border-top:1px solid var(--rule); margin:3.2rem 0; }
+h1 + p, h1 + p + p { font-size:1.1rem; color:var(--muted); }
+h1 + p strong, h1 + p + p strong { color:var(--ink); }
+ul { margin:0 0 1.05rem; padding-left:1.25rem; } li { margin-bottom:.45rem; }
+code { font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:.85em; background:var(--raised); border:1px solid var(--rule-soft);
+  border-radius:4px; padding:1px 5px; color:var(--ink); }
+pre { background:var(--raised); border:1px solid var(--rule); border-radius:8px;
+  padding:16px 18px; overflow-x:auto; font-size:.82rem; line-height:1.7; margin:1.4rem 0; max-width:100%; }
+pre code { background:none; border:none; padding:0; font-size:inherit; color:var(--body); }
+.scroll { overflow-x:auto; margin:1.5rem 0; border:1px solid var(--rule); border-radius:9px; background:var(--surface); box-shadow:var(--shadow); }
+table { width:100%; border-collapse:collapse; font-size:.88rem; font-variant-numeric:tabular-nums; }
+th, td { padding:9px 14px; text-align:right; border-bottom:1px solid var(--rule-soft); white-space:nowrap; }
+th { font-family:"IBM Plex Mono",monospace; font-size:.66rem; letter-spacing:.09em; text-transform:uppercase;
+  color:var(--faint); font-weight:500; border-bottom:1px solid var(--rule); background:var(--raised); position:sticky; top:0; text-align:right; }
+td:first-child, th:first-child { text-align:left; white-space:normal; min-width:12ch; }
+tbody tr:last-child td { border-bottom:none; }
+tbody tr:hover td { background:var(--accent-soft); }
+.up { color:var(--gain); } .down { color:var(--loss); }
+.fig { margin:1.8rem 0; max-width:100%; }
+.fig svg { width:100%; height:auto; display:block; }
+.fig figcaption { font-size:.76rem; color:var(--faint); margin-top:.5rem; font-family:"IBM Plex Mono",monospace; letter-spacing:.02em; }
+.svg-box { fill:var(--surface); stroke:var(--rule); }
+.svg-box-accent { fill:var(--accent-soft); stroke:var(--accent); }
+.svg-t { fill:var(--ink); font-family:"IBM Plex Sans",sans-serif; font-weight:600; }
+.svg-s { fill:var(--muted); font-family:"IBM Plex Mono",monospace; }
+.svg-lab { fill:var(--faint); font-family:"IBM Plex Mono",monospace; letter-spacing:.04em; }
+.svg-arrow { stroke:var(--faint); stroke-width:1.5; fill:none; }
+.svg-grid { stroke:var(--rule-soft); stroke-width:1; }
+.bar-gross { fill:var(--accent); } .bar-net { fill:var(--gold); } .bar-neg { fill:var(--loss); }
+.ex { border:1px solid var(--rule); border-radius:10px; background:var(--surface); box-shadow:var(--shadow); padding:16px 18px; margin:1rem 0; }
+.ex .news { font-family:"IBM Plex Mono",monospace; font-size:.78rem; color:var(--muted); border-left:2px solid var(--accent); padding-left:10px; margin-bottom:.5rem; }
+.ex .q { font-weight:600; color:var(--ink); margin-bottom:.2rem; }
+.ex .res { font-size:.84rem; color:var(--body); margin-top:.3rem; }
+.ex .res b { color:var(--ink); }
+.badge { display:inline-block; font-family:"IBM Plex Mono",monospace; font-size:.66rem; font-weight:600; letter-spacing:.06em; padding:2px 7px; border-radius:5px; vertical-align:middle; }
+.badge.yes { background:var(--accent-soft); color:var(--accent); }
+.badge.no  { background:var(--raised); color:var(--gold); border:1px solid var(--rule); }
+.badge.win { background:var(--gain); color:var(--surface); }
+.badge.loss { background:var(--loss); color:var(--surface); }
+.exleg { font-family:"IBM Plex Mono",monospace; font-size:.72rem; color:var(--faint); margin:.4rem 0 1rem; }
+.exleg span { margin-right:16px; }
+.note { background:var(--accent-soft); border:1px solid var(--accent); border-radius:9px; padding:12px 16px; font-size:.9rem; margin:1.4rem 0; }
+:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:3px; }
+@media (max-width:640px) { .doc { padding:32px 18px 64px; } body { font-size:15.5px; } h2 { margin-top:2.6rem; } }
+</style>
+<div class="doc">
+<h1>SWM news-driven backtest — with real hourly fills</h1>
+<p>The definitive version of <a href="backtest_correct.html">the news-driven backtest</a>.
+Same idea — walk the jin10 wire, trade the markets each headline is about — but now
+priced against the <strong>real hourly polymarket order book</strong>
+(<code>polymarket_2026_series.jsonl</code>): a trade fills at the <strong>next hourly tick after the
+headline</strong> (median lag <strong>~0.5h</strong>) and holds 24h, instead of snapping to a
+once-a-day reconstructed quote.</p>
+<p><strong>The verdict survives the more honest fill: a small, statistically real
+directional edge that the bid-ask spread very nearly — but not quite — cancels.</strong>
+Over <strong>2,067 out-of-sample headlines</strong> the strategy opens <strong>817 positions</strong> and
+returns <strong>+1.7% on capital</strong> (95% CI −5.4% to +9.3%), against −5.3% for blind YES
+and −2.9% for a coin flip on the same universe. Frictionless it earns
+<strong>+8% to +14%</strong> and rises with confidence; the 1c spread eats almost all of it.</p>
+
+<div class="note"><strong>What changed from the earlier writeups, and why.</strong> The first
+version filled at the last quote <em>before</em> the headline — you captured the news
+move for free (an unrealistic +1.0% that flipped to −6% under any slippage). This
+version fills at the first hourly price <em>after</em> the news, so the quote has already
+absorbed it. That is the honest "react to the headline" trade, and it is only
+possible because the hourly book actually covers the test window.</p></div>
+<hr />
+
+<h2>1. Design</h2>
+<figure class="fig">
+<svg viewBox="0 0 940 168" role="img" aria-label="Pipeline: headline to top-5 markets to hourly fill to settle to P and L">
+  <defs><marker id="ah" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="var(--faint)"/></marker></defs>
+  <g class="svg-arrow" marker-end="url(#ah)">
+    <path d="M162,73 L203,73"/><path d="M352,73 L393,73"/><path d="M542,73 L583,73"/><path d="M732,73 L773,73"/>
+  </g>
+  <g class="svg-lab" font-size="10" text-anchor="middle">
+    <text x="182" y="60">reverse</text><text x="182" y="71">retrieval</text>
+    <text x="372" y="60">score,</text><text x="372" y="71">|edge|≥5c</text>
+    <text x="562" y="60">next hourly</text><text x="562" y="71">tick, +24h</text>
+    <text x="752" y="60">vs</text><text x="752" y="71">entry</text>
+  </g>
+  <g>
+    <rect class="svg-box" x="12" y="45" width="150" height="56" rx="8"/>
+    <text class="svg-t" x="87" y="70" font-size="13" text-anchor="middle">Headline</text>
+    <text class="svg-s" x="87" y="87" font-size="10" text-anchor="middle">jin10 wire, in time order</text>
+    <rect class="svg-box" x="203" y="45" width="150" height="56" rx="8"/>
+    <text class="svg-t" x="278" y="70" font-size="13" text-anchor="middle">Top-5 markets</text>
+    <text class="svg-s" x="278" y="87" font-size="10" text-anchor="middle">it is about</text>
+    <rect class="svg-box" x="393" y="45" width="150" height="56" rx="8"/>
+    <text class="svg-t" x="468" y="70" font-size="13" text-anchor="middle">Fill @ hourly</text>
+    <text class="svg-s" x="468" y="87" font-size="10" text-anchor="middle">next tick after news</text>
+    <rect class="svg-box" x="583" y="45" width="150" height="56" rx="8"/>
+    <text class="svg-t" x="658" y="70" font-size="13" text-anchor="middle">Settle</text>
+    <text class="svg-s" x="658" y="87" font-size="10" text-anchor="middle">24h later, hourly</text>
+    <rect class="svg-box-accent" x="773" y="45" width="150" height="56" rx="8"/>
+    <text class="svg-t" x="848" y="76" font-size="14" text-anchor="middle">P&amp;L</text>
+  </g>
+  <g>
+    <path class="svg-grid" d="M12,120 L353,120 M12,120 L12,114 M353,120 L353,114"/>
+    <text class="svg-lab" x="182" y="138" font-size="10" text-anchor="middle">prompt: history + news ≤ headline — no look-ahead</text>
+    <path class="svg-grid" d="M393,120 L923,120 M393,120 L393,114 M923,120 L923,114"/>
+    <text class="svg-lab" x="658" y="138" font-size="10" text-anchor="middle">real hourly book (post-news prices)</text>
+  </g>
+</svg>
+<figcaption>One pass over the wire. The model reads news up to the headline; the trade fills at the price after it.</figcaption>
+</figure>
+<p>One bi-encoder, two directions: <strong>reverse retrieval</strong> picks which markets a
+headline may trade; <strong>forward retrieval</strong> fills each prompt with that market's
+recent news so the model input matches training. The world model, P&amp;L accounting
+and baselines are the same code as the grid backtest. Two price sources are kept
+strictly apart: the <strong>daily history</strong> the model was trained on goes into the
+prompt; the <strong>hourly book</strong> is used only to fill and settle the trade. Nothing
+published after the headline ever reaches the model.</p>
+
+<h2>2. Universe and how a trade is decided</h2>
+<p><strong>2,067</strong> out-of-sample headlines (2026-06-17 onward) → <strong>2,175</strong> scored cells →
+<strong>1,733</strong> distinct positions → <strong>817</strong> trades, across 184 markets that have an
+hourly book. The set is <strong>balanced</strong>: 37.7% up, mean move −0.2c, mean entry 0.265 —
+so buying YES blind <em>loses</em>, and a positive return must come from direction.</p>
+<figure class="fig">
+<svg viewBox="0 0 900 200" role="img" aria-label="Funnel from 2,175 cells to 817 trades">
+  <g class="svg-lab" font-size="11">
+    <rect class="bar-gross" x="10" y="16" width="620" height="32" rx="4" opacity="0.92"/>
+    <text x="22" y="37" fill="var(--surface)" font-family="IBM Plex Mono" font-size="13" font-weight="600">2,175</text>
+    <text x="644" y="36" font-size="12">scored cells — one per (market, settle-time)</text>
+    <rect class="bar-gross" x="10" y="60" width="494" height="32" rx="4" opacity="0.72"/>
+    <text x="22" y="81" fill="var(--surface)" font-family="IBM Plex Mono" font-size="13" font-weight="600">1,733</text>
+    <text x="518" y="80" font-size="12">distinct positions — after daily-quote dedup</text>
+    <rect class="bar-net" x="10" y="104" width="233" height="32" rx="4"/>
+    <text x="22" y="125" fill="var(--surface)" font-family="IBM Plex Mono" font-size="13" font-weight="600">817</text>
+    <text x="257" y="124" font-size="12">SWM trades — where |edge| ≥ 0.05 (baselines take all 1,733)</text>
+    <text x="10" y="166" font-size="11">fill median 0.5h after the headline (all ≤ 1h) · hold 24h · balanced set: 37.7% up</text>
+  </g>
+</svg>
+<figcaption>How 2,175 scored cells narrow to 817 trades.</figcaption>
+</figure>
+<p>The 817 falls out of three filters (model and baselines alike): dedup a
+daily-quoted position → keep only <code>|pred − entry| ≥ 0.05</code> → drop unaffordable
+fills. Baselines ignore the signal and trade all 1,733.</p>
+
+<h2>3. Results — exit 24h after the fill</h2>
+<p>Threshold 0.05, 1c spread, $1 per trade.</p>
+<div class="scroll"><table>
+<thead><tr><th>strategy</th><th>trades</th><th>return</th><th>95% CI</th><th>hit</th><th>net/share</th></tr></thead>
+<tbody>
+<tr><td><strong>SWM</strong></td><td>817</td><td><strong class="up">+1.69%</strong></td><td>-5.4 to +9.3%</td><td>37.3%</td><td>+0.11c</td></tr>
+<tr><td>Always YES</td><td>1,733</td><td class="down">-5.29%</td><td>-10.4 to +1.0%</td><td>27.6%</td><td>-1.11c</td></tr>
+<tr><td>Always NO</td><td>1,733</td><td class="down">-0.34%</td><td>-2.2 to +1.8%</td><td>34.3%</td><td>-0.89c</td></tr>
+<tr><td>Random</td><td>1,733</td><td class="down">-2.90%</td><td>-6.6 to +1.0%</td><td>30.5%</td><td>-0.99c</td></tr>
+<tr><td>Perfect direction</td><td>526</td><td class="up">+52.10%</td><td>+40.8 to +63.5%</td><td>100%</td><td>+12.70c</td></tr>
+</tbody>
+</table></div>
+<p>On <strong>SWM's own 817 positions</strong>, blind YES returns −4.5% and blind NO +0.6% —
+no drift to ride, so the +1.7% is a genuine directional call. Perfect direction on
+those positions makes +21.7%: the information is abundant, the model captures a
+sliver. (Holding to <code>resolution</code> instead gives −7.4% with a −28%→+20% CI — pure
+noise, reported for completeness only.)</p>
+
+<h2>4. Real signal, eaten by the spread</h2>
+<p>Set the spread to zero and the edge is unmistakable and rises with confidence;
+put 1c back and it nearly vanishes:</p>
+<figure class="fig">
+<svg viewBox="0 0 900 262" role="img" aria-label="ROI by threshold: frictionless vs 1c spread, hourly fills">
+  <g class="svg-grid"><path d="M60,192 L884,192"/><path d="M60,144.3 L884,144.3"/><path d="M60,96.5 L884,96.5"/><path d="M60,48.8 L884,48.8"/></g>
+  <g class="svg-lab" font-size="10" text-anchor="end">
+    <text x="52" y="196">0%</text><text x="52" y="148">5%</text><text x="52" y="100">10%</text><text x="52" y="52">15%</text></g>
+  <g>
+    <rect class="bar-gross" x="98"  y="119.3" width="44" height="72.7"/>
+    <rect class="bar-neg"   x="152" y="192"   width="44" height="14.9"/>
+    <rect class="bar-gross" x="260" y="100.2" width="44" height="91.8"/>
+    <rect class="bar-neg"   x="314" y="192"   width="44" height="1.5"/>
+    <rect class="bar-gross" x="422" y="79.6"  width="44" height="112.4"/>
+    <rect class="bar-net"   x="476" y="175.9" width="44" height="16.1"/>
+    <rect class="bar-gross" x="584" y="56.1"  width="44" height="135.9"/>
+    <rect class="bar-net"   x="638" y="147.9" width="44" height="44.1"/>
+    <rect class="bar-gross" x="746" y="68.0"  width="44" height="124.0"/>
+    <rect class="bar-net"   x="800" y="144.6" width="44" height="47.4"/>
+  </g>
+  <g class="svg-s" font-size="9.5" text-anchor="middle">
+    <text x="120" y="114">+7.6</text><text x="174" y="219" fill="var(--loss)">&minus;1.6</text>
+    <text x="282" y="95">+9.6</text><text x="336" y="205" fill="var(--loss)">&minus;0.0</text>
+    <text x="444" y="74">+11.8</text><text x="498" y="170">+1.7</text>
+    <text x="606" y="51">+14.2</text><text x="660" y="142">+4.6</text>
+    <text x="768" y="63">+13.0</text><text x="822" y="139">+5.0</text>
+  </g>
+  <path d="M60,192 L884,192" stroke="var(--rule)" stroke-width="1.5"/>
+  <g class="svg-lab" font-size="11" text-anchor="middle">
+    <text x="147" y="252">thr 0.00</text><text x="309" y="252">0.02</text><text x="471" y="252">0.05</text><text x="633" y="252">0.08</text><text x="795" y="252">0.10</text></g>
+  <g font-size="10.5" font-family="IBM Plex Mono">
+    <rect class="bar-gross" x="600" y="8" width="12" height="12"/><text class="svg-s" x="618" y="18">frictionless</text>
+    <rect class="bar-net" x="720" y="8" width="12" height="12"/><text class="svg-s" x="738" y="18">after 1c spread</text>
+  </g>
+</svg>
+<figcaption>Return on capital by trading threshold, hourly fills. Frictionless ~+8–14%; the 1c spread takes most of it.</figcaption>
+</figure>
+<p>Gross edge is ~0.7–1.1c/share; the spread is 1c. The forecast correlates
+<strong>+0.084</strong> with the tradeable move (direction accuracy 51.1%) — real, thin. What
+survives is <strong>fragile</strong>: the +1.7% leans on ~54 trades in the 0.75–0.98 price bucket
+(+14%) and flips between June (−2.4%) and July (+7.2%). And it still assumes you
+get that next-hour price: model a further 25% of slippage and it falls to −5.2%.</p>
+
+<h2>5. Why it wins, and where it's wrong</h2>
+<p>Real trades, each on the market's <strong>actual hourly price path</strong> — the triggering
+jin10 headline (dashed line), the fill at the next hourly tick, and the settle 24h
+later.</p>
+<p class="exleg"><span>&mdash; hourly market price</span><span>○ fill (next tick)</span>
+<span style="color:var(--gain)">● settled (win)</span><span style="color:var(--loss)">● settled (loss)</span><span>┆ headline</span></p>
+
+<h3>Four it got right</h3>
+
+<div class="ex">
+  <div class="news">jin10 · Fox News: US VP Vance says envoys Witkoff, Kushner have arrived for Iran talks</div>
+  <div class="q">Will J.D. Vance attend the next US–Iran meeting? <span class="badge yes">BOUGHT YES</span></div>
+  <svg viewBox="0 0 760 178" role="img" aria-label="JD Vance attends US–Iran meeting, entry 0.40 settle 1.00">
+    <line class="svg-grid" x1="50" y1="150.0" x2="740" y2="150.0"/>
+    <text class="svg-lab" x="44" y="153.0" font-size="9" text-anchor="end">0</text>
+    <line class="svg-grid" x1="50" y1="85.0" x2="740" y2="85.0"/>
+    <text class="svg-lab" x="44" y="88.0" font-size="9" text-anchor="end">.5</text>
+    <line class="svg-grid" x1="50" y1="20.0" x2="740" y2="20.0"/>
+    <text class="svg-lab" x="44" y="23.0" font-size="9" text-anchor="end">1</text>
+    <text class="svg-lab" x="122.8" y="170" font-size="8" text-anchor="middle">06-18</text>
+    <text class="svg-lab" x="283.8" y="170" font-size="8" text-anchor="middle">06-19</text>
+    <text class="svg-lab" x="444.8" y="170" font-size="8" text-anchor="middle">06-20</text>
+    <text class="svg-lab" x="605.8" y="170" font-size="8" text-anchor="middle">06-21</text>
+    <line x1="533.0" y1="20" x2="533.0" y2="150" stroke="var(--faint)" stroke-width="1" stroke-dasharray="3 3"/>
+    <text class="svg-lab" x="533.0" y="16" font-size="8.5" text-anchor="middle">headline</text>
+    <polyline points="55.8,42.6 62.5,44.6 69.2,47.2 75.9,49.0 82.6,39.5 89.3,47.3 96.0,42.5 102.7,41.9 109.4,79.7 116.2,44.4 122.9,50.6 129.6,75.3 136.3,70.5 143.0,71.3 149.7,70.8 156.4,70.2 163.1,70.7 169.8,63.0 176.5,62.3 183.2,50.2 189.9,47.6 196.6,44.2 203.4,53.4 210.1,52.2 216.8,51.5 223.5,53.0 230.2,50.7 236.9,52.8 243.6,77.8 250.3,73.9 257.0,69.3 263.7,68.9 270.4,67.3 277.1,77.3 283.9,84.8 290.6,105.7 297.3,111.6 304.0,102.3 310.7,101.6 324.1,105.7 330.8,106.4 337.5,102.1 344.2,100.0 350.9,99.4 357.6,99.7 364.4,106.2 371.1,99.7 377.8,91.7 384.5,81.2 391.2,87.0 397.9,87.0 404.6,87.1 411.3,95.1 418.0,94.4 424.7,107.5 431.4,103.0 438.1,79.7 444.9,97.2 451.6,112.4 458.3,106.8 465.0,110.1 471.7,118.1 478.4,120.9 485.1,120.9 491.8,109.4 498.5,118.0 505.2,113.9 511.9,113.0 518.6,106.3 525.3,106.9 532.1,109.2 538.8,98.5 545.5,51.0 552.2,37.4 558.9,42.9 565.6,47.2 572.3,43.1 579.0,42.8 585.7,30.4 592.4,28.3 599.1,27.4 605.9,26.6 612.5,26.8 619.3,26.2 626.0,24.7 632.7,23.5 639.4,23.4 646.1,22.4 652.8,22.8 659.5,21.6 666.2,21.7 672.9,21.0 679.6,21.4 686.3,20.8 693.0,21.3 699.8,20.1 706.5,20.1" fill="none" stroke="var(--accent)" stroke-width="1.4"/>
+    <circle cx="538.8" cy="98.5" r="5" fill="var(--surface)" stroke="var(--faint)" stroke-width="2"/>
+    <circle cx="699.8" cy="20.1" r="6" fill="var(--gain)"/>
+    <text class="svg-s" x="538.8" y="114.5" font-size="9" text-anchor="middle">buy 0.40</text>
+    <text class="svg-s" x="690.0" y="10.1" font-size="9" text-anchor="middle" fill="var(--gain)">settle 1.00</text>
+</svg>
+  <div class="res">Envoys arrive → attendance likelier. Filled 0.40 an hour after the news; settled <b>YES</b>. <span class="badge win">+59c / share</span></div>
+</div>
+
+<div class="ex">
+  <div class="news">jin10 · WTI and Brent crude both rise over 2% intraday</div>
+  <div class="q">Will WTI Crude hit $80 (HIGH) in July? <span class="badge yes">BOUGHT YES</span></div>
+  <svg viewBox="0 0 760 178" role="img" aria-label="WTI crude to $80 (July), entry 0.14 settle 0.61">
+    <line class="svg-grid" x1="50" y1="150.0" x2="740" y2="150.0"/>
+    <text class="svg-lab" x="44" y="153.0" font-size="9" text-anchor="end">0</text>
+    <line class="svg-grid" x1="50" y1="85.0" x2="740" y2="85.0"/>
+    <text class="svg-lab" x="44" y="88.0" font-size="9" text-anchor="end">.5</text>
+    <line class="svg-grid" x1="50" y1="20.0" x2="740" y2="20.0"/>
+    <text class="svg-lab" x="44" y="23.0" font-size="9" text-anchor="end">1</text>
+    <text class="svg-lab" x="117.3" y="170" font-size="8" text-anchor="middle">07-05</text>
+    <text class="svg-lab" x="278.0" y="170" font-size="8" text-anchor="middle">07-06</text>
+    <text class="svg-lab" x="438.7" y="170" font-size="8" text-anchor="middle">07-07</text>
+    <text class="svg-lab" x="599.4" y="170" font-size="8" text-anchor="middle">07-08</text>
+    <line x1="532.0" y1="20" x2="532.0" y2="150" stroke="var(--faint)" stroke-width="1" stroke-dasharray="3 3"/>
+    <text class="svg-lab" x="532.0" y="16" font-size="8.5" text-anchor="middle">headline</text>
+    <polyline points="50.4,126.0 57.1,125.3 63.8,125.3 70.5,124.7 77.2,124.7 83.9,124.7 90.6,127.2 97.3,127.2 104.0,127.2 110.7,127.2 117.4,127.2 124.0,127.2 130.7,128.6 137.4,128.6 144.1,128.6 150.8,127.9 157.5,127.2 164.2,127.9 170.9,126.6 177.6,127.2 184.3,127.2 191.0,127.2 197.7,122.0 204.4,122.0 211.1,121.4 217.8,121.4 224.5,120.8 231.2,120.8 237.9,120.8 244.6,120.8 251.2,122.0 258.0,122.0 264.6,124.0 271.3,130.5 278.0,132.4 284.7,130.5 291.4,129.8 298.1,131.2 304.8,131.2 311.5,131.2 318.2,131.2 324.9,130.5 331.6,131.2 338.3,131.2 345.0,132.4 351.7,133.8 358.4,132.4 365.1,132.4 371.8,132.4 378.5,132.4 385.2,132.4 391.9,132.4 398.5,131.2 405.3,131.2 411.9,131.2 418.6,131.2 425.3,131.2 432.0,131.2 438.7,132.4 445.4,131.2 452.1,131.2 458.8,131.2 465.5,131.2 472.2,131.2 478.9,131.2 485.6,131.2 492.3,131.2 499.0,129.8 505.7,131.2 512.4,131.2 519.1,131.2 525.7,131.2 532.4,131.2 539.1,126.0 545.8,123.3 552.5,119.5 559.2,120.8 565.9,111.7 572.6,105.8 579.3,109.7 586.0,107.1 592.7,103.8 599.4,104.5 606.1,105.2 612.8,107.8 619.5,107.1 626.2,107.1 632.9,106.4 639.6,106.4 646.3,105.2 652.9,106.4 659.7,87.0 666.3,79.1 673.0,85.0 679.7,85.7 686.5,89.5 693.1,90.8 699.8,70.0 706.5,65.5 713.2,79.1 719.9,89.5 726.6,89.5 733.3,85.0 740.0,74.0" fill="none" stroke="var(--accent)" stroke-width="1.4"/>
+    <circle cx="532.4" cy="131.2" r="5" fill="var(--surface)" stroke="var(--faint)" stroke-width="2"/>
+    <circle cx="699.8" cy="70.0" r="6" fill="var(--gain)"/>
+    <text class="svg-s" x="532.4" y="147.2" font-size="9" text-anchor="middle">buy 0.14</text>
+    <text class="svg-s" x="690.0" y="60.0" font-size="9" text-anchor="middle" fill="var(--gain)">settle 0.61</text>
+</svg>
+  <div class="res">Oil rallying → the $80 target nears. Filled 0.14 six minutes after the news; rose to 0.61. <span class="badge win">+46c / share</span></div>
+</div>
+
+<div class="ex">
+  <div class="news">jin10 · U.S. officials reveal 14 clauses of the U.S.–Iran memorandum of understanding</div>
+  <div class="q">Will Trump agree to withdraw troops from the Iran region by June 30? <span class="badge yes">BOUGHT YES</span></div>
+  <svg viewBox="0 0 760 178" role="img" aria-label="Trump withdraws troops from Iran, entry 0.56 settle 1.00">
+    <line class="svg-grid" x1="50" y1="150.0" x2="740" y2="150.0"/>
+    <text class="svg-lab" x="44" y="153.0" font-size="9" text-anchor="end">0</text>
+    <line class="svg-grid" x1="50" y1="85.0" x2="740" y2="85.0"/>
+    <text class="svg-lab" x="44" y="88.0" font-size="9" text-anchor="end">.5</text>
+    <line class="svg-grid" x1="50" y1="20.0" x2="740" y2="20.0"/>
+    <text class="svg-lab" x="44" y="23.0" font-size="9" text-anchor="end">1</text>
+    <text class="svg-lab" x="76.1" y="170" font-size="8" text-anchor="middle">06-15</text>
+    <text class="svg-lab" x="237.0" y="170" font-size="8" text-anchor="middle">06-16</text>
+    <text class="svg-lab" x="398.0" y="170" font-size="8" text-anchor="middle">06-17</text>
+    <text class="svg-lab" x="558.9" y="170" font-size="8" text-anchor="middle">06-18</text>
+    <text class="svg-lab" x="719.9" y="170" font-size="8" text-anchor="middle">06-19</text>
+    <line x1="532.8" y1="20" x2="532.8" y2="150" stroke="var(--faint)" stroke-width="1" stroke-dasharray="3 3"/>
+    <text class="svg-lab" x="532.8" y="16" font-size="8.5" text-anchor="middle">headline</text>
+    <polyline points="56.0,106.4 62.7,102.6 69.4,59.7 76.1,62.9 82.8,63.5 89.5,62.2 96.2,64.8 102.9,76.6 109.6,88.2 116.3,88.2 123.0,87.0 129.7,87.6 136.5,92.2 143.2,109.0 149.9,107.8 156.6,85.7 163.3,77.8 170.0,77.8 176.7,89.5 183.4,96.7 190.1,109.0 196.8,98.7 203.5,103.8 210.2,116.8 216.9,117.5 223.6,120.8 230.3,123.3 237.0,120.8 243.7,107.8 250.5,111.7 257.2,111.7 263.9,107.8 270.6,113.0 277.3,111.7 284.0,111.0 290.7,105.8 297.4,102.6 304.1,103.8 310.8,105.2 317.5,105.2 324.2,105.2 330.9,103.8 337.6,105.2 344.3,105.2 351.1,82.4 357.8,82.4 364.5,60.3 371.2,66.1 377.9,55.8 384.6,59.7 391.3,60.3 398.0,58.4 404.7,60.9 411.4,61.6 418.1,58.4 424.8,57.0 431.5,55.8 438.2,55.1 444.9,54.5 451.6,54.5 458.4,55.8 465.0,55.8 471.8,55.8 478.5,55.8 485.2,55.8 491.9,55.8 498.6,60.9 505.3,59.7 512.0,58.4 518.7,53.2 525.4,48.0 532.1,85.7 538.8,77.8 545.5,68.1 552.3,66.1 559.0,66.8 565.6,63.5 572.3,49.9 579.1,44.1 585.8,49.9 592.5,53.2 599.2,50.5 605.9,35.0 612.6,33.0 619.3,35.0 626.0,34.3 632.7,38.2 639.4,45.3 646.1,41.5 652.8,47.3 659.5,48.0 666.2,46.6 672.9,51.2 679.6,60.9 686.4,72.0 693.1,58.4 699.8,20.1 706.5,20.1 713.2,20.1 719.9,20.1 726.6,20.1 733.3,20.1 740.0,20.1" fill="none" stroke="var(--accent)" stroke-width="1.4"/>
+    <circle cx="538.8" cy="77.8" r="5" fill="var(--surface)" stroke="var(--faint)" stroke-width="2"/>
+    <circle cx="699.8" cy="20.1" r="6" fill="var(--gain)"/>
+    <text class="svg-s" x="538.8" y="68.8" font-size="9" text-anchor="middle">buy 0.56</text>
+    <text class="svg-s" x="690.0" y="10.1" font-size="9" text-anchor="middle" fill="var(--gain)">settle 1.00</text>
+</svg>
+  <div class="res">A concrete de-escalation MOU → withdrawal likelier. Filled 0.56; settled <b>YES</b>. <span class="badge win">+43c / share</span></div>
+</div>
+
+<div class="ex">
+  <div class="news">jin10 · Night session opens: silver drops nearly 4%</div>
+  <div class="q">Will Silver hit $60 (LOW) by end of June? <span class="badge yes">BOUGHT YES</span></div>
+  <svg viewBox="0 0 760 178" role="img" aria-label="Silver to $60 low (June), entry 0.46 settle 0.86">
+    <line class="svg-grid" x1="50" y1="150.0" x2="740" y2="150.0"/>
+    <text class="svg-lab" x="44" y="153.0" font-size="9" text-anchor="end">0</text>
+    <line class="svg-grid" x1="50" y1="85.0" x2="740" y2="85.0"/>
+    <text class="svg-lab" x="44" y="88.0" font-size="9" text-anchor="end">.5</text>
+    <line class="svg-grid" x1="50" y1="20.0" x2="740" y2="20.0"/>
+    <text class="svg-lab" x="44" y="23.0" font-size="9" text-anchor="end">1</text>
+    <text class="svg-lab" x="123.7" y="170" font-size="8" text-anchor="middle">06-21</text>
+    <text class="svg-lab" x="284.5" y="170" font-size="8" text-anchor="middle">06-22</text>
+    <text class="svg-lab" x="445.2" y="170" font-size="8" text-anchor="middle">06-23</text>
+    <text class="svg-lab" x="606.0" y="170" font-size="8" text-anchor="middle">06-24</text>
+    <line x1="532.3" y1="20" x2="532.3" y2="150" stroke="var(--faint)" stroke-width="1" stroke-dasharray="3 3"/>
+    <text class="svg-lab" x="532.3" y="16" font-size="8.5" text-anchor="middle">headline</text>
+    <polyline points="50.0,109.7 56.7,109.7 63.4,112.3 70.1,112.3 76.8,112.3 83.5,109.0 90.2,111.7 96.9,111.7 103.6,112.3 110.3,103.2 117.0,109.7 123.7,109.0 130.4,109.7 137.1,109.7 143.8,109.7 150.5,109.7 157.2,109.7 163.9,109.7 170.6,109.7 177.3,110.3 184.0,110.3 190.7,110.3 197.4,110.3 204.1,110.3 210.8,110.3 217.5,110.3 224.2,110.3 230.9,110.3 237.6,110.3 244.3,110.3 251.0,110.3 257.7,109.7 264.4,109.7 271.1,109.7 277.8,108.4 284.5,106.4 291.2,111.0 297.9,111.7 304.6,111.7 311.3,111.7 318.0,111.7 324.7,116.2 331.4,122.0 338.1,122.7 344.8,123.3 351.5,120.1 358.2,124.0 364.9,124.7 371.6,122.7 378.3,122.7 385.0,123.3 391.7,124.7 398.4,124.7 405.0,124.0 411.7,124.7 418.4,124.7 425.1,124.7 431.8,124.7 438.5,123.3 445.2,122.7 451.9,128.6 458.6,124.0 465.3,124.0 472.1,122.0 478.7,120.8 485.4,117.5 492.1,116.2 498.8,99.3 505.5,87.0 512.2,85.0 518.9,87.0 525.6,87.6 532.3,90.2 539.0,94.1 545.7,83.7 552.4,83.0 559.1,83.7 565.8,83.0 572.5,82.4 579.2,79.1 585.9,81.1 592.6,88.2 599.3,88.9 606.0,81.8 612.7,80.5 619.4,74.0 626.1,81.8 632.8,82.4 639.5,83.0 646.2,81.8 652.9,81.8 659.6,95.4 666.3,94.1 673.0,95.4 679.7,83.0 686.4,46.6 693.1,32.3 699.8,38.2 706.5,28.4 713.2,27.2 719.9,23.2 726.6,20.1 733.3,20.1 740.0,20.1" fill="none" stroke="var(--accent)" stroke-width="1.4"/>
+    <circle cx="532.3" cy="90.2" r="5" fill="var(--surface)" stroke="var(--faint)" stroke-width="2"/>
+    <circle cx="699.8" cy="38.2" r="6" fill="var(--gain)"/>
+    <text class="svg-s" x="532.3" y="106.2" font-size="9" text-anchor="middle">buy 0.46</text>
+    <text class="svg-s" x="690.0" y="28.2" font-size="9" text-anchor="middle" fill="var(--gain)">settle 0.86</text>
+</svg>
+  <div class="res">Silver selling off → more likely to touch the low. Filled 0.46 on the tick; rose to 0.86. <span class="badge win">+39c / share</span></div>
+</div>
+
+<h3>Three it got wrong</h3>
+
+<div class="ex">
+  <div class="news">jin10 · Iran Foreign Ministry: Switzerland meeting postponed, rescheduling underway</div>
+  <div class="q">Will the next US–Iran meeting be in Switzerland? <span class="badge no">BOUGHT NO</span></div>
+  <svg viewBox="0 0 760 178" role="img" aria-label="US–Iran meeting in Switzerland, entry 0.37 settle 0.92">
+    <line class="svg-grid" x1="50" y1="150.0" x2="740" y2="150.0"/>
+    <text class="svg-lab" x="44" y="153.0" font-size="9" text-anchor="end">0</text>
+    <line class="svg-grid" x1="50" y1="85.0" x2="740" y2="85.0"/>
+    <text class="svg-lab" x="44" y="88.0" font-size="9" text-anchor="end">.5</text>
+    <line class="svg-grid" x1="50" y1="20.0" x2="740" y2="20.0"/>
+    <text class="svg-lab" x="44" y="23.0" font-size="9" text-anchor="end">1</text>
+    <text class="svg-lab" x="117.3" y="170" font-size="8" text-anchor="middle">06-17</text>
+    <text class="svg-lab" x="278.0" y="170" font-size="8" text-anchor="middle">06-18</text>
+    <text class="svg-lab" x="438.7" y="170" font-size="8" text-anchor="middle">06-19</text>
+    <text class="svg-lab" x="599.4" y="170" font-size="8" text-anchor="middle">06-20</text>
+    <line x1="532.1" y1="20" x2="532.1" y2="150" stroke="var(--faint)" stroke-width="1" stroke-dasharray="3 3"/>
+    <text class="svg-lab" x="532.1" y="16" font-size="8.5" text-anchor="middle">headline</text>
+    <polyline points="50.4,49.5 57.1,46.1 63.8,59.3 70.5,61.5 77.2,58.6 83.9,45.9 90.6,46.8 97.3,48.3 104.0,49.5 110.6,46.6 117.4,43.2 124.0,41.8 130.7,42.6 137.4,44.6 144.1,44.0 150.8,45.5 157.5,45.8 164.2,43.9 170.9,45.2 177.6,43.9 184.3,41.5 191.0,40.0 197.7,36.7 204.4,36.6 211.1,41.6 217.8,42.8 224.5,50.4 231.2,47.8 237.9,47.6 244.6,43.1 251.3,45.7 257.9,45.2 264.6,47.4 271.4,56.6 278.1,43.9 284.7,57.9 291.4,58.8 298.1,67.8 304.8,53.3 311.5,78.6 318.2,60.0 324.9,47.5 331.6,43.3 338.3,37.2 345.0,36.4 351.7,35.2 358.4,35.7 365.1,36.4 371.8,45.3 378.5,35.1 385.2,37.4 391.9,40.9 398.5,44.4 405.3,41.7 411.9,55.9 418.6,57.0 425.3,55.1 432.0,60.8 438.8,59.3 445.4,64.1 452.1,84.4 458.8,91.8 465.5,110.8 478.9,92.4 485.6,127.4 492.3,121.8 499.0,98.5 505.7,119.8 512.4,116.9 519.1,116.7 525.8,103.8 532.4,102.0 539.1,100.7 545.8,98.3 552.5,103.3 559.2,110.2 565.9,109.1 572.6,101.3 579.3,109.0 586.0,121.5 592.7,64.1 599.4,65.8 606.1,56.7 612.8,54.0 619.5,56.1 626.2,55.7 632.9,55.7 639.6,53.9 646.3,58.9 653.0,61.3 659.7,65.2 666.3,69.2 673.0,67.8 679.7,65.9 686.4,63.2 693.1,32.3 699.8,30.8 706.5,27.3 713.2,29.4 719.9,29.8 726.6,29.2 733.3,29.8 740.0,25.9" fill="none" stroke="var(--accent)" stroke-width="1.4"/>
+    <circle cx="532.4" cy="102.0" r="5" fill="var(--surface)" stroke="var(--faint)" stroke-width="2"/>
+    <circle cx="699.8" cy="30.8" r="6" fill="var(--loss)"/>
+    <text class="svg-s" x="532.4" y="118.0" font-size="9" text-anchor="middle">buy 0.37</text>
+    <text class="svg-s" x="690.0" y="20.8" font-size="9" text-anchor="middle" fill="var(--loss)">settle 0.92</text>
+</svg>
+  <div class="res"><b>Read a scary word too literally.</b> "Postponed" ≠ cancelled — the meeting still happened in Switzerland. Shorted to 0.11; settled <b>YES</b>. <span class="badge loss">−56c / share</span></div>
+</div>
+
+<div class="ex">
+  <div class="news">jin10 · Market sources: Iran seeks guarantees of an end to hostilities before resuming talks</div>
+  <div class="q">Will Iran agree to end uranium enrichment by July 31? <span class="badge yes">BOUGHT YES</span></div>
+  <svg viewBox="0 0 760 178" role="img" aria-label="Iran ends enrichment by Jul 31, entry 0.63 settle 0.14">
+    <line class="svg-grid" x1="50" y1="150.0" x2="740" y2="150.0"/>
+    <text class="svg-lab" x="44" y="153.0" font-size="9" text-anchor="end">0</text>
+    <line class="svg-grid" x1="50" y1="85.0" x2="740" y2="85.0"/>
+    <text class="svg-lab" x="44" y="88.0" font-size="9" text-anchor="end">.5</text>
+    <line class="svg-grid" x1="50" y1="20.0" x2="740" y2="20.0"/>
+    <text class="svg-lab" x="44" y="23.0" font-size="9" text-anchor="end">1</text>
+    <text class="svg-lab" x="153.1" y="170" font-size="8" text-anchor="middle">06-17</text>
+    <text class="svg-lab" x="315.0" y="170" font-size="8" text-anchor="middle">06-18</text>
+    <text class="svg-lab" x="476.9" y="170" font-size="8" text-anchor="middle">06-19</text>
+    <text class="svg-lab" x="638.8" y="170" font-size="8" text-anchor="middle">06-20</text>
+    <line x1="535.7" y1="20" x2="535.7" y2="150" stroke="var(--faint)" stroke-width="1" stroke-dasharray="3 3"/>
+    <text class="svg-lab" x="535.7" y="16" font-size="8.5" text-anchor="middle">headline</text>
+    <polyline points="51.9,96.7 58.6,97.3 65.4,99.3 72.1,97.3 78.9,95.4 85.6,92.2 92.4,90.2 99.1,90.2 105.8,90.8 112.6,90.8 119.3,92.8 126.1,94.1 132.8,94.1 139.6,90.2 146.3,86.3 153.1,83.0 159.8,70.7 166.6,71.4 173.3,85.0 180.1,75.9 186.8,71.4 193.6,69.4 200.3,72.0 207.0,81.8 213.8,81.8 220.5,81.8 227.3,80.5 234.0,71.4 240.8,70.0 247.5,71.4 254.3,73.3 261.0,75.2 267.8,76.6 274.5,86.3 281.2,84.3 288.0,83.0 294.7,98.7 301.5,92.2 308.3,84.3 315.0,82.4 321.7,77.2 328.5,74.6 335.2,75.2 342.0,74.6 348.7,74.6 355.5,75.2 362.2,76.6 369.0,78.5 375.7,74.0 382.4,68.8 389.2,66.8 395.9,61.6 402.7,67.5 409.4,66.8 416.2,64.8 422.9,62.2 429.7,60.3 436.4,59.7 443.2,71.4 449.9,77.2 456.7,63.5 463.4,59.0 470.1,67.5 476.9,62.2 483.6,50.5 490.4,57.7 497.1,59.7 503.9,55.8 517.4,65.5 524.1,64.2 530.9,69.4 537.6,68.1 544.4,74.6 551.1,75.9 557.8,74.6 564.6,81.8 571.3,79.1 578.1,79.8 584.8,81.8 591.6,81.1 598.3,77.2 605.1,77.8 611.8,109.7 618.6,98.7 625.3,131.2 632.1,131.2 638.8,132.4 645.5,132.4 652.3,132.4 659.0,133.1 665.8,133.1 672.5,133.1 679.3,133.8 686.0,132.4 692.8,132.4 699.5,132.4 706.3,132.4 713.0,132.4 719.8,132.4 726.5,132.4 733.3,131.2 740.0,129.8" fill="none" stroke="var(--accent)" stroke-width="1.4"/>
+    <circle cx="537.6" cy="68.1" r="5" fill="var(--surface)" stroke="var(--faint)" stroke-width="2"/>
+    <circle cx="699.5" cy="132.4" r="6" fill="var(--loss)"/>
+    <text class="svg-s" x="537.6" y="59.1" font-size="9" text-anchor="middle">buy 0.63</text>
+    <text class="svg-s" x="690.0" y="122.4" font-size="9" text-anchor="middle" fill="var(--loss)">settle 0.14</text>
+</svg>
+  <div class="res"><b>Too optimistic on a diplomacy headline.</b> "Seeks guarantees" is a precondition, not a deal. Bought 0.63; it collapsed to 0.14. <span class="badge loss">−50c / share</span></div>
+</div>
+
+<div class="ex">
+  <div class="news">jin10 · SpaceX (SPCX.O) launches inaugural senior unsecured bond offering to repay debt</div>
+  <div class="q">SpaceX IPO: closing price up at end of first month? <span class="badge yes">BOUGHT YES</span></div>
+  <svg viewBox="0 0 760 178" role="img" aria-label="SpaceX closes up (first month), entry 0.81 settle 0.46">
+    <line class="svg-grid" x1="50" y1="150.0" x2="740" y2="150.0"/>
+    <text class="svg-lab" x="44" y="153.0" font-size="9" text-anchor="end">0</text>
+    <line class="svg-grid" x1="50" y1="85.0" x2="740" y2="85.0"/>
+    <text class="svg-lab" x="44" y="88.0" font-size="9" text-anchor="end">.5</text>
+    <line class="svg-grid" x1="50" y1="20.0" x2="740" y2="20.0"/>
+    <text class="svg-lab" x="44" y="23.0" font-size="9" text-anchor="end">1</text>
+    <text class="svg-lab" x="129.5" y="170" font-size="8" text-anchor="middle">06-20</text>
+    <text class="svg-lab" x="290.5" y="170" font-size="8" text-anchor="middle">06-21</text>
+    <text class="svg-lab" x="451.5" y="170" font-size="8" text-anchor="middle">06-22</text>
+    <text class="svg-lab" x="612.5" y="170" font-size="8" text-anchor="middle">06-23</text>
+    <line x1="533.1" y1="20" x2="533.1" y2="150" stroke="var(--faint)" stroke-width="1" stroke-dasharray="3 3"/>
+    <text class="svg-lab" x="533.1" y="16" font-size="8.5" text-anchor="middle">headline</text>
+    <polyline points="55.7,51.8 62.4,51.8 69.1,63.5 75.8,60.9 82.5,57.7 89.2,50.5 95.9,50.5 102.6,50.5 109.3,50.5 116.0,53.2 122.7,53.2 129.5,52.5 136.2,51.2 142.9,51.8 149.6,51.8 156.3,51.2 163.0,51.2 169.7,51.2 176.4,50.5 183.1,50.5 189.8,50.5 196.6,50.5 203.3,50.5 210.0,50.5 216.7,50.5 223.4,50.5 230.1,50.5 236.8,50.5 243.5,50.5 250.2,50.5 256.9,50.5 263.6,43.4 270.4,42.8 277.1,41.5 283.8,42.8 290.5,44.1 297.2,44.1 303.9,38.9 310.6,38.2 317.3,39.5 324.0,38.9 330.7,40.2 337.4,40.2 344.2,40.2 350.9,40.2 357.6,31.7 364.3,31.7 371.0,37.5 377.7,38.2 384.4,37.5 391.1,38.2 397.8,38.9 404.6,38.9 411.3,37.5 418.0,40.2 424.7,39.5 431.4,39.5 438.1,39.5 444.8,39.5 451.5,42.1 458.2,42.1 464.9,42.1 471.6,44.1 478.3,45.3 485.0,45.3 491.8,44.1 498.5,44.1 505.2,44.1 511.9,44.1 518.6,44.1 525.3,44.1 532.0,42.8 538.7,44.1 545.4,46.6 552.1,60.9 558.9,53.2 565.6,60.3 572.3,65.5 579.0,67.5 585.7,93.5 592.4,94.8 599.1,88.9 605.8,90.2 612.5,85.7 619.2,87.6 625.9,87.6 632.7,86.3 639.4,86.3 646.1,87.0 652.8,94.8 659.5,107.8 666.2,107.8 672.9,100.6 679.6,98.0 686.3,100.6 693.0,90.2 699.7,90.8 706.5,98.7 713.2,88.2 719.9,87.0 726.6,85.0 733.3,79.8 740.0,80.5" fill="none" stroke="var(--accent)" stroke-width="1.4"/>
+    <circle cx="538.7" cy="44.1" r="5" fill="var(--surface)" stroke="var(--faint)" stroke-width="2"/>
+    <circle cx="699.7" cy="90.8" r="6" fill="var(--loss)"/>
+    <text class="svg-s" x="538.7" y="35.1" font-size="9" text-anchor="middle">buy 0.81</text>
+    <text class="svg-s" x="690.0" y="80.8" font-size="9" text-anchor="middle" fill="var(--loss)">settle 0.46</text>
+</svg>
+  <div class="res"><b>Misjudged a mixed corporate signal.</b> A debt-repay bond issue read as bullish; the stock fell. Bought 0.81; settled 0.46. <span class="badge loss">−37c / share</span></div>
+</div>
+
+<p>Winners and losers together are the whole point of §4: the model calls direction
+right a little more than half the time, so the gross edge is positive — but the
+losses are big and frequent enough that, after the spread, the net is close to a
+coin toss. Real signal, no moat.</p>
+
+<h2>6. Reproduce</h2>
+<pre><code># build: fill/settle on the hourly book, prompt on the daily history
+python scripts/backtest_build_news_grid.py \
+    --data data/swmbench_jin10_dailyhist_en.jsonl \
+    --price-series data/polymarket_2026_series.jsonl \
+    --out results/backtest/grid_news_hourly.jsonl \
+    --embed-model &lt;bge-small-en-v1.5&gt; --top-markets 5 --hold-hours 24
+python scripts/backtest_predict.py --grid results/backtest/grid_news_hourly.jsonl \
+    --model-path &lt;checkpoint&gt; --out results/backtest/preds_news_hourly.jsonl
+python scripts/backtest_report.py --preds news_hourly=results/backtest/preds_news_hourly.jsonl \
+    --out results/backtest/report_news_hourly.json</code></pre>
+<p>Model under test: <code>world_model_qwen2p5_3b_jin10d_bal</code> (a Qwen2.5-<strong>7B</strong> world
+model, the dir name's "3b" is a leftover). Knobs that move the result most:
+<code>--top-markets</code>, <code>--hold-hours</code>, and in the report <code>--threshold</code>, <code>--cost</code>,
+<code>--entry-drift</code>.</p>
+
+<h2>7. Bottom line</h2>
+<p>Priced against the real hourly book — filling at the price a trader could
+actually get, an hour after the news — the world model shows the same thing the
+grid backtest did: <strong>a genuine directional signal (frictionless +8–14%, rising with
+confidence, direction 51%) that the bid-ask spread nearly cancels (+1.7% on
+capital, a confidence interval straddling zero).</strong> It has learned which markets a
+headline moves and in which direction. That skill is real; it is not yet worth
+more than it costs to trade.</p>
+</div>

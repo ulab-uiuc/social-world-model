@@ -52,9 +52,64 @@ from swm.backtest.universe import (
 HOUR = 3600
 
 
+class HourlyPrices:
+    """Real hourly polymarket price book, loaded from *_series.jsonl.
+
+    Each line is {market_id, ..., series:[{t,p}, ...]} sampled ~hourly. Used for
+    the *tradeable* quotes (entry / settle) so a news trade fills at the next
+    hourly tick after the headline instead of snapping to the daily reconstructed
+    series. The model prompt still uses the daily history it was trained on.
+    """
+
+    def __init__(self, path, keep=None):
+        import bisect
+        self._bisect = bisect
+        self._ts, self._ps = {}, {}
+        for line in open(path):
+            if not line.strip():
+                continue
+            r = json.loads(line)
+            mid = str(r.get('market_id'))
+            if keep is not None and mid not in keep:
+                continue
+            s = r.get('series') or []
+            if not s:
+                continue
+            s.sort(key=lambda x: x['t'])
+            self._ts[mid] = [int(x['t']) for x in s]
+            self._ps[mid] = [float(x['p']) for x in s]
+
+    def __contains__(self, mid):
+        return mid in self._ts
+
+    def forward_quote(self, mid, t, max_gap=None):
+        """First tick at or after t -- the price a trader gets by acting at t."""
+        ts = self._ts.get(mid)
+        if not ts:
+            return None
+        i = self._bisect.bisect_left(ts, t)
+        if i >= len(ts):
+            return None
+        if max_gap is not None and ts[i] - t > max_gap:
+            return None
+        return ts[i], self._ps[mid][i]
+
+    def has_near(self, mid, t, max_staleness):
+        """A tick within max_staleness before t -- market is live/quoted."""
+        ts = self._ts.get(mid)
+        if not ts:
+            return False
+        i = self._bisect.bisect_right(ts, t) - 1
+        return i >= 0 and 0 <= t - ts[i] <= max_staleness
+
+
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument('--data', required=True, help='swmbench_jin10_dailyhist_en.jsonl')
+    p.add_argument('--price-series', type=str, default=None,
+                   help='hourly price book (e.g. data/polymarket_2026_series.jsonl). '
+                        'When given, entry/settle fill at the next hourly tick after '
+                        'the headline; the daily history in the prompt is unchanged.')
     p.add_argument('--out', required=True)
     p.add_argument('--news', choices=['retrieval'], default='retrieval',
                    help='only bi-encoder retrieval is meaningful here')
@@ -64,7 +119,17 @@ def parse_args():
     p.add_argument('--news-lookback-hours', type=float, default=2.5,
                    help='prompt news window, ending at the headline time')
     p.add_argument('--hold-hours', type=float, default=24.0,
-                   help='settle at the first quote this long after the headline')
+                   help='settle at the first quote this long after entry')
+    p.add_argument('--entry-timing', choices=['pre', 'post'], default='post',
+                   help="'post' (realistic): fill at the first quote AT/AFTER the "
+                        "headline, which has already absorbed the news. 'pre' "
+                        "(optimistic): fill at the last quote BEFORE the headline "
+                        "-- flatters returns because you capture the news move for "
+                        "free; kept only for comparison.")
+    p.add_argument('--entry-max-gap-hours', type=float, default=24.0,
+                   help="post mode: how long after the headline a fill may sit; "
+                        "if the next quote is further out, the market is not "
+                        "tradeable around the news and the cell is dropped")
     p.add_argument('--important-only', action='store_true', default=True,
                    help='only trade on jin10 important==1 headlines')
     p.add_argument('--all-news', dest='important_only', action='store_false',
@@ -94,6 +159,7 @@ def main():
     lookback = int(args.news_lookback_hours * HOUR)
     hold = int(args.hold_hours * HOUR)
     settle_gap = int(args.max_settle_gap_hours * HOUR)
+    entry_gap = int(args.entry_max_gap_hours * HOUR)
     stale = int(args.max_staleness_hours * HOUR)
 
     records = load_records(args.data)
@@ -103,6 +169,13 @@ def main():
     series = PriceSeries(records)
     stream = NewsStream(records)
     print(f'markets={len(series.market_ids)} news_stream={len(stream)}')
+
+    book = None
+    if args.price_series:
+        book = HourlyPrices(args.price_series, keep=set(series.market_ids))
+        covered = sum(1 for m in series.market_ids if m in book)
+        print(f'[hourly] loaded {args.price_series}: {covered}/{len(series.market_ids)} '
+              f'markets have an hourly book')
 
     # Out-of-sample window: mirror the grid builder's cutoff assertion, then trade
     # only headlines published from the start of the test window onward.
@@ -188,10 +261,16 @@ def main():
             continue
         live = live_cache.get(decision_t)
         if live is None:
-            live = [
-                m for m in market_ids
-                if series.is_live(m, decision_t, max_staleness=stale)
-            ]
+            if book is not None:
+                live = [
+                    m for m in market_ids
+                    if book.has_near(m, decision_t, stale)
+                ]
+            else:
+                live = [
+                    m for m in market_ids
+                    if series.is_live(m, decision_t, max_staleness=stale)
+                ]
             live_cache[decision_t] = live
         hits = retriever.top_markets(
             trigger_idx, live, k=args.top_markets, calibration=calibration
@@ -200,7 +279,21 @@ def main():
             if hit.score <= 0.0:  # headline is not about this market -- decline
                 continue
             market_id = hit.market_id
-            entry_quote = series.quote(market_id, decision_t)
+            # Realistic fill: the first quote AT/AFTER the headline, which has
+            # already absorbed the news. With an hourly book that is the next
+            # hourly tick (~<=1h lag); on the daily series it snaps to the next
+            # daily quote. 'pre' fills at the last quote BEFORE the headline --
+            # optimistic, since it hands you the news move for free.
+            if book is not None:
+                entry_quote = book.forward_quote(
+                    market_id, decision_t, max_gap=entry_gap
+                )
+            elif args.entry_timing == 'post':
+                entry_quote = series.forward_quote(
+                    market_id, decision_t, max_gap=entry_gap
+                )
+            else:
+                entry_quote = series.quote(market_id, decision_t)
             if entry_quote is None:
                 n_skipped += 1
                 continue
@@ -208,8 +301,13 @@ def main():
             if len(history) < MIN_HISTORY_POINTS:
                 n_skipped += 1
                 continue
-            settle = series.forward_quote(market_id, target_t, max_gap=settle_gap)
-            if settle is None:
+            # Hold from the actual fill, not from the headline, so the horizon is
+            # honest even when the fill lands after the news.
+            settle_src = book if book is not None else series
+            settle = settle_src.forward_quote(
+                market_id, entry_quote[0] + hold, max_gap=settle_gap
+            )
+            if settle is None or settle[0] <= entry_quote[0]:
                 n_skipped += 1
                 continue
             n_pairs += 1
@@ -232,10 +330,12 @@ def main():
                 '_bt': {
                     'mode': 'news',
                     'news_source': args.news,
+                    'entry_timing': args.entry_timing,
                     'is_breakpoint': False,
                     'decision_t': decision_t,
                     'entry_t': entry_quote[0],
                     'entry_price': entry_quote[1],
+                    'entry_lag': entry_quote[0] - decision_t,
                     'entry_staleness': decision_t - entry_quote[0],
                     'settle_t': settle[0],
                     'settle_price': settle[1],
