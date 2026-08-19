@@ -90,6 +90,20 @@ tbody tr:hover td { background:var(--accent-soft); }
 .svg-grid { stroke:var(--rule-soft); stroke-width:1; }
 .bar-gross { fill:var(--accent); } .bar-net { fill:var(--gold); }
 .bar-neg { fill:var(--loss); }
+.ex { border:1px solid var(--rule); border-radius:10px; background:var(--surface);
+  box-shadow:var(--shadow); padding:16px 18px; margin:1rem 0; }
+.ex .news { font-family:"IBM Plex Mono",monospace; font-size:.78rem; color:var(--muted);
+  border-left:2px solid var(--accent); padding-left:10px; margin-bottom:.5rem; }
+.ex .q { font-weight:600; color:var(--ink); margin-bottom:.2rem; }
+.ex .res { font-size:.84rem; color:var(--body); margin-top:.3rem; }
+.ex .res b { color:var(--ink); }
+.badge { display:inline-block; font-family:"IBM Plex Mono",monospace; font-size:.66rem;
+  font-weight:600; letter-spacing:.06em; padding:2px 7px; border-radius:5px; vertical-align:middle; }
+.badge.yes { background:var(--accent-soft); color:var(--accent); }
+.badge.no  { background:var(--raised); color:var(--gold); border:1px solid var(--rule); }
+.badge.win { background:var(--gain); color:var(--surface); }
+.exleg { font-family:"IBM Plex Mono",monospace; font-size:.72rem; color:var(--faint); margin:.4rem 0 1rem; }
+.exleg span { margin-right:16px; }
 :focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:3px; }
 @media (max-width:640px) { .doc { padding:32px 18px 64px; } body { font-size:15.5px; } h2 { margin-top:2.6rem; } }
 </style>
@@ -277,7 +291,91 @@ strategy is indistinguishable from flat (<strong>t = 0.38</strong>). What little
 <strong>fragile</strong>: the +1.0% leans on ~35 trades in the 0.75–0.98 price bucket (+30%)
 and flips between June (-2.1%) and July (+6.1%).</p>
 
-<h2>5. Reproduce</h2>
+<h2>5. Why it wins, when it wins</h2>
+<p>Four trades SWM made money on. Each shows the triggering jin10 headline, the
+market, where the model's forecast pointed relative to the price it could buy at
+(<em>entry</em>), and where the market actually <em>settled</em> ~24–48h later. The pattern is
+always the same: the headline carries real directional information, the model
+reads it the right way, and the settle confirms it.</p>
+<p class="exleg"><span>○ entry price</span><span>◆ model forecast</span>
+<span style="color:var(--gain)">● where it settled</span>
+<span>bar = the move the trade captured</span></p>
+
+<div class="ex">
+  <div class="news">jin10 · Fox News: US VP Vance says envoy Witkoff, Kushner have arrived for Iran talks</div>
+  <div class="q">Will JD Vance have a diplomatic meeting with Iran by June 30, 2026? <span class="badge yes">BOUGHT YES</span></div>
+  <svg viewBox="0 0 760 50" role="img" aria-label="entry 0.375, model 0.461, settled 1.00">
+    <rect x="40" y="22" width="680" height="6" rx="3" fill="var(--rule-soft)"/>
+    <rect x="295" y="21" width="425" height="8" rx="4" fill="var(--gain)" opacity="0.28"/>
+    <circle cx="295" cy="25" r="5" fill="var(--surface)" stroke="var(--faint)" stroke-width="2"/>
+    <path d="M347,25 l7,-6 l7,6 l-7,6 z" fill="var(--accent)"/>
+    <circle cx="720" cy="25" r="6" fill="var(--gain)"/>
+    <g font-family="IBM Plex Mono" font-size="9.5" fill="var(--faint)">
+      <text x="295" y="45" text-anchor="middle">entry .375</text>
+      <text x="354" y="14" text-anchor="middle">model .46</text>
+      <text x="720" y="14" text-anchor="end" fill="var(--gain)">settled 1.00</text></g>
+  </svg>
+  <div class="res">Envoys arriving → a meeting is more likely. Model nudged YES; it settled <b>YES</b>. <span class="badge win">+61.5c / share</span></div>
+</div>
+
+<div class="ex">
+  <div class="news">jin10 · U.S. Revokes Iranian Sales Authorization; International Oil Prices Rise</div>
+  <div class="q">Will WTI Crude Oil hit $80 (HIGH) in July? <span class="badge yes">BOUGHT YES</span></div>
+  <svg viewBox="0 0 760 50" role="img" aria-label="entry 0.225, model 0.283, settled 0.585">
+    <rect x="40" y="22" width="680" height="6" rx="3" fill="var(--rule-soft)"/>
+    <rect x="193" y="21" width="245" height="8" rx="4" fill="var(--gain)" opacity="0.28"/>
+    <circle cx="193" cy="25" r="5" fill="var(--surface)" stroke="var(--faint)" stroke-width="2"/>
+    <path d="M225,25 l7,-6 l7,6 l-7,6 z" fill="var(--accent)"/>
+    <circle cx="438" cy="25" r="6" fill="var(--gain)"/>
+    <g font-family="IBM Plex Mono" font-size="9.5" fill="var(--faint)">
+      <text x="193" y="45" text-anchor="middle">entry .225</text>
+      <text x="232" y="14" text-anchor="middle">model .28</text>
+      <text x="438" y="14" text-anchor="middle" fill="var(--gain)">settled .585</text></g>
+  </svg>
+  <div class="res">Sanctions push oil up → the $80 target gets nearer. Model lifted YES; price rose. <span class="badge win">+35.0c / share</span></div>
+</div>
+
+<div class="ex">
+  <div class="news">jin10 · Night session opens: silver drops nearly 4%, tin and other metals fall</div>
+  <div class="q">Will Silver hit $60 (LOW) by end of June? <span class="badge yes">BOUGHT YES</span></div>
+  <svg viewBox="0 0 760 50" role="img" aria-label="entry 0.480, model 0.558, settled 1.00">
+    <rect x="40" y="22" width="680" height="6" rx="3" fill="var(--rule-soft)"/>
+    <rect x="366" y="21" width="354" height="8" rx="4" fill="var(--gain)" opacity="0.28"/>
+    <circle cx="366" cy="25" r="5" fill="var(--surface)" stroke="var(--faint)" stroke-width="2"/>
+    <path d="M412,25 l7,-6 l7,6 l-7,6 z" fill="var(--accent)"/>
+    <circle cx="720" cy="25" r="6" fill="var(--gain)"/>
+    <g font-family="IBM Plex Mono" font-size="9.5" fill="var(--faint)">
+      <text x="366" y="45" text-anchor="middle">entry .480</text>
+      <text x="419" y="14" text-anchor="middle">model .56</text>
+      <text x="720" y="14" text-anchor="end" fill="var(--gain)">settled 1.00</text></g>
+  </svg>
+  <div class="res">Silver selling off → more likely to touch the low. Model raised YES; it hit. <span class="badge win">+51.0c / share</span></div>
+</div>
+
+<div class="ex">
+  <div class="news">jin10 · Pre-market: SpaceX (SPCX.O) down over 5%, US AI-related stocks mixed</div>
+  <div class="q">SpaceX IPO: closing price up at end of first month? <span class="badge no">BOUGHT NO</span></div>
+  <svg viewBox="0 0 760 50" role="img" aria-label="entry 0.850, model 0.786, settled 0.415">
+    <rect x="40" y="22" width="680" height="6" rx="3" fill="var(--rule-soft)"/>
+    <rect x="322" y="21" width="296" height="8" rx="4" fill="var(--gain)" opacity="0.28"/>
+    <circle cx="618" cy="25" r="5" fill="var(--surface)" stroke="var(--faint)" stroke-width="2"/>
+    <path d="M568,25 l7,-6 l7,6 l-7,6 z" fill="var(--accent)"/>
+    <circle cx="322" cy="25" r="6" fill="var(--gain)"/>
+    <g font-family="IBM Plex Mono" font-size="9.5" fill="var(--faint)">
+      <text x="618" y="45" text-anchor="middle">entry .850</text>
+      <text x="575" y="14" text-anchor="middle">model .79</text>
+      <text x="322" y="14" text-anchor="middle" fill="var(--gain)">settled .415</text></g>
+  </svg>
+  <div class="res">Shares down 5% pre-market → "closes up" less likely. Model shaded NO; price fell. <span class="badge win">+42.5c / share</span></div>
+</div>
+
+<p>This is the machinery behind the frictionless +8–16%: on the trades it takes,
+the forecast leans the right way often enough to capture a real slice of the
+move. The catch from §4 still holds — average that edge across <em>all</em> trades,
+subtract the 1c spread, and the typical trade clears little more than costs.
+These are the tail where it worked, not the mean.</p>
+
+<h2>6. Reproduce</h2>
 <pre><code>bash scripts/backtest_news_slurm.sh          # build -&gt; predict -&gt; report, 1 A100
 # knobs: --top-markets, --hold-hours (build); --threshold, --cost (report)
 # full threshold x cost sweep lands in results/backtest/report_news.json</code></pre>
