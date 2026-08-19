@@ -91,26 +91,15 @@ tbody tr:hover td { background:var(--accent-soft); }
 @media (max-width:640px) { .doc { padding:32px 18px 64px; } body { font-size:15.5px; } h2 { margin-top:2.6rem; } }
 </style>
 <div class="doc">
-<h1>SWM news-driven backtest — with real hourly fills</h1>
-<p>The definitive version of <a href="backtest_correct.html">the news-driven backtest</a>.
-Same idea — walk the jin10 wire, trade the markets each headline is about — but now
-priced against the <strong>real hourly polymarket order book</strong>
-(<code>polymarket_2026_series.jsonl</code>): a trade fills at the <strong>next hourly tick after the
-headline</strong> (median lag <strong>~0.5h</strong>) and holds 24h, instead of snapping to a
-once-a-day reconstructed quote.</p>
-<p><strong>The verdict survives the more honest fill: a small, statistically real
-directional edge that the bid-ask spread very nearly — but not quite — cancels.</strong>
-Over <strong>2,067 out-of-sample headlines</strong> the strategy opens <strong>817 positions</strong> and
-returns <strong>+1.7% on capital</strong> (95% CI −5.4% to +9.3%), against −5.3% for blind YES
-and −2.9% for a coin flip on the same universe. Frictionless it earns
-<strong>+8% to +14%</strong> and rises with confidence; the 1c spread eats almost all of it.</p>
-
-<div class="note"><strong>What changed from the earlier writeups, and why.</strong> The first
-version filled at the last quote <em>before</em> the headline — you captured the news
-move for free (an unrealistic +1.0% that flipped to −6% under any slippage). This
-version fills at the first hourly price <em>after</em> the news, so the quote has already
-absorbed it. That is the honest "react to the headline" trade, and it is only
-possible because the hourly book actually covers the test window.</p></div>
+<h1>SWM news-driven backtest</h1>
+<p>Walk the jin10 wire in time order; for each headline, trade the markets it is
+about and hold 24h. Fills are priced on the real hourly polymarket book — at the
+next tick <em>after</em> the news.</p>
+<p><strong>A small, statistically real directional edge that the bid-ask spread very
+nearly — but not quite — cancels.</strong> Over 2,067 out-of-sample headlines the strategy
+opens 817 positions and returns <strong>+1.7% on capital</strong> (95% CI −5.4% to +9.3%),
+versus −5.3% for blind YES. Frictionless it earns <strong>+8–14%</strong> and rises with
+confidence; the 1c spread eats almost all of it.</p>
 <hr />
 
 <h2>1. Design</h2>
