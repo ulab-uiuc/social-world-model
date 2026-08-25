@@ -141,7 +141,12 @@ def main():
             for threshold in (2, 4, 6, 8, 10, args.n_points):
                 kept_at[threshold] += len(daily) >= threshold
             if not daily:
-                reason['series does not cover the move'] += 1
+                # The series exists but no sampled day lands inside it -- these
+                # are short-lived markets listed at or after their own move
+                # (weekly "by Friday?" style questions). Verified against the
+                # API: an explicit time window around the move returns zero
+                # points, so there is nothing further to recover.
+                reason['market listed at/after the move'] += 1
                 continue
             if len(daily) < args.min_points:
                 reason[f'market younger than {args.min_points} days'] += 1
