@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fetch daily price series from Polymarket for markets the bundled files miss.
+"""Fetch hourly price series from Polymarket for markets the bundled files miss.
 
 `polymarket_gap_2025_series.jsonl` and `polymarket_2026_series.jsonl` together
 leave two holes that the daily rebuild falls into:
@@ -16,13 +16,13 @@ history in one call, so re-fetching a market fills its December gap as a side
 effect of fetching it at all.
 
     gamma-api.polymarket.com/markets/{id}  -> clobTokenIds + outcomes
-    clob.polymarket.com/prices-history?market={token}&fidelity=1440&startTs=1
+    clob.polymarket.com/prices-history?market={token}&fidelity=60&startTs=1
 
 Resumable: results append to the output file, and a re-run skips markets already
 present. Kalshi markets are not on this API and are skipped by the caller.
 
     python scripts/fetch_polymarket_series.py --ids need_fetch.json \\
-        --out polymarket_refetch_series.jsonl --workers 8
+        --out polymarket_refetch_hourly.jsonl --workers 8
 """
 
 import argparse
@@ -36,7 +36,15 @@ import requests
 
 GAMMA = 'https://gamma-api.polymarket.com/markets/{}'
 CLOB = 'https://clob.polymarket.com/prices-history'
-FIDELITY = 1440  # daily candles
+# Hourly, NOT daily. The bundled series files are hourly, and the daily
+# rebuild samples a price at each of 16 day-boundaries by taking the last
+# observation at or before it. Fetching daily candles makes those samples up to
+# 24h stale (measured: median 15h against 0h for hourly-sourced records), which
+# silently shifts `before_price = history[-1].p` -- the model's anchor -- and
+# turns the "24h delta" target into something closer to a 39h delta for exactly
+# the records this fetch adds. `startTs=1` returns the same full time span at
+# either fidelity, so hourly costs only bandwidth.
+DEFAULT_FIDELITY = 60
 
 
 def parse_args():
@@ -46,10 +54,12 @@ def parse_args():
     p.add_argument('--workers', type=int, default=8)
     p.add_argument('--retries', type=int, default=3)
     p.add_argument('--limit', type=int, default=None)
+    p.add_argument('--fidelity', type=int, default=DEFAULT_FIDELITY,
+                   help='minutes per point; 60 matches the bundled series files')
     return p.parse_args()
 
 
-def fetch_one(market_id: str, retries: int):
+def fetch_one(market_id: str, retries: int, fidelity: int = DEFAULT_FIDELITY):
     """(market_id, question, series) -- series is [] when the market has none."""
     for attempt in range(retries):
         try:
@@ -65,7 +75,7 @@ def fetch_one(market_id: str, retries: int):
             token = tokens[yes] if yes < len(tokens) else tokens[0]
             hist = requests.get(
                 CLOB,
-                params={'market': token, 'fidelity': FIDELITY, 'startTs': 1},
+                params={'market': token, 'fidelity': fidelity, 'startTs': 1},
                 timeout=30,
             ).json()
             series = [
@@ -101,7 +111,7 @@ def main():
     lock = threading.Lock()
     stats = {'ok': 0, 'empty': 0, 'failed': 0, 'points': 0}
     with out_path.open('a') as fout, cf.ThreadPoolExecutor(args.workers) as ex:
-        futures = {ex.submit(fetch_one, str(m), args.retries): m for m in todo}
+        futures = {ex.submit(fetch_one, str(m), args.retries, args.fidelity): m for m in todo}
         for i, fut in enumerate(cf.as_completed(futures), 1):
             mid, question, series = fut.result()
             with lock:
@@ -122,7 +132,7 @@ def main():
                           f'empty={stats["empty"]} failed={stats["failed"]}', flush=True)
 
     print(f'\ndone: ok={stats["ok"]} empty={stats["empty"]} failed={stats["failed"]}')
-    print(f'{stats["points"]:,} daily points -> {out_path}')
+    print(f'{stats["points"]:,} points at fidelity={args.fidelity} -> {out_path}')
 
 
 if __name__ == '__main__':
