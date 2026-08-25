@@ -1,0 +1,1105 @@
+<title>SWM Trading Backtest</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root {
+  --ground:#F1F5F6; --surface:#FFFFFF; --raised:#F7FAFA;
+  --ink:#12212A; --body:#2C3D45; --muted:#5E727B; --faint:#8FA1A8;
+  --rule:#D6E0E3; --rule-soft:#E6EDEF;
+  --accent:#1A5C64; --accent-soft:#E2EFF0; --gold:#9A6E1C;
+  --gain:#1F7350; --loss:#A83535;
+  --shadow:0 1px 2px rgba(18,33,42,.05), 0 8px 24px -12px rgba(18,33,42,.16);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground:#0C1518; --surface:#141F23; --raised:#1A272C;
+    --ink:#E7F0F2; --body:#C3D2D6; --muted:#8DA2A9; --faint:#63787F;
+    --rule:#25353A; --rule-soft:#1D2B30;
+    --accent:#5FB3BC; --accent-soft:#123336; --gold:#D2A44E;
+    --gain:#4FBC8C; --loss:#E37070;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 28px -14px rgba(0,0,0,.7);
+  }
+}
+:root[data-theme="dark"] {
+  --ground:#0C1518; --surface:#141F23; --raised:#1A272C;
+  --ink:#E7F0F2; --body:#C3D2D6; --muted:#8DA2A9; --faint:#63787F;
+  --rule:#25353A; --rule-soft:#1D2B30;
+  --accent:#5FB3BC; --accent-soft:#123336; --gold:#D2A44E;
+  --gain:#4FBC8C; --loss:#E37070;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 28px -14px rgba(0,0,0,.7);
+}
+
+* { box-sizing:border-box; }
+body {
+  margin:0; background:var(--ground); color:var(--body);
+  font-family:"IBM Plex Sans","Helvetica Neue",Arial,sans-serif;
+  font-size:16.5px; line-height:1.66; -webkit-font-smoothing:antialiased;
+}
+.doc { max-width:1000px; margin:0 auto; padding:56px 28px 96px; }
+.doc > *:not(.scroll):not(pre):not(hr):not(.lead) { max-width:70ch; }
+
+h1, h2, h3, h4 {
+  font-family:Newsreader,Georgia,"Times New Roman",serif; color:var(--ink);
+  text-wrap:balance; font-weight:600; letter-spacing:-.012em;
+}
+h1 {
+  font-size:clamp(2.1rem,4.4vw,3rem); line-height:1.08; letter-spacing:-.025em;
+  margin:0 0 1.4rem;
+}
+h2 {
+  font-size:clamp(1.4rem,2.4vw,1.8rem); line-height:1.2;
+  margin:3.4rem 0 .9rem; padding-top:1.6rem; border-top:1px solid var(--rule);
+}
+h3 { font-size:1.14rem; margin:2.2rem 0 .6rem; }
+h4 {
+  font-family:"IBM Plex Sans",sans-serif; font-size:.98rem; font-weight:600;
+  margin:1.6rem 0 .4rem;
+}
+p { margin:0 0 1.05rem; }
+a { color:var(--accent); text-underline-offset:3px; }
+strong { color:var(--ink); font-weight:600; }
+em { color:var(--ink); }
+hr { border:none; border-top:1px solid var(--rule); margin:3.2rem 0; }
+
+/* the opening summary reads as a standfirst */
+h1 + p, h1 + p + p { font-size:1.1rem; color:var(--muted); }
+h1 + p strong, h1 + p + p strong { color:var(--ink); }
+
+ul, ol { margin:0 0 1.05rem; padding-left:1.25rem; }
+li { margin-bottom:.45rem; }
+li > ul, li > ol { margin-top:.45rem; }
+
+code {
+  font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:.85em; background:var(--raised); border:1px solid var(--rule-soft);
+  border-radius:4px; padding:1px 5px; color:var(--ink);
+}
+pre {
+  background:var(--raised); border:1px solid var(--rule); border-radius:8px;
+  padding:16px 18px; overflow-x:auto; font-size:.82rem; line-height:1.7;
+  margin:1.4rem 0; max-width:100%;
+}
+pre code { background:none; border:none; padding:0; font-size:inherit; color:var(--body); }
+
+.scroll { overflow-x:auto; margin:1.5rem 0; border:1px solid var(--rule);
+          border-radius:9px; background:var(--surface); box-shadow:var(--shadow); }
+table { width:100%; border-collapse:collapse; font-size:.88rem;
+        font-variant-numeric:tabular-nums; }
+th, td { padding:9px 14px; text-align:right; border-bottom:1px solid var(--rule-soft);
+         white-space:nowrap; }
+th {
+  font-family:"IBM Plex Mono",monospace; font-size:.66rem; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--faint); font-weight:500;
+  border-bottom:1px solid var(--rule); background:var(--raised);
+  position:sticky; top:0; text-align:right;
+}
+td:first-child, th:first-child { text-align:left; white-space:normal; min-width:12ch; }
+tbody tr:last-child td { border-bottom:none; }
+tbody tr:hover td { background:var(--accent-soft); }
+
+:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:3px; }
+@media (max-width:640px) {
+  .doc { padding:32px 18px 64px; }
+  body { font-size:15.5px; }
+  h2 { margin-top:2.6rem; }
+}
+</style>
+<div class="doc">
+<h1>SWM trading backtest</h1>
+<p>Can <code>swmbench/swm-wm-jin10-daily-7b</code> make money if you point it at a real
+prediction market?</p>
+<p><strong>Short answer: it has learned something real, and that something is currently
+worth less than the bid-ask spread.</strong></p>
+<p>On a direction-neutral set of 2,512 held-out positions the model earns
+<strong>+0.53c per share gross</strong>, where buying YES blind and buying NO blind both earn
+exactly 0.00c. That signal is not noise — the correlation between the model's
+forecast and the part of the move still tradeable at order time is +0.081 with
+t = +5.6 over 4,819 positions. But a 1c spread costs more than 0.53c, so the
+strategy returns <strong>-0.5% on capital (95% CI -3.3% to +2.8%)</strong>, and perfect
+direction on the same positions would have earned +6.02c per share — the
+forecast captures about <strong>9%</strong> of the edge that was there.</p>
+<p>The headline <strong>+31%</strong> you get by backtesting on the jin10 test set alone is an
+artifact: that set contains only detected breakpoints, 70% of which are up
+moves, so buying YES blind on the very same positions returns <strong>+43%</strong>.</p>
+<hr />
+<h2>1. What this measures, and why it needs care</h2>
+<p><code>swmbench_jin10_dailyhist_en.jsonl</code> is not a market history. Every one of its
+3,134 records exists <strong>because a large 2h price move was detected there</strong>
+(<code>sample_type: breakpoint</code>). Three consequences drive the whole design:</p>
+<div class="scroll"><table>
+<thead>
+<tr>
+<th>Property of the data</th>
+<th>Consequence for a backtest</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Records are selected on large moves</td>
+<td>You only ever trade when you already know something big is about to happen. Baselines must be run on the identical cells.</td>
+</tr>
+<tr>
+<td>70% of those moves are up</td>
+<td>"Always buy YES" is a strong strategy on this set. It is the number to beat, not <code>0%</code>.</td>
+</tr>
+<tr>
+<td><code>attributions</code> were scored with the realised move in hand</td>
+<td>Feeding them to the model at trade time leaks the answer. They are reported only as an explicit upper bound.</td>
+</tr>
+</tbody>
+</table></div>
+<h2>2. Exact settings</h2>
+<div class="scroll"><table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Value</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Model</td>
+<td><code>swmbench/swm-wm-jin10-daily-7b</code></td>
+<td>full-FT Qwen2.5-7B + regression head</td>
+</tr>
+<tr>
+<td>Tokenizer</td>
+<td><code>Qwen/Qwen2.5-7B-Instruct</code></td>
+<td>checkpoint ships weights only</td>
+</tr>
+<tr>
+<td><code>predict_delta</code></td>
+<td><code>True</code></td>
+<td>restored from <code>llm_regressor_config.json</code></td>
+</tr>
+<tr>
+<td><code>pooling_method</code></td>
+<td><code>last_token</code></td>
+<td>restored from checkpoint</td>
+</tr>
+<tr>
+<td><code>max_news</code></td>
+<td><code>8</code></td>
+<td>restored from checkpoint; grid uses the same</td>
+</tr>
+<tr>
+<td><code>max_seq_length</code></td>
+<td><code>1024</code></td>
+<td>matches training</td>
+</tr>
+<tr>
+<td>dtype</td>
+<td>bf16 backbone, fp32 head</td>
+<td>training ran FSDP bf16 compute over fp32 masters</td>
+</tr>
+<tr>
+<td><code>null_rho0</code> / <code>odds_eps</code> / <code>odds_temp</code></td>
+<td><code>1.0</code> / <code>1e-3</code> / <code>1.0</code></td>
+<td>training defaults</td>
+</tr>
+<tr>
+<td>Retrieval encoder</td>
+<td><code>BAAI/bge-small-en-v1.5</code></td>
+<td>bi-encoder, cosine</td>
+</tr>
+<tr>
+<td>News window</td>
+<td><code>[target.t - 2.5h, target.t - 1.5h)</code></td>
+<td>where 100% of the dataset's headlines fall</td>
+</tr>
+<tr>
+<td>Decision time</td>
+<td><code>target.t - 1.5h</code></td>
+<td>after the last headline is public</td>
+</tr>
+<tr>
+<td>Entry price</td>
+<td>last quote at or before decision time</td>
+<td>usually the <code>target.t - 2h</code> quote</td>
+</tr>
+<tr>
+<td>Exit (<code>move</code>)</td>
+<td>first quote at or after <code>target.t</code></td>
+<td>exactly the 2h move on breakpoint cells</td>
+</tr>
+<tr>
+<td>Exit (<code>resolution</code>)</td>
+<td>market outcome, 1 or 0</td>
+<td>buy and hold</td>
+</tr>
+<tr>
+<td>Spread / fee</td>
+<td><code>0.01</code> headline; swept <code>0 / 0.005 / 0.01 / 0.02</code></td>
+<td>charged in price units on the side bought</td>
+</tr>
+<tr>
+<td>Entry slippage</td>
+<td><code>0.0</code> headline; swept <code>0 / 0.25 / 0.5</code></td>
+<td>fraction of the move already in the book</td>
+</tr>
+<tr>
+<td>Entry threshold</td>
+<td><code>|edge| &gt;= 0.05</code>; swept over 8 values</td>
+<td></td>
+</tr>
+<tr>
+<td>Sizing</td>
+<td><code>fixed_notional</code> and <code>fixed_shares</code>, both reported</td>
+<td>they disagree by more than the result</td>
+</tr>
+<tr>
+<td>Price floor</td>
+<td><code>0.02</code></td>
+<td>quotes clamped to [0.02, 0.98]</td>
+</tr>
+<tr>
+<td>Position dedup</td>
+<td>on</td>
+<td>one fill per <code>(market, entry_t, settle_t)</code></td>
+</tr>
+<tr>
+<td>Confidence intervals</td>
+<td>cluster bootstrap on <code>event_id</code>, 2,000 resamples</td>
+<td>trades are not independent</td>
+</tr>
+</tbody>
+</table></div>
+<h2>3. Data, split, and the out-of-sample proof</h2>
+<p>3,134 records, 920 Polymarket markets, 2025-07-16 to 2026-07-18. Split
+chronologically 80/10/10 by <code>target.t</code>, matching <code>scripts/split_temporal.py</code>.</p>
+<pre><code>train  2,507   2025-07-16 .. 2026-06-07
+valid    313   2026-06-07 .. 2026-06-17
+test     314   2026-06-17 .. 2026-07-18   &lt;- the backtest
+               139 markets, 84 events, 231 distinct decision times
+</code></pre>
+<p>The checkpoint was trained on a split of a <strong>different file</strong>
+(<code>swmbench_jin10_attributed_filtered_en.jsonl</code>, via <code>scripts/debias_split.py</code>),
+so an 80% index fraction on this file does not by itself prove the window is
+held out. The branch's own <code>scripts/backtest_build.py</code> pins the training cutoff
+at <strong>2026-05-24</strong>. <code>backtest_build_grid.py</code> asserts the test window starts after
+it rather than assuming so:</p>
+<pre><code>out-of-sample check: test starts 2026-06-17, 25 days after the 2026-05-24 train cutoff
+</code></pre>
+<h2>4. Timing: what is knowable when</h2>
+<p>Every headline attached to a record is published in a one-hour window ending 90
+minutes before the move — verified across the whole file, no exceptions.</p>
+<pre><code> target.t-24h        target.t-2.5h ── news window ── -1.5h        target.t
+      │                      │                    │  │                │
+ history[-1]            first headline    last headline │          settlement
+ = model's anchor                                  entry quote
+                                              (target.t-2h) and
+                                               decision_t
+</code></pre>
+<ul>
+<li><strong>Prompt inputs</strong> — <code>question</code>, 16 daily history points, retrieved headlines.
+  <code>PriceSeries.daily_history(..., as_of=decision_t)</code> clips the series <em>before</em>
+  sampling, so a later quote cannot change which points are emitted.</li>
+<li><strong>Entry</strong> — the last quote at or before <code>decision_t</code>. This is the weakest
+  assumption in the harness: the data has no finer granularity, so we cannot see
+  whether the book moved between <code>-2h</code> and <code>-1.5h</code>. <code>--entry-drift</code> prices that
+  in.</li>
+<li><strong>Exit</strong> — a label. It reaches the P&amp;L and never the prompt.</li>
+</ul>
+<p><strong>Prompt parity was verified, not assumed</strong>: all 314 test cells produce a
+byte-identical prompt string to what <code>MultiEventWorldModelDataset</code> emits from the
+original record, along with identical <code>before_price</code>, history length and target.</p>
+<h2>5. Replacing the oracle attributions with retrieval</h2>
+<p>The <code>attributions</code> field is a posterior label. <code>--news retrieval</code> replaces it
+with something a live system could actually compute:</p>
+<ol>
+<li>Union every record's headline list into a <strong>reconstructed news stream</strong> —
+   114,316 de-duplicated English items with timestamps. See the caveat in §6:
+   this is not the jin10 wire, it is the union of the one-hour windows around
+   detected breakpoints.</li>
+<li>At each decision, slice the wire to the news window and collapse
+   re-publications of the same headline.</li>
+<li>Score each headline against the market text with the bi-encoder, keep top 8.</li>
+<li>Map cosine similarity onto the <code>[0, 0.95]</code> range the model's odds transform
+   expects, using a mapping fit on <strong>train-split records only</strong>:
+   <code>lo</code> = 95th percentile of unattributed news, <code>hi</code> = 95th percentile of oracle
+   positives.</li>
+</ol>
+<p>Two details matter.</p>
+<p>The window is a <strong>superset</strong> of the record's own list (median 73 headlines vs
+51), so retrieval must discriminate rather than pick from a pre-narrowed
+shortlist. And step 4 calibrates on <em>absolute</em> similarity rather than softmaxing
+the retrieved set: a softmax would hand the top hit ~0.95 on every cell,
+including the thousands of grid cells no headline is about, and the model could
+never route to its null option. With calibration it routes <strong>35.8%</strong> of grid
+cells to null.</p>
+<p>On the train split the encoder separates attributed from unattributed headlines
+at <strong>AUC 0.736</strong> — real, but far from oracle. That gap is the honest price of not
+knowing which headline mattered, and it costs roughly half the forecast
+correlation (0.34 oracle → 0.18 retrieval).</p>
+<h2>6. Two universes</h2>
+<div class="scroll"><table>
+<thead>
+<tr>
+<th>mode</th>
+<th>cells</th>
+<th>distinct positions</th>
+<th>what it asks</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>breakpoint</code></td>
+<td>314</td>
+<td>314</td>
+<td>given a big move is coming, can it call the direction?</td>
+</tr>
+<tr>
+<td><code>grid</code></td>
+<td>20,856</td>
+<td>4,819</td>
+<td>at each of 231 decision times, score <strong>every</strong> live market — including deciding <em>not</em> to trade</td>
+</tr>
+</tbody>
+</table></div>
+<p>The grid is 231 decision times x 52–134 live markets each (median 71). Only
+<strong>314 cells (1.5%)</strong> carry a breakpoint; the other 20,542 are quiet markets that
+a live system must decline. Example: at 2026-06-20 19:00 UTC the same Iran
+headlines are scored against 134 markets simultaneously, one of which is
+"Will Solana dip to $60 in June?".</p>
+<h3>The timeline is breakpoint-driven, not news-driven</h3>
+<p>The 231 decision times are the <code>target.t</code> of the test records — the moments a
+breakpoint was detected — not the moments news arrived. Over the 30-day test
+window that is 7.7 decisions per day, with a median gap of 1h between
+consecutive decisions but a p90 of 9h and a maximum of <strong>73h</strong>.</p>
+<p>This is a property of the source file, not a choice. The reconstructed news
+stream is assembled from per-record news lists, so it only exists near
+breakpoints:</p>
+<div class="scroll"><table>
+<thead>
+<tr>
+<th>Test-window hours</th>
+<th>Count</th>
+<th>Headlines in the stream</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Covered by some decision window</td>
+<td>261</td>
+<td>11,094</td>
+</tr>
+<tr>
+<td>Not covered</td>
+<td>467</td>
+<td><strong>0</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>467 of 728 hours contain no news at all.</strong> Iterating the stream
+chronologically instead of iterating decision times would therefore produce the
+identical 231 decision points — there is nothing to iterate over in between.</p>
+<p>So the backtest answers "when news lands, does the model pick the right market
+and the right direction?" It cannot answer "run this 24/7 for a year and does
+it profit", because for 64% of the wall-clock there is no input. Doing that
+needs the raw jin10 archive over the window plus a price series that can settle
+at arbitrary times — <code>swmbench_2h_1year_with_jin10_news.jsonl</code> and
+<code>polymarket_*_series.jsonl</code> in the same HF repo have both, but that file's news
+is untranslated Chinese while this checkpoint was trained on English.</p>
+<h2>7. One position, filled once</h2>
+<p>A quiet market is quoted once a day, so every decision time inside one
+inter-quote gap resolves to the <strong>same</strong> entry quote and the <strong>same</strong> settlement
+quote. Those cells are one position offered repeatedly, not separate
+opportunities.</p>
+<pre><code>market 678748 &quot;Will Israel strike 5 countries in 2026?&quot;
+  231 grid cells  -&gt;  55 distinct positions
+  06-17 20:00  entry 0.301 (quoted 06-16 23:00)  settle 0.272   new
+  06-17 21:00  entry 0.301 (quoted 06-16 23:00)  settle 0.272   same trade
+  06-17 22:00  entry 0.301 (quoted 06-16 23:00)  settle 0.272   same trade
+</code></pre>
+<p><code>run_strategy</code> therefore fills each <code>(market_id, entry_t, settle_t)</code> once, at the
+first decision time whose signal fires, for the model and every baseline alike
+(<code>BacktestConfig.dedupe_positions</code>, on by default).</p>
+<p>This is not a detail. Counting the repeats inflates the trade count fourfold,
+shrinks the naive t-statistic by about its square root, and re-weights ROI toward
+the quiet long-hold markets that repeat most — enough to <strong>flip the sign</strong> of the
+grid result (-3.08% duplicated vs -0.53% deduplicated).</p>
+<h2>8. Accounting and baselines</h2>
+<p>A YES share costs <code>p</code> and pays 1 on YES; a NO share costs <code>1-p</code>. Exiting at quote
+<code>q</code> pays <code>q</code> per YES share. So per share, P&amp;L is <code>q - p</code> long and <code>p - q</code> short,
+against capital of <code>p</code> and <code>1 - p</code>.</p>
+<p>Both sizings are reported because on this data they disagree by more than the
+entire result:</p>
+<ul>
+<li><code>fixed_notional</code> — $1 of capital per trade. What "收益率" usually means, and
+  where a dollar buys 50 shares at 2c and 1 share at 95c.</li>
+<li><code>fixed_shares</code> — equal share count. Strips the leverage out.</li>
+</ul>
+<p>Every trivial rule is run <strong>twice</strong>: over the full candidate set, and matched to
+the exact cells the model chose. Comparing a selective model against a baseline
+that trades everything confounds cell selection with directional skill.</p>
+<div class="scroll"><table>
+<thead>
+<tr>
+<th>baseline</th>
+<th>signal</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>always_yes</code> / <code>always_no</code></td>
+<td>constant</td>
+</tr>
+<tr>
+<td><code>random</code></td>
+<td>seeded coin flip</td>
+</tr>
+<tr>
+<td><code>momentum</code> / <code>contrarian</code></td>
+<td><code>entry - prev_price</code> and its negation</td>
+</tr>
+<tr>
+<td><code>perfect_direction</code></td>
+<td><code>exit - entry</code> — a per-cell ceiling, not an ROI ceiling</td>
+</tr>
+<tr>
+<td><code>swm</code></td>
+<td><code>pred_price - entry</code> (forecast vs the book)</td>
+</tr>
+<tr>
+<td><code>swm_delta</code></td>
+<td><code>pred_price - prev_price</code> (the model's own delta)</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h1>Results</h1>
+<p>All numbers: retrieval news, <code>move</code> exit, 1c spread, no slippage,
+<code>|edge| &gt;= 0.05</code>, fixed-notional sizing unless stated.</p>
+<h2>9. Breakpoint universe — 314 held-out cells</h2>
+<h3>Forecasting</h3>
+<div class="scroll"><table>
+<thead>
+<tr>
+<th>News source</th>
+<th>Pearson</th>
+<th>Direction</th>
+<th>RMSE</th>
+<th>No-change RMSE</th>
+<th>Skill</th>
+<th>Forecast σ</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Retrieval (live)</td>
+<td>0.180</td>
+<td>65.2%</td>
+<td>0.1981</td>
+<td>0.2038</td>
+<td>+0.056</td>
+<td>0.054</td>
+</tr>
+<tr>
+<td>Oracle attributions (leaky)</td>
+<td>0.340</td>
+<td>71.1%</td>
+<td>0.1872</td>
+<td>0.2038</td>
+<td>+0.156</td>
+<td>0.070</td>
+</tr>
+</tbody>
+</table></div>
+<p>Both beat the no-change baseline, and the model is properly shrunk — it forecasts
+a 0.054 standard deviation against a realised 0.191, which is what a calibrated
+regressor on a noisy target should do.</p>
+<h3>Trading</h3>
+<div class="scroll"><table>
+<thead>
+<tr>
+<th>Strategy</th>
+<th>Trades</th>
+<th>Return on capital</th>
+<th>95% CI</th>
+<th>Gross/share</th>
+<th>Net/share</th>
+<th>Hit rate</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>SWM</strong></td>
+<td>196</td>
+<td><strong>+31.2%</strong></td>
+<td>+9.0 to +63.7%</td>
+<td>+0.90c</td>
+<td>-0.10c</td>
+<td>50.5%</td>
+</tr>
+<tr>
+<td>SWM delta</td>
+<td>115</td>
+<td>+60.6%</td>
+<td>+24.6 to +111.0%</td>
+<td>+5.97c</td>
+<td>+4.97c</td>
+<td>73.0%</td>
+</tr>
+<tr>
+<td>Momentum</td>
+<td>155</td>
+<td>+5.7%</td>
+<td>-1.5 to +12.6%</td>
+<td>+1.69c</td>
+<td>+0.69c</td>
+<td>60.6%</td>
+</tr>
+<tr>
+<td>Contrarian</td>
+<td>155</td>
+<td>+2.7%</td>
+<td>-9.3 to +22.9%</td>
+<td>-1.69c</td>
+<td>-2.69c</td>
+<td>39.4%</td>
+</tr>
+<tr>
+<td><strong>Always YES</strong></td>
+<td>314</td>
+<td><strong>+36.8%</strong></td>
+<td>+23.0 to +56.3%</td>
+<td>+4.91c</td>
+<td>+3.91c</td>
+<td>70.1%</td>
+</tr>
+<tr>
+<td>Always NO</td>
+<td>314</td>
+<td>-7.1%</td>
+<td>-11.2 to -2.3%</td>
+<td>-4.91c</td>
+<td>-5.91c</td>
+<td>29.9%</td>
+</tr>
+<tr>
+<td>Coin flip</td>
+<td>314</td>
+<td>+20.8%</td>
+<td>+8.7 to +38.2%</td>
+<td>+0.67c</td>
+<td>-0.33c</td>
+<td>52.9%</td>
+</tr>
+<tr>
+<td>Perfect direction</td>
+<td>314</td>
+<td>+53.4%</td>
+<td>+39.8 to +73.3%</td>
+<td>+11.16c</td>
+<td>+10.16c</td>
+<td>100%</td>
+</tr>
+</tbody>
+</table></div>
+<h3>The matched comparison</h3>
+<p>On <strong>exactly the 196 cells the model chose to trade</strong>:</p>
+<div class="scroll"><table>
+<thead>
+<tr>
+<th>On SWM's own cells</th>
+<th>Return</th>
+<th>Gross/share</th>
+<th>Hit rate</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>SWM</strong></td>
+<td><strong>+31.2%</strong></td>
+<td>+0.90c</td>
+<td>50.5%</td>
+</tr>
+<tr>
+<td>Always YES</td>
+<td><strong>+43.0%</strong></td>
+<td>+6.02c</td>
+<td>71.4%</td>
+</tr>
+<tr>
+<td>Always NO</td>
+<td>-10.4%</td>
+<td>-6.02c</td>
+<td>28.6%</td>
+</tr>
+<tr>
+<td>Coin flip</td>
+<td>+24.8%</td>
+<td>+1.02c</td>
+<td>54.6%</td>
+</tr>
+<tr>
+<td>Perfect direction</td>
+<td>+59.1%</td>
+<td>+12.22c</td>
+<td>100%</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>The model loses to buying YES blind on its own picks</strong>, and its hit rate
+(50.5%) is worse than the majority class (70%). Holding to resolution is worse
+still: +18.5% against +51.3% for matched always-YES.</p>
+<h3>Where the +31% comes from</h3>
+<div class="scroll"><table>
+<thead>
+<tr>
+<th>Entry price</th>
+<th>Cells</th>
+<th>SWM trades</th>
+<th>SWM return</th>
+<th>Always-YES return</th>
+<th>SWM gross/share</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0.02–0.10</td>
+<td>43</td>
+<td>21</td>
+<td><strong>+300.0%</strong></td>
+<td>+198.4%</td>
+<td>+16.89c</td>
+</tr>
+<tr>
+<td>0.10–0.25</td>
+<td>87</td>
+<td>47</td>
+<td>+9.7%</td>
+<td>+23.8%</td>
+<td>+0.95c</td>
+</tr>
+<tr>
+<td>0.25–0.50</td>
+<td>105</td>
+<td>71</td>
+<td>-2.6%</td>
+<td>+7.8%</td>
+<td>-1.25c</td>
+</tr>
+<tr>
+<td>0.50–0.75</td>
+<td>59</td>
+<td>44</td>
+<td>-10.0%</td>
+<td>+5.0%</td>
+<td>-1.78c</td>
+</tr>
+<tr>
+<td>0.75–0.98</td>
+<td>20</td>
+<td>13</td>
+<td>-2.1%</td>
+<td>-7.6%</td>
+<td>-4.25c</td>
+</tr>
+</tbody>
+</table></div>
+<p>Every cent of positive return sits in <strong>21 trades at 2–10c</strong>. Re-run the
+identical trades with equal share counts and the result inverts:</p>
+<div class="scroll"><table>
+<thead>
+<tr>
+<th>Equal-share sizing</th>
+<th>SWM</th>
+<th>SWM delta</th>
+<th>Always YES</th>
+<th>Always NO</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Return on capital</td>
+<td><strong>-0.2%</strong></td>
+<td>+13.0%</td>
+<td>+10.8%</td>
+<td>-9.0%</td>
+</tr>
+</tbody>
+</table></div>
+<h2>10. Full grid — 20,856 cells, 4,819 distinct positions</h2>
+<p>The universe is now balanced: mean move <strong>-0.39c</strong>, <strong>38.4% up</strong>, mean absolute
+move 3.95c, mean entry price 0.292. The free money is gone.</p>
+<div class="scroll"><table>
+<thead>
+<tr>
+<th>Strategy</th>
+<th>Trades</th>
+<th>Return on capital</th>
+<th>95% CI</th>
+<th>Gross/share</th>
+<th>Net/share</th>
+<th>Hit rate</th>
+<th>Long</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>SWM</strong></td>
+<td>2,512</td>
+<td><strong>-0.5%</strong></td>
+<td>-3.3 to +2.8%</td>
+<td>+0.53c</td>
+<td>-0.47c</td>
+<td>34.4%</td>
+<td>57%</td>
+</tr>
+<tr>
+<td>SWM delta</td>
+<td>1,405</td>
+<td>-0.6%</td>
+<td>-5.2 to +4.7%</td>
+<td>+0.59c</td>
+<td>-0.41c</td>
+<td>31.8%</td>
+<td>70%</td>
+</tr>
+<tr>
+<td>Momentum</td>
+<td>1,570</td>
+<td>-1.6%</td>
+<td>-3.8 to +0.4%</td>
+<td>-0.20c</td>
+<td>-1.20c</td>
+<td>40.8%</td>
+<td>54%</td>
+</tr>
+<tr>
+<td>Contrarian</td>
+<td>1,570</td>
+<td>-1.6%</td>
+<td>-3.8 to +1.1%</td>
+<td>+0.20c</td>
+<td>-0.80c</td>
+<td>39.2%</td>
+<td>46%</td>
+</tr>
+<tr>
+<td>Always YES</td>
+<td>4,819</td>
+<td>-3.1%</td>
+<td>-5.3 to -0.8%</td>
+<td>+0.09c</td>
+<td>-0.91c</td>
+<td>29.0%</td>
+<td>100%</td>
+</tr>
+<tr>
+<td>Always NO</td>
+<td>4,819</td>
+<td>-1.0%</td>
+<td>-1.8 to -0.1%</td>
+<td>-0.09c</td>
+<td>-1.09c</td>
+<td>31.1%</td>
+<td>0%</td>
+</tr>
+<tr>
+<td>Coin flip</td>
+<td>4,819</td>
+<td>-1.6%</td>
+<td>-3.0 to +0.1%</td>
+<td>+0.08c</td>
+<td>-0.92c</td>
+<td>30.4%</td>
+<td>50%</td>
+</tr>
+<tr>
+<td>Perfect direction</td>
+<td>1,471</td>
+<td>+41.6%</td>
+<td>+36.7 to +48.1%</td>
+<td>+11.74c</td>
+<td>+10.74c</td>
+<td>100%</td>
+<td>51%</td>
+</tr>
+</tbody>
+</table></div>
+<h3>The matched comparison, and the cleanest evidence of learning</h3>
+<p>On the <strong>2,512 positions the model chose</strong>:</p>
+<div class="scroll"><table>
+<thead>
+<tr>
+<th>On SWM's own positions</th>
+<th>Return</th>
+<th>Gross/share</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Always YES</td>
+<td>-2.7%</td>
+<td><strong>-0.00c</strong></td>
+</tr>
+<tr>
+<td>Always NO</td>
+<td>-1.1%</td>
+<td><strong>+0.00c</strong></td>
+</tr>
+<tr>
+<td>Coin flip</td>
+<td>-0.7%</td>
+<td>+0.24c</td>
+</tr>
+<tr>
+<td><strong>SWM</strong></td>
+<td><strong>-0.5%</strong></td>
+<td><strong>+0.53c</strong></td>
+</tr>
+<tr>
+<td>Perfect direction</td>
+<td>+17.4%</td>
+<td>+6.02c</td>
+</tr>
+</tbody>
+</table></div>
+<p>The model's selection is <strong>directionally neutral</strong> — buying YES blind and buying
+NO blind on those positions both earn exactly 0.00c per share, so there is no
+drift to ride. The model earns +0.53c on the same positions. That is genuine
+directional information, and it is <strong>9% of the 6.02c that was available</strong>.</p>
+<h3>Where it comes from</h3>
+<div class="scroll"><table>
+<thead>
+<tr>
+<th>Cell type</th>
+<th>Cells</th>
+<th>SWM trades</th>
+<th>SWM return</th>
+<th>Always-YES return</th>
+<th>SWM gross/share</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Breakpoint</td>
+<td>314</td>
+<td>196</td>
+<td>+31.2%</td>
+<td>+36.8%</td>
+<td>+0.90c</td>
+</tr>
+<tr>
+<td>Quiet</td>
+<td>20,542</td>
+<td>2,378</td>
+<td>-3.0%</td>
+<td>-5.2%</td>
+<td>+0.46c</td>
+</tr>
+</tbody>
+</table></div>
+<p>Equal-share sizing: SWM -1.1%, always-YES -2.8%, always-NO -1.6%.
+Resolution exit: SWM -5.1% against +9.8% for matched always-YES.</p>
+<h2>11. What the model actually learned</h2>
+<div class="scroll"><table>
+<thead>
+<tr>
+<th>Universe</th>
+<th>Model RMSE</th>
+<th><strong>Live quote RMSE</strong></th>
+<th>24h anchor RMSE</th>
+<th>Target already public</th>
+<th>Corr w/ trained target</th>
+<th>Corr w/ tradeable part</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Breakpoint (314)</td>
+<td>0.1981</td>
+<td><strong>0.1432</strong></td>
+<td>0.2038</td>
+<td>71%</td>
+<td>0.180</td>
+<td><strong>0.242</strong> (t=+4.4)</td>
+</tr>
+<tr>
+<td>Full grid (4,819)</td>
+<td>0.1238</td>
+<td><strong>0.0826</strong></td>
+<td>0.1221</td>
+<td>74%</td>
+<td>0.091</td>
+<td><strong>0.081</strong> (t=+5.6)</td>
+</tr>
+</tbody>
+</table></div>
+<p>Read the first two columns together. <strong>As an estimate of where the price settles,
+the model is worse than simply reading the current quote</strong> — 0.124 against 0.083
+on the grid — and no better than the 24-hour-old price it anchors on.</p>
+<p>That is less a failure of training than a statement about the target. The model
+is graded on <code>target.p - history[-1].p</code>, a 24h move, but by decision time the
+book has already walked most of it:</p>
+<pre><code>grid:  24h move |0.0728|  =  already in the book |0.0512|  +  still tradeable |0.0456|
+       corr(24h move, already-in-book) = +0.74
+</code></pre>
+<p><strong>Three quarters of what the objective rewards is re-deriving public
+information.</strong> The last column is the part that can become a position, and it is
+positive and significant — but small.</p>
+<h2>12. Sensitivity</h2>
+<p>Cost sweep at <code>|edge| &gt;= 0.05</code>, no slippage:</p>
+<div class="scroll"><table>
+<thead>
+<tr>
+<th>Spread</th>
+<th>Breakpoint return</th>
+<th>Grid return</th>
+<th>Grid net/share</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0.0c</td>
+<td>+45.7%</td>
+<td><strong>+6.9%</strong></td>
+<td>+0.53c</td>
+</tr>
+<tr>
+<td>0.5c</td>
+<td>+37.5%</td>
+<td><strong>+2.8%</strong></td>
+<td>+0.03c</td>
+</tr>
+<tr>
+<td>1.0c</td>
+<td>+31.2%</td>
+<td><strong>-0.5%</strong></td>
+<td>-0.47c</td>
+</tr>
+<tr>
+<td>2.0c</td>
+<td>+21.5%</td>
+<td>-5.9%</td>
+<td>-1.46c</td>
+</tr>
+</tbody>
+</table></div>
+<p>Break-even sits at a spread of roughly <strong>0.7c</strong>. Real Polymarket books on these
+markets are wider.</p>
+<p>Entry slippage at 1c spread:</p>
+<div class="scroll"><table>
+<thead>
+<tr>
+<th>Move already in the book</th>
+<th>Breakpoint</th>
+<th>Grid</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0%</td>
+<td>+31.2%</td>
+<td>-0.5%</td>
+</tr>
+<tr>
+<td>25%</td>
+<td>+5.1%</td>
+<td>-5.0%</td>
+</tr>
+<tr>
+<td>50%</td>
+<td>-1.4%</td>
+<td>-6.6%</td>
+</tr>
+</tbody>
+</table></div>
+<p>Since the signal is public wire copy that every participant reads at the same
+moment, some leakage is the realistic case, not the pessimistic one.</p>
+<p>The threshold sweep spans 8 values x 4 costs x 3 slippages = 96 configurations on
+one test set. Read it as a robustness check, not a menu.</p>
+<hr />
+<h2>13. How to run</h2>
+<pre><code class="language-bash">DATA=swmbench_jin10_dailyhist_en.jsonl          # swmbench/swmbench on HF
+CKPT=swm-wm-jin10-daily-7b                      # weights only
+
+# 1. build the cells the model is asked to score
+python scripts/backtest_build_grid.py --data $DATA --mode breakpoint --news retrieval \
+    --out results/backtest/grid_breakpoint_retrieval.jsonl
+python scripts/backtest_build_grid.py --data $DATA --mode grid --news retrieval \
+    --out results/backtest/grid_full_retrieval.jsonl
+
+# 2. score them; shard across GPUs with --num-shards / --shard-idx
+python scripts/backtest_predict.py --grid &lt;grid&gt;.jsonl --model-path $CKPT \
+    --model-name Qwen/Qwen2.5-7B-Instruct --out &lt;preds&gt;.jsonl --batch-size 8
+
+# 3. P&amp;L, baselines, sweeps  (add --sizing fixed_shares for the second view)
+python scripts/backtest_report.py --preds retrieval=&lt;preds&gt;.jsonl \
+    --out results/backtest/report.json --threshold 0.05 --cost 0.01
+
+# 4. HTML report
+python scripts/backtest_html.py --notional results/backtest/report_breakpoint.json \
+    --shares results/backtest/report_breakpoint_shares.json \
+    --grid results/backtest/report_grid.json \
+    --grid-shares results/backtest/report_grid_shares.json \
+    --out results/backtest/report.html
+</code></pre>
+<p>Layout:</p>
+<pre><code>swm/backtest/
+  universe.py    price-series reconstruction, no-lookahead quotes, the decision grid
+  newsstream.py  the global jin10 wire, sliced by publication time
+  retrieval.py   news &lt;-&gt; market relevance, train-calibrated
+  engine.py      trading rules, cost model, baselines, P&amp;L statistics
+scripts/
+  backtest_build_grid.py  backtest_predict.py  backtest_report.py  backtest_html.py
+tests/test_backtest_engine.py
+</code></pre>
+<h2>14. Verification</h2>
+<ul>
+<li><strong>23 unit tests</strong> covering hand-computed long/short P&amp;L, that costs and
+  slippage move in the right direction on both sides, that a zero signal is not
+  a short, that unaffordable fills are dropped rather than silently discounted,
+  the position-dedup rule, and the no-lookahead guarantees of <code>PriceSeries</code>.</li>
+<li><strong>Prompt parity</strong>: 314/314 cells reproduce the training pipeline's prompt
+  byte-for-byte.</li>
+<li><strong>Out-of-sample assertion</strong> against the pinned 2026-05-24 training cutoff.</li>
+<li><strong>Adversarial audit</strong> across four lenses (lookahead, accounting, statistics,
+  train/inference parity) with refute-by-default verification. 25 findings
+  raised, 16 refuted, 2 confirmed and fixed:</li>
+<li>position duplication in grid mode (flipped the sign of the grid result);</li>
+<li><code>_clamp</code> deleting the spread on any side priced above 0.97.</li>
+</ul>
+<h2>15. Limitations</h2>
+<ul>
+<li><strong>314 breakpoint cells over one month</strong> is a small sample; intervals are wide.</li>
+<li><strong>Entry uses a quote up to 30 minutes stale.</strong> The slippage sweep stands in for
+  measuring it properly.</li>
+<li><strong>No order book.</strong> Fills are assumed at the quote for the full stake, with cost
+  as a flat spread. Depth at 2–10c is thin, and that is exactly where the
+  fixed-notional P&amp;L comes from.</li>
+<li><strong>Grid membership is itself selected on future information.</strong> A market appears
+  at a decision time only because it was quoted near it, and it was quoted
+  because a breakpoint happened somewhere in its record. The grid over-samples
+  markets that turned out to be volatile. It does not bias <em>direction</em>, and every
+  baseline is scored on the same cells, but this is not the market as a whole.</li>
+<li><strong><code>resolution</code> exit only sees markets that have resolved</strong>, a survivorship
+  filter on the long-hold numbers. The <code>move</code> exit has none.</li>
+<li><strong>Heterogeneous holding periods in grid mode</strong>: quiet markets are quoted daily,
+  so they hold ~24h against the breakpoint cells' 2h. <code>strata.by_hold</code> exposes
+  this.</li>
+<li><strong>The news stream is not a wire.</strong> It exists only in the 261 of 728
+  test-window hours that sit near a breakpoint (§6). Every number here is
+  conditional on news having landed; none of it measures idle time.</li>
+</ul>
+<h2>16. What would make it tradeable</h2>
+<ol>
+<li><strong>Train on the residual, not the 24h move.</strong> Target should be settlement price
+   minus the quote at decision time. As set up, three quarters of the gradient
+   goes into predicting what the book already shows.</li>
+<li><strong>Show the model the current quote.</strong> Its history stops 24 hours before the
+   prediction, so it forecasts without the single most informative number
+   available — the live-quote column in §11 is the baseline it is being denied.</li>
+<li><strong>Score against the residual too.</strong> Pearson against the 24h delta reads 0.091
+   on the grid while the tradeable correlation is 0.081; only the second can be
+   turned into a position.</li>
+<li><strong>Evaluate trading on a direction-balanced universe.</strong> On the breakpoint set
+   "always say up" scores 70% direction accuracy. <code>scripts/debias_split.py</code>
+   already balances direction for the forecasting metrics; the trading evaluation
+   needs the same treatment.</li>
+</ol>
+</div>

@@ -142,6 +142,28 @@ Each output row has `pred_delta` / `true_delta`; score MASE, MAE, directional
 accuracy, and correlation over the full set and the attributed subset with
 [`scripts/eval_all_vs_attr.py`](scripts/eval_all_vs_attr.py).
 
+## Stage 4 — Trading backtest
+
+Forecast quality is not the same thing as tradeable edge. `swm/backtest/` runs a
+walk-forward backtest of a world-model checkpoint against real Polymarket
+prices: it rebuilds each market's price path, retrieves news from the
+reconstructed jin10 wire instead of the outcome-derived `attributions`, quotes an
+entry price a trader could actually have seen, and scores the P&L against
+matched baselines.
+
+```bash
+python scripts/backtest_build_grid.py --data swmbench_jin10_dailyhist_en.jsonl \
+    --mode grid --news retrieval --out results/backtest/grid.jsonl
+python scripts/backtest_predict.py --grid results/backtest/grid.jsonl \
+    --model-path <ckpt> --model-name Qwen/Qwen2.5-7B-Instruct \
+    --out results/backtest/preds.jsonl --batch-size 8
+python scripts/backtest_report.py --preds retrieval=results/backtest/preds.jsonl \
+    --out results/backtest/report.json --threshold 0.05 --cost 0.01
+```
+
+Method, exact settings and full results for `swmbench/swm-wm-jin10-daily-7b`:
+[`docs/backtest.md`](docs/backtest.md) ([rendered](docs/backtest.html)).
+
 ## License
 
 [Apache 2.0](https://github.com/ulab-uiuc/social-world-model/blob/main/LICENSE)

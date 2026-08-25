@@ -1,0 +1,504 @@
+<title>SWM News-Driven Backtest</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root {
+  --ground:#F1F5F6; --surface:#FFFFFF; --raised:#F7FAFA;
+  --ink:#12212A; --body:#2C3D45; --muted:#5E727B; --faint:#8FA1A8;
+  --rule:#D6E0E3; --rule-soft:#E6EDEF;
+  --accent:#1A5C64; --accent-soft:#E2EFF0; --gold:#9A6E1C;
+  --gain:#1F7350; --loss:#A83535;
+  --shadow:0 1px 2px rgba(18,33,42,.05), 0 8px 24px -12px rgba(18,33,42,.16);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground:#0C1518; --surface:#141F23; --raised:#1A272C;
+    --ink:#E7F0F2; --body:#C3D2D6; --muted:#8DA2A9; --faint:#63787F;
+    --rule:#25353A; --rule-soft:#1D2B30;
+    --accent:#5FB3BC; --accent-soft:#123336; --gold:#D2A44E;
+    --gain:#4FBC8C; --loss:#E37070;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 28px -14px rgba(0,0,0,.7);
+  }
+}
+:root[data-theme="dark"] {
+  --ground:#0C1518; --surface:#141F23; --raised:#1A272C;
+  --ink:#E7F0F2; --body:#C3D2D6; --muted:#8DA2A9; --faint:#63787F;
+  --rule:#25353A; --rule-soft:#1D2B30;
+  --accent:#5FB3BC; --accent-soft:#123336; --gold:#D2A44E;
+  --gain:#4FBC8C; --loss:#E37070;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 28px -14px rgba(0,0,0,.7);
+}
+* { box-sizing:border-box; }
+body {
+  margin:0; background:var(--ground); color:var(--body);
+  font-family:"IBM Plex Sans","Helvetica Neue",Arial,sans-serif;
+  font-size:16.5px; line-height:1.66; -webkit-font-smoothing:antialiased;
+}
+.doc { max-width:1000px; margin:0 auto; padding:56px 28px 96px; }
+.doc > *:not(.scroll):not(pre):not(hr):not(.lead) { max-width:70ch; }
+h1, h2, h3 {
+  font-family:Newsreader,Georgia,"Times New Roman",serif; color:var(--ink);
+  text-wrap:balance; font-weight:600; letter-spacing:-.012em;
+}
+h1 { font-size:clamp(2.1rem,4.4vw,3rem); line-height:1.08; letter-spacing:-.025em; margin:0 0 1.4rem; }
+h2 { font-size:clamp(1.4rem,2.4vw,1.8rem); line-height:1.2; margin:3.4rem 0 .9rem; padding-top:1.6rem; border-top:1px solid var(--rule); }
+h3 { font-size:1.14rem; margin:2.2rem 0 .6rem; }
+p { margin:0 0 1.05rem; }
+a { color:var(--accent); text-underline-offset:3px; }
+strong { color:var(--ink); font-weight:600; }
+em { color:var(--ink); }
+hr { border:none; border-top:1px solid var(--rule); margin:3.2rem 0; }
+h1 + p, h1 + p + p { font-size:1.1rem; color:var(--muted); }
+h1 + p strong, h1 + p + p strong { color:var(--ink); }
+ul { margin:0 0 1.05rem; padding-left:1.25rem; }
+li { margin-bottom:.45rem; }
+code {
+  font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:.85em; background:var(--raised); border:1px solid var(--rule-soft);
+  border-radius:4px; padding:1px 5px; color:var(--ink);
+}
+pre {
+  background:var(--raised); border:1px solid var(--rule); border-radius:8px;
+  padding:16px 18px; overflow-x:auto; font-size:.82rem; line-height:1.7;
+  margin:1.4rem 0; max-width:100%;
+}
+pre code { background:none; border:none; padding:0; font-size:inherit; color:var(--body); }
+.scroll { overflow-x:auto; margin:1.5rem 0; border:1px solid var(--rule);
+          border-radius:9px; background:var(--surface); box-shadow:var(--shadow); }
+table { width:100%; border-collapse:collapse; font-size:.88rem; font-variant-numeric:tabular-nums; }
+th, td { padding:9px 14px; text-align:right; border-bottom:1px solid var(--rule-soft); white-space:nowrap; }
+th {
+  font-family:"IBM Plex Mono",monospace; font-size:.66rem; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--faint); font-weight:500;
+  border-bottom:1px solid var(--rule); background:var(--raised); position:sticky; top:0; text-align:right;
+}
+td:first-child, th:first-child { text-align:left; white-space:normal; min-width:12ch; }
+tbody tr:last-child td { border-bottom:none; }
+tbody tr:hover td { background:var(--accent-soft); }
+.up { color:var(--gain); } .down { color:var(--loss); }
+.fig { margin:1.8rem 0; max-width:100%; }
+.fig svg { width:100%; height:auto; display:block; }
+.fig figcaption { font-size:.76rem; color:var(--faint); margin-top:.5rem;
+  font-family:"IBM Plex Mono",monospace; letter-spacing:.02em; }
+.svg-box { fill:var(--surface); stroke:var(--rule); }
+.svg-box-accent { fill:var(--accent-soft); stroke:var(--accent); }
+.svg-t { fill:var(--ink); font-family:"IBM Plex Sans",sans-serif; font-weight:600; }
+.svg-s { fill:var(--muted); font-family:"IBM Plex Mono",monospace; }
+.svg-lab { fill:var(--faint); font-family:"IBM Plex Mono",monospace; letter-spacing:.04em; }
+.svg-arrow { stroke:var(--faint); stroke-width:1.5; fill:none; }
+.svg-grid { stroke:var(--rule-soft); stroke-width:1; }
+.bar-gross { fill:var(--accent); } .bar-net { fill:var(--gold); }
+.bar-neg { fill:var(--loss); }
+.ex { border:1px solid var(--rule); border-radius:10px; background:var(--surface);
+  box-shadow:var(--shadow); padding:16px 18px; margin:1rem 0; }
+.ex .news { font-family:"IBM Plex Mono",monospace; font-size:.78rem; color:var(--muted);
+  border-left:2px solid var(--accent); padding-left:10px; margin-bottom:.5rem; }
+.ex .q { font-weight:600; color:var(--ink); margin-bottom:.2rem; }
+.ex .res { font-size:.84rem; color:var(--body); margin-top:.3rem; }
+.ex .res b { color:var(--ink); }
+.badge { display:inline-block; font-family:"IBM Plex Mono",monospace; font-size:.66rem;
+  font-weight:600; letter-spacing:.06em; padding:2px 7px; border-radius:5px; vertical-align:middle; }
+.badge.yes { background:var(--accent-soft); color:var(--accent); }
+.badge.no  { background:var(--raised); color:var(--gold); border:1px solid var(--rule); }
+.badge.win { background:var(--gain); color:var(--surface); }
+.badge.loss { background:var(--loss); color:var(--surface); }
+.exleg { font-family:"IBM Plex Mono",monospace; font-size:.72rem; color:var(--faint); margin:.4rem 0 1rem; }
+.exleg span { margin-right:16px; }
+:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:3px; }
+@media (max-width:640px) { .doc { padding:32px 18px 64px; } body { font-size:15.5px; } h2 { margin-top:2.6rem; } }
+</style>
+<div class="doc">
+<h1>SWM news-driven backtest</h1>
+<p>The <a href="backtest.html">grid backtest</a> run from the opposite axis: <strong>walk the
+jin10 wire in time order, and for each important headline retrieve the markets it
+is about and trade them.</strong> Model under test: <code>world_model_qwen2p5_3b_jin10d_bal</code>
+— a Qwen2.5-<strong>7B</strong> world model (the dir name's "3b" is a leftover) trained on the
+debiased daily jin10 set.</p>
+<p><strong>Same verdict, opposite direction: a small, statistically real directional edge
+worth about as much as the bid-ask spread — no more.</strong></p>
+<hr />
+
+<h2>1. Design</h2>
+<figure class="fig">
+<svg viewBox="0 0 940 168" role="img" aria-label="Pipeline: headline to top-5 markets to open position to settle to P and L">
+  <!-- arrows -->
+  <defs><marker id="ah" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+    <path d="M0,0 L6,3 L0,6 Z" fill="var(--faint)"/></marker></defs>
+  <g class="svg-arrow" marker-end="url(#ah)">
+    <path d="M162,73 L203,73"/><path d="M352,73 L393,73"/>
+    <path d="M542,73 L583,73"/><path d="M732,73 L773,73"/>
+  </g>
+  <!-- arrow labels -->
+  <g class="svg-lab" font-size="10" text-anchor="middle">
+    <text x="182" y="60">reverse</text><text x="182" y="71">retrieval</text>
+    <text x="372" y="60">score,</text><text x="372" y="71">|edge|≥5c</text>
+    <text x="562" y="66">~24h</text>
+    <text x="752" y="60">vs</text><text x="752" y="71">entry</text>
+  </g>
+  <!-- nodes -->
+  <g>
+    <rect class="svg-box" x="12" y="45" width="150" height="56" rx="8"/>
+    <text class="svg-t" x="87" y="70" font-size="13" text-anchor="middle">Headline</text>
+    <text class="svg-s" x="87" y="87" font-size="10" text-anchor="middle">jin10 wire, in time order</text>
+
+    <rect class="svg-box" x="203" y="45" width="150" height="56" rx="8"/>
+    <text class="svg-t" x="278" y="70" font-size="13" text-anchor="middle">Top-5 markets</text>
+    <text class="svg-s" x="278" y="87" font-size="10" text-anchor="middle">it is about</text>
+
+    <rect class="svg-box" x="393" y="45" width="150" height="56" rx="8"/>
+    <text class="svg-t" x="468" y="70" font-size="13" text-anchor="middle">Open position</text>
+    <text class="svg-s" x="468" y="87" font-size="10" text-anchor="middle">entry quote @ t</text>
+
+    <rect class="svg-box" x="583" y="45" width="150" height="56" rx="8"/>
+    <text class="svg-t" x="658" y="70" font-size="13" text-anchor="middle">Settle</text>
+    <text class="svg-s" x="658" y="87" font-size="10" text-anchor="middle">next daily quote</text>
+
+    <rect class="svg-box-accent" x="773" y="45" width="150" height="56" rx="8"/>
+    <text class="svg-t" x="848" y="76" font-size="14" text-anchor="middle">P&amp;L</text>
+  </g>
+  <!-- no-lookahead bracket -->
+  <g>
+    <path class="svg-grid" d="M12,120 L543,120 M12,120 L12,114 M543,120 L543,114"/>
+    <text class="svg-lab" x="277" y="138" font-size="10" text-anchor="middle">all inputs anchored at t &mdash; no look-ahead</text>
+    <path class="svg-grid" d="M583,120 L923,120 M583,120 L583,114 M923,120 L923,114"/>
+    <text class="svg-lab" x="753" y="138" font-size="10" text-anchor="middle">label only</text>
+  </g>
+</svg>
+<figcaption>One pass over the wire: each headline picks the markets, then is traded and settled.</figcaption>
+</figure>
+<p>One bi-encoder, two directions: <strong>reverse retrieval</strong> picks which markets a
+headline may trade; <strong>forward retrieval</strong> fills each prompt with that market's
+recent news so the input matches training. Everything after cell-building — the
+7B model, the P&amp;L, the baselines — is the grid backtest's code unchanged; only
+<code>scripts/backtest_build_news_grid.py</code> is new. Every input is anchored at the
+headline time (no look-ahead); the settle quote is a P&amp;L label only.</p>
+
+<h2>2. Universe and how a trade is decided</h2>
+<p><strong>2,067</strong> out-of-sample headlines (2026-06-17 onward) → <strong>2,812</strong> scored cells →
+<strong>1,297</strong> distinct positions → <strong>589</strong> trades, across 183 markets. The set is
+<strong>balanced</strong>: 38% up, mean move -0.2c, mean entry 0.271 — so buying YES blind
+<em>loses</em>, and a positive return must come from calling direction.</p>
+<p>The 589 falls out of three filters (model and baselines alike): dedup a
+daily-quoted market to one position → keep only <code>|pred − entry| ≥ 0.05</code> → drop
+unaffordable fills. Baselines ignore the signal and trade all 1,297. (Entry and
+the 24h anchor coincide here, so <code>momentum</code>/<code>contrarian</code> fire on zero cells and
+SWM's edge is pure forecast, not mean-reversion.)</p>
+<figure class="fig">
+<svg viewBox="0 0 900 210" role="img" aria-label="Funnel from 2,812 cells to 589 trades">
+  <g class="svg-lab" font-size="11">
+    <!-- bar 1: 2812 cells -> width 620 -->
+    <rect class="bar-gross" x="10" y="18" width="620" height="34" rx="4" opacity="0.92"/>
+    <text x="22" y="40" fill="var(--surface)" font-family="IBM Plex Mono" font-size="13" font-weight="600">2,812</text>
+    <text x="644" y="39" font-size="12">scored cells &mdash; one per (market, settle-time)</text>
+    <!-- bar 2: 1297 positions -> width 286 -->
+    <rect class="bar-gross" x="10" y="64" width="286" height="34" rx="4" opacity="0.72"/>
+    <text x="22" y="86" fill="var(--surface)" font-family="IBM Plex Mono" font-size="13" font-weight="600">1,297</text>
+    <text x="310" y="85" font-size="12">distinct positions &mdash; after daily-quote dedup</text>
+    <!-- bar 3: 589 trades -> width 130 -->
+    <rect class="bar-net" x="10" y="110" width="130" height="34" rx="4"/>
+    <text x="22" y="132" fill="var(--surface)" font-family="IBM Plex Mono" font-size="13" font-weight="600">589</text>
+    <text x="154" y="131" font-size="12">SWM trades &mdash; where |edge| ≥ 0.05 (baselines take all 1,297)</text>
+    <!-- source note -->
+    <text x="10" y="176" font-size="11">from 2,067 out-of-sample headlines · 183 markets · balanced set: 38% up, mean move &minus;0.2c</text>
+  </g>
+</svg>
+<figcaption>How 2,812 scored cells narrow to 589 trades.</figcaption>
+</figure>
+
+<h2>3. Results — exit at next quote</h2>
+<p>Threshold 0.05, 1c spread, $1 per trade.</p>
+<div class="scroll"><table>
+<thead><tr><th>strategy</th><th>trades</th><th>return</th><th>95% CI</th><th>hit</th><th>net/share</th></tr></thead>
+<tbody>
+<tr><td><strong>SWM</strong></td><td>589</td><td><strong class="up">+1.01%</strong></td><td>-7.3 to +10.0%</td><td>38.0%</td><td>-0.16c</td></tr>
+<tr><td>Always YES</td><td>1,297</td><td class="down">-2.22%</td><td>-8.2 to +4.3%</td><td>31.5%</td><td>-0.89c</td></tr>
+<tr><td>Always NO</td><td>1,297</td><td class="down">-0.24%</td><td>-2.7 to +2.7%</td><td>39.5%</td><td>-1.11c</td></tr>
+<tr><td>Random</td><td>1,297</td><td class="up">+0.63%</td><td>-3.5 to +4.8%</td><td>36.8%</td><td>-0.45c</td></tr>
+<tr><td>Perfect direction</td><td>528</td><td class="up">+53.04%</td><td>+42.9 to +63.2%</td><td>100%</td><td>+13.90c</td></tr>
+</tbody>
+</table></div>
+<p>On <strong>SWM's own 589 positions</strong>, blind YES returns -3.1% and blind NO -0.4% —
+no drift to ride, so the +1.0% is a genuine directional call. Perfect direction
+on those positions makes +26%: the information is abundant, the model captures a
+sliver. (Holding to <code>resolution</code> instead gives -2.4% with a -33%→+46% CI — pure
+noise, reported for completeness only.)</p>
+
+<h2>4. Real signal, eaten by the spread</h2>
+<p>Set the spread to zero and the edge is unmistakable and monotone in confidence;
+put 1c back and it collapses:</p>
+<figure class="fig">
+<svg viewBox="0 0 900 262" role="img" aria-label="ROI by threshold: frictionless vs 1c spread">
+  <!-- gridlines + y ticks -->
+  <g class="svg-grid"><path d="M60,192 L884,192"/><path d="M60,144.3 L884,144.3"/>
+    <path d="M60,96.5 L884,96.5"/><path d="M60,48.8 L884,48.8"/></g>
+  <g class="svg-lab" font-size="10" text-anchor="end">
+    <text x="52" y="196">0%</text><text x="52" y="148">5%</text>
+    <text x="52" y="100">10%</text><text x="52" y="52">15%</text></g>
+  <!-- bars: 5 thresholds, gross (accent) + net-after-1c (gold/loss) -->
+  <g>
+    <!-- thr 0.00 -->
+    <rect class="bar-gross" x="98"  y="109.5" width="44" height="82.5"/>
+    <rect class="bar-net"   x="152" y="183.3" width="44" height="8.7"/>
+    <!-- thr 0.02 -->
+    <rect class="bar-gross" x="260" y="95.8"  width="44" height="96.2"/>
+    <rect class="bar-net"   x="314" y="175.5" width="44" height="16.5"/>
+    <!-- thr 0.05 -->
+    <rect class="bar-gross" x="422" y="92.2"  width="44" height="99.8"/>
+    <rect class="bar-net"   x="476" y="182.4" width="44" height="9.6"/>
+    <!-- thr 0.08 -->
+    <rect class="bar-gross" x="584" y="36.4"  width="44" height="155.6"/>
+    <rect class="bar-net"   x="638" y="144.1" width="44" height="47.9"/>
+    <!-- thr 0.10 -->
+    <rect class="bar-gross" x="746" y="132.5" width="44" height="59.5"/>
+    <rect class="bar-neg"   x="800" y="192"   width="44" height="31.1"/>
+  </g>
+  <!-- value labels -->
+  <g class="svg-s" font-size="9.5" text-anchor="middle">
+    <text x="120" y="104">+8.6</text><text x="174" y="178">+0.9</text>
+    <text x="282" y="90">+10.1</text><text x="336" y="170">+1.7</text>
+    <text x="444" y="87">+10.5</text><text x="498" y="177">+1.0</text>
+    <text x="606" y="31">+16.3</text><text x="660" y="139">+5.0</text>
+    <text x="768" y="127">+6.2</text><text x="822" y="236" fill="var(--loss)">&minus;3.3</text>
+  </g>
+  <!-- zero line emphasized -->
+  <path d="M60,192 L884,192" stroke="var(--rule)" stroke-width="1.5"/>
+  <!-- x labels -->
+  <g class="svg-lab" font-size="11" text-anchor="middle">
+    <text x="147" y="252">thr 0.00</text><text x="309" y="252">0.02</text>
+    <text x="471" y="252">0.05</text><text x="633" y="252">0.08</text><text x="795" y="252">0.10</text></g>
+  <!-- legend -->
+  <g font-size="10.5" font-family="IBM Plex Mono">
+    <rect class="bar-gross" x="600" y="8" width="12" height="12"/><text class="svg-s" x="618" y="18">frictionless</text>
+    <rect class="bar-net" x="720" y="8" width="12" height="12"/><text class="svg-s" x="738" y="18">after 1c spread</text>
+  </g>
+</svg>
+<figcaption>Return on capital by trading threshold. The signal is worth ~10%; the 1c spread takes almost all of it.</figcaption>
+</figure>
+<div class="scroll"><table>
+<thead><tr><th>threshold</th><th>trades</th><th>ROI frictionless</th><th>ROI with 1c spread</th></tr></thead>
+<tbody>
+<tr><td>0.00</td><td>1,297</td><td class="up">+8.64%</td><td class="up">+0.91%</td></tr>
+<tr><td>0.02</td><td>1,005</td><td class="up">+10.08%</td><td class="up">+1.73%</td></tr>
+<tr><td>0.05</td><td>589</td><td class="up">+10.45%</td><td class="up">+1.01%</td></tr>
+<tr><td>0.08</td><td>234</td><td class="up">+16.30%</td><td class="up">+5.02%</td></tr>
+<tr><td>0.10</td><td>111</td><td class="up">+6.23%</td><td class="down">-3.26%</td></tr>
+</tbody>
+</table></div>
+<p>Gross edge is ~0.8–1.2c/share; the spread is 1c. The regression agrees the
+signal is real — forecast vs. tradeable move correlates <strong>+0.086, t = +3.1</strong> over
+1,297 positions, direction accuracy 51.6% — but on capital after costs the
+strategy is indistinguishable from flat (<strong>t = 0.38</strong>). What little survives is
+<strong>fragile</strong>: the +1.0% leans on ~35 trades in the 0.75–0.98 price bucket (+30%)
+and flips between June (-2.1%) and July (+6.1%).</p>
+
+<h2>5. Why it wins, when it wins</h2>
+<p>Four trades SWM made money on. Each plots the market's <strong>real price path</strong>
+around the trade — the triggering jin10 headline (dashed line), the price the
+model actually bought at (<em>entry</em>), and where the market <em>settled</em> ~24–48h later.
+The forecast direction is noted under each chart.</p>
+<p class="exleg"><span>&mdash; actual market price</span><span>○ price bought at</span>
+<span style="color:var(--gain)">● where it settled</span><span>┆ headline time</span></p>
+
+<div class="ex">
+  <div class="news">jin10 · Fox News: US VP Vance says envoy Witkoff, Kushner have arrived for Iran talks</div>
+  <div class="q">Will JD Vance have a diplomatic meeting with Iran by June 30, 2026? <span class="badge yes">BOUGHT YES</span></div>
+  <svg viewBox="0 0 760 178" role="img" aria-label="JD Vance / Iran meeting price path, entry 0.38 settle 1.00">
+    <line class="svg-grid" x1="50" y1="150.0" x2="740" y2="150.0"/>
+    <text class="svg-lab" x="44" y="153.0" font-size="9" text-anchor="end">0</text>
+    <line class="svg-grid" x1="50" y1="85.0" x2="740" y2="85.0"/>
+    <text class="svg-lab" x="44" y="88.0" font-size="9" text-anchor="end">.5</text>
+    <line class="svg-grid" x1="50" y1="20.0" x2="740" y2="20.0"/>
+    <text class="svg-lab" x="44" y="23.0" font-size="9" text-anchor="end">1</text>
+    <text class="svg-lab" x="185.2" y="170" font-size="8.5" text-anchor="middle">06-16</text>
+    <text class="svg-lab" x="371.4" y="170" font-size="8.5" text-anchor="middle">06-18</text>
+    <text class="svg-lab" x="557.7" y="170" font-size="8.5" text-anchor="middle">06-20</text>
+    <line x1="608.6" y1="20" x2="608.6" y2="150" stroke="var(--faint)" stroke-width="1" stroke-dasharray="3 3"/>
+    <text class="svg-lab" x="608.6" y="16" font-size="8.5" text-anchor="middle">headline</text>
+    <polyline points="57.2,101.9 61.1,101.9 68.9,105.2 80.5,106.4 88.3,42.1 150.3,55.1 154.2,55.8 162.0,47.3 181.4,44.7 243.4,36.2 247.3,36.2 274.5,36.2 336.5,33.6 340.4,46.6 367.6,49.2 425.8,54.5 429.6,54.5 433.5,45.3 460.7,73.3 522.8,77.8 553.8,80.5 608.1,101.2 615.9,39.5 646.9,24.7 716.7,20.1" fill="none" stroke="var(--accent)" stroke-width="1.6"/>
+    <circle cx="608.1" cy="101.2" r="5" fill="var(--surface)" stroke="var(--faint)" stroke-width="2"/>
+    <circle cx="716.7" cy="20.1" r="6" fill="var(--gain)"/>
+    <text class="svg-s" x="608.1" y="117.2" font-size="9" text-anchor="middle">buy 0.38</text>
+    <text class="svg-s" x="700.0" y="10.1" font-size="9" text-anchor="middle" fill="var(--gain)">settle 1.00</text>
+  </svg>
+  <div class="res">Envoys arriving → a meeting is more likely. Model nudged YES (0.38→0.46); it settled <b>YES</b>. <span class="badge win">+61.5c / share</span></div>
+</div>
+
+<div class="ex">
+  <div class="news">jin10 · U.S. Revokes Iranian Sales Authorization; International Oil Prices Rise</div>
+  <div class="q">Will WTI Crude Oil hit $80 (HIGH) in July? <span class="badge yes">BOUGHT YES</span></div>
+  <svg viewBox="0 0 760 178" role="img" aria-label="WTI crude to $80 price path, entry 0.23 settle 0.58">
+    <line class="svg-grid" x1="50" y1="150.0" x2="740" y2="150.0"/>
+    <text class="svg-lab" x="44" y="153.0" font-size="9" text-anchor="end">0</text>
+    <line class="svg-grid" x1="50" y1="85.0" x2="740" y2="85.0"/>
+    <text class="svg-lab" x="44" y="88.0" font-size="9" text-anchor="end">.5</text>
+    <line class="svg-grid" x1="50" y1="20.0" x2="740" y2="20.0"/>
+    <text class="svg-lab" x="44" y="23.0" font-size="9" text-anchor="end">1</text>
+    <text class="svg-lab" x="163.6" y="170" font-size="8.5" text-anchor="middle">07-03</text>
+    <text class="svg-lab" x="351.8" y="170" font-size="8.5" text-anchor="middle">07-05</text>
+    <text class="svg-lab" x="540.0" y="170" font-size="8.5" text-anchor="middle">07-07</text>
+    <text class="svg-lab" x="728.2" y="170" font-size="8.5" text-anchor="middle">07-09</text>
+    <line x1="614.6" y1="20" x2="614.6" y2="150" stroke="var(--faint)" stroke-width="1" stroke-dasharray="3 3"/>
+    <text class="svg-lab" x="614.6" y="16" font-size="8.5" text-anchor="middle">headline</text>
+    <polyline points="53.8,127.2 57.8,127.2 61.7,127.2 65.6,127.2 108.7,133.8 128.3,133.8 132.3,133.8 132.3,133.8 140.1,135.1 147.9,133.1 151.9,133.1 155.8,132.4 159.7,132.4 202.8,132.4 222.4,131.2 226.4,131.2 226.4,131.2 234.2,131.2 242.0,131.2 246.0,131.2 249.9,131.2 253.8,126.0 296.9,126.0 316.5,126.0 320.5,125.3 320.5,125.3 328.3,124.7 336.1,127.2 340.1,127.2 344.0,127.2 347.9,127.2 391.0,127.2 410.6,121.4 414.6,121.4 414.6,120.8 422.4,120.8 430.3,122.0 434.2,122.0 438.1,124.0 442.0,130.5 485.1,132.4 504.7,132.4 508.7,132.4 508.7,132.4 516.5,131.2 524.4,131.2 528.3,131.2 532.2,131.2 536.1,131.2 579.2,131.2 594.9,131.2 598.9,131.2 602.8,126.0 602.8,123.3 610.6,120.8 610.6,120.8 618.5,105.8 622.4,109.7 626.3,107.1 630.2,103.8 630.2,103.8 665.5,106.4 673.3,79.1 689.0,90.8 693.0,90.8 696.9,65.5 696.9,65.5 704.7,89.5 708.6,89.5 716.5,74.0 720.4,74.0 724.3,74.6" fill="none" stroke="var(--accent)" stroke-width="1.6"/>
+    <circle cx="610.6" cy="120.8" r="5" fill="var(--surface)" stroke="var(--faint)" stroke-width="2"/>
+    <circle cx="716.5" cy="74.0" r="6" fill="var(--gain)"/>
+    <text class="svg-s" x="610.6" y="136.8" font-size="9" text-anchor="middle">buy 0.23</text>
+    <text class="svg-s" x="700.0" y="64.0" font-size="9" text-anchor="middle" fill="var(--gain)">settle 0.58</text>
+  </svg>
+  <div class="res">Sanctions push oil up → the $80 target gets nearer. Model lifted YES (0.23→0.28); price rose. <span class="badge win">+35.0c / share</span></div>
+</div>
+
+<div class="ex">
+  <div class="news">jin10 · Night session opens: silver drops nearly 4%, tin and other metals fall</div>
+  <div class="q">Will Silver hit $60 (LOW) by end of June? <span class="badge yes">BOUGHT YES</span></div>
+  <svg viewBox="0 0 760 178" role="img" aria-label="Silver to $60 low price path, entry 0.48 settle 1.00">
+    <line class="svg-grid" x1="50" y1="150.0" x2="740" y2="150.0"/>
+    <text class="svg-lab" x="44" y="153.0" font-size="9" text-anchor="end">0</text>
+    <line class="svg-grid" x1="50" y1="85.0" x2="740" y2="85.0"/>
+    <text class="svg-lab" x="44" y="88.0" font-size="9" text-anchor="end">.5</text>
+    <line class="svg-grid" x1="50" y1="20.0" x2="740" y2="20.0"/>
+    <text class="svg-lab" x="44" y="23.0" font-size="9" text-anchor="end">1</text>
+    <text class="svg-lab" x="181.2" y="170" font-size="8.5" text-anchor="middle">06-19</text>
+    <text class="svg-lab" x="361.2" y="170" font-size="8.5" text-anchor="middle">06-21</text>
+    <text class="svg-lab" x="541.2" y="170" font-size="8.5" text-anchor="middle">06-23</text>
+    <text class="svg-lab" x="721.2" y="170" font-size="8.5" text-anchor="middle">06-25</text>
+    <line x1="590.0" y1="20" x2="590.0" y2="150" stroke="var(--faint)" stroke-width="1" stroke-dasharray="3 3"/>
+    <text class="svg-lab" x="590.0" y="16" font-size="8.5" text-anchor="middle">headline</text>
+    <polyline points="87.5,133.8 132.5,137.7 140.0,126.6 177.5,114.9 230.0,102.6 267.5,113.0 320.0,109.7 357.5,109.7 410.0,110.3 447.5,108.4 500.0,122.7 537.5,123.3 590.0,87.6 627.5,88.9 672.5,83.0 680.0,32.3 717.5,20.1" fill="none" stroke="var(--accent)" stroke-width="1.6"/>
+    <circle cx="590.0" cy="87.6" r="5" fill="var(--surface)" stroke="var(--faint)" stroke-width="2"/>
+    <circle cx="717.5" cy="20.1" r="6" fill="var(--gain)"/>
+    <text class="svg-s" x="590.0" y="103.6" font-size="9" text-anchor="middle">buy 0.48</text>
+    <text class="svg-s" x="700.0" y="10.1" font-size="9" text-anchor="middle" fill="var(--gain)">settle 1.00</text>
+  </svg>
+  <div class="res">Silver selling off → more likely to touch the low. Model raised YES (0.48→0.56); it hit. <span class="badge win">+51.0c / share</span></div>
+</div>
+
+<div class="ex">
+  <div class="news">jin10 · Pre-market: SpaceX (SPCX.O) down over 5%, US AI-related stocks mixed</div>
+  <div class="q">SpaceX IPO: closing price up at end of first month? <span class="badge no">BOUGHT NO</span></div>
+  <svg viewBox="0 0 760 178" role="img" aria-label="SpaceX closes up price path, entry 0.85 settle 0.41">
+    <line class="svg-grid" x1="50" y1="150.0" x2="740" y2="150.0"/>
+    <text class="svg-lab" x="44" y="153.0" font-size="9" text-anchor="end">0</text>
+    <line class="svg-grid" x1="50" y1="85.0" x2="740" y2="85.0"/>
+    <text class="svg-lab" x="44" y="88.0" font-size="9" text-anchor="end">.5</text>
+    <line class="svg-grid" x1="50" y1="20.0" x2="740" y2="20.0"/>
+    <text class="svg-lab" x="44" y="23.0" font-size="9" text-anchor="end">1</text>
+    <text class="svg-lab" x="188.8" y="170" font-size="8.5" text-anchor="middle">06-18</text>
+    <text class="svg-lab" x="366.3" y="170" font-size="8.5" text-anchor="middle">06-20</text>
+    <text class="svg-lab" x="543.9" y="170" font-size="8.5" text-anchor="middle">06-22</text>
+    <text class="svg-lab" x="721.5" y="170" font-size="8.5" text-anchor="middle">06-24</text>
+    <line x1="582.7" y1="20" x2="582.7" y2="150" stroke="var(--faint)" stroke-width="1" stroke-dasharray="3 3"/>
+    <text class="svg-lab" x="582.7" y="16" font-size="8.5" text-anchor="middle">headline</text>
+    <polyline points="77.8,37.5 166.6,38.2 255.4,47.3 336.8,60.9 344.2,50.5 362.7,53.2 451.4,42.8 540.2,39.5 629.0,90.2 717.8,96.1" fill="none" stroke="var(--accent)" stroke-width="1.6"/>
+    <circle cx="540.2" cy="39.5" r="5" fill="var(--surface)" stroke="var(--faint)" stroke-width="2"/>
+    <circle cx="717.8" cy="96.1" r="6" fill="var(--gain)"/>
+    <text class="svg-s" x="540.2" y="30.5" font-size="9" text-anchor="middle">buy 0.85</text>
+    <text class="svg-s" x="700.0" y="86.1" font-size="9" text-anchor="middle" fill="var(--gain)">settle 0.41</text>
+  </svg>
+  <div class="res">Shares down 5% pre-market → "closes up" less likely. Model shaded NO (0.85→0.79); price fell. <span class="badge win">+42.5c / share</span></div>
+</div>
+
+<p>This is the machinery behind the frictionless +8–16%: on the trades it takes,
+the forecast leans the right way often enough to capture a real slice of the
+move. Two honesty notes the full paths make visible: the model's own edge is
+<em>small</em> (it nudged JD Vance only 0.38→0.46) — most of the realised P&amp;L is the
+market then moving a lot in that direction; and entries are read off a
+daily-sampled series, so some are dips (JD Vance) or a few hours stale (SpaceX).
+And the catch from §4 still holds — average this edge across <em>all</em> trades,
+subtract the 1c spread, and the typical trade clears little more than costs.
+These are the tail where it worked, not the mean.</p>
+
+<h3>…and three it got wrong</h3>
+<p>The losing side, same format (settle dot in red). These are why the hit rate is
+only ~38% and the confidence interval straddles zero — the model reads some
+headlines exactly backwards.</p>
+
+<div class="ex">
+  <div class="news">jin10 · Iran Foreign Ministry: Switzerland meeting postponed, rescheduling underway</div>
+  <div class="q">Will the next US–Iran meeting be in Switzerland? <span class="badge no">BOUGHT NO</span></div>
+  <svg viewBox="0 0 760 178" role="img" aria-label="US-Iran meeting in Switzerland price path, entry 0.22 settle 0.98">
+    <line class="svg-grid" x1="50" y1="150.0" x2="740" y2="150.0"/>
+    <text class="svg-lab" x="44" y="153.0" font-size="9" text-anchor="end">0</text>
+    <line class="svg-grid" x1="50" y1="85.0" x2="740" y2="85.0"/>
+    <text class="svg-lab" x="44" y="88.0" font-size="9" text-anchor="end">.5</text>
+    <line class="svg-grid" x1="50" y1="20.0" x2="740" y2="20.0"/>
+    <text class="svg-lab" x="44" y="23.0" font-size="9" text-anchor="end">1</text>
+    <text class="svg-lab" x="178.4" y="170" font-size="8.5" text-anchor="middle">06-15</text>
+    <text class="svg-lab" x="359.3" y="170" font-size="8.5" text-anchor="middle">06-17</text>
+    <text class="svg-lab" x="540.2" y="170" font-size="8.5" text-anchor="middle">06-19</text>
+    <text class="svg-lab" x="721.1" y="170" font-size="8.5" text-anchor="middle">06-21</text>
+    <line x1="592.8" y1="20" x2="592.8" y2="150" stroke="var(--faint)" stroke-width="1" stroke-dasharray="3 3"/>
+    <text class="svg-lab" x="592.8" y="16" font-size="8.5" text-anchor="middle">headline</text>
+    <polyline points="54.0,140.1 61.5,137.1 84.1,123.0 84.1,123.0 99.2,129.7 118.1,132.1 144.5,132.1 152.0,132.0 167.1,120.0 174.6,46.3 189.7,56.3 208.5,95.9 234.9,95.3 242.5,66.7 265.1,58.0 280.1,55.7 299.0,62.9 317.8,62.6 325.4,46.1 355.5,46.6 370.6,44.6 389.5,43.9 446.0,56.6 461.1,67.8 479.9,43.3 536.5,60.8 544.0,64.1 551.5,91.8 562.8,92.4 570.4,121.8 626.9,64.1 717.4,22.8" fill="none" stroke="var(--accent)" stroke-width="1.6"/>
+    <circle cx="570.4" cy="121.8" r="5" fill="var(--surface)" stroke="var(--faint)" stroke-width="2"/>
+    <circle cx="717.4" cy="22.8" r="6" fill="var(--loss)"/>
+    <text class="svg-s" x="570.4" y="137.8" font-size="9" text-anchor="middle">buy 0.22</text>
+    <text class="svg-s" x="700.0" y="12.8" font-size="9" text-anchor="middle" fill="var(--loss)">settle 0.98</text>
+  </svg>
+  <div class="res"><b>Read a scary word too literally.</b> "Postponed" ≠ cancelled — the meeting still happened in Switzerland. Model shorted it to 0.11; it settled <b>YES</b>. <span class="badge loss">−77.2c / share</span></div>
+</div>
+
+<div class="ex">
+  <div class="news">jin10 · Spot gold falls 2% intraday, trading at $4,108/oz</div>
+  <div class="q">Will Gold hit $4,000 (LOW) in June? <span class="badge no">BOUGHT NO</span></div>
+  <svg viewBox="0 0 760 178" role="img" aria-label="Gold to $4,000 low price path, entry 0.24 settle 0.68">
+    <line class="svg-grid" x1="50" y1="150.0" x2="740" y2="150.0"/>
+    <text class="svg-lab" x="44" y="153.0" font-size="9" text-anchor="end">0</text>
+    <line class="svg-grid" x1="50" y1="85.0" x2="740" y2="85.0"/>
+    <text class="svg-lab" x="44" y="88.0" font-size="9" text-anchor="end">.5</text>
+    <line class="svg-grid" x1="50" y1="20.0" x2="740" y2="20.0"/>
+    <text class="svg-lab" x="44" y="23.0" font-size="9" text-anchor="end">1</text>
+    <text class="svg-lab" x="206.8" y="170" font-size="8.5" text-anchor="middle">06-19</text>
+    <text class="svg-lab" x="393.6" y="170" font-size="8.5" text-anchor="middle">06-21</text>
+    <text class="svg-lab" x="580.4" y="170" font-size="8.5" text-anchor="middle">06-23</text>
+    <line x1="610.4" y1="20" x2="610.4" y2="150" stroke="var(--faint)" stroke-width="1" stroke-dasharray="3 3"/>
+    <text class="svg-lab" x="610.4" y="16" font-size="8.5" text-anchor="middle">headline</text>
+    <polyline points="58.9,137.9 70.6,137.9 78.4,138.0 90.1,139.7 97.8,128.1 109.5,125.2 152.3,133.6 164.0,131.0 171.8,131.3 202.9,116.5 245.7,102.0 257.4,108.3 265.2,95.9 296.3,109.2 339.1,106.3 350.8,104.8 389.7,104.7 432.5,104.2 444.2,103.7 483.1,93.8 525.9,106.8 537.6,121.3 576.5,119.4 611.6,80.3 619.4,89.7 631.0,90.4 669.9,98.8 716.6,62.0 724.4,20.1 728.3,20.1" fill="none" stroke="var(--accent)" stroke-width="1.6"/>
+    <circle cx="576.5" cy="119.4" r="5" fill="var(--surface)" stroke="var(--faint)" stroke-width="2"/>
+    <circle cx="716.6" cy="62.0" r="6" fill="var(--loss)"/>
+    <text class="svg-s" x="576.5" y="135.4" font-size="9" text-anchor="middle">buy 0.24</text>
+    <text class="svg-s" x="700.0" y="52.0" font-size="9" text-anchor="middle" fill="var(--loss)">settle 0.68</text>
+  </svg>
+  <div class="res"><b>Faded a move that kept going.</b> Gold down 2% → model bet it would <em>not</em> reach the low; the slide continued toward it. <span class="badge loss">−45.2c / share</span></div>
+</div>
+
+<div class="ex">
+  <div class="news">jin10 · U.S. June CPI and core CPI (MoM / YoY) due today</div>
+  <div class="q">Will the Fed pause at all three of the next decisions (Apr–Jun–Jul)? <span class="badge no">BOUGHT NO</span></div>
+  <svg viewBox="0 0 760 178" role="img" aria-label="Fed pause x3 price path, entry 0.62 settle 0.96">
+    <line class="svg-grid" x1="50" y1="150.0" x2="740" y2="150.0"/>
+    <text class="svg-lab" x="44" y="153.0" font-size="9" text-anchor="end">0</text>
+    <line class="svg-grid" x1="50" y1="85.0" x2="740" y2="85.0"/>
+    <text class="svg-lab" x="44" y="88.0" font-size="9" text-anchor="end">.5</text>
+    <line class="svg-grid" x1="50" y1="20.0" x2="740" y2="20.0"/>
+    <text class="svg-lab" x="44" y="23.0" font-size="9" text-anchor="end">1</text>
+    <text class="svg-lab" x="183.3" y="170" font-size="8.5" text-anchor="middle">07-10</text>
+    <text class="svg-lab" x="362.6" y="170" font-size="8.5" text-anchor="middle">07-12</text>
+    <text class="svg-lab" x="542.0" y="170" font-size="8.5" text-anchor="middle">07-14</text>
+    <text class="svg-lab" x="721.3" y="170" font-size="8.5" text-anchor="middle">07-16</text>
+    <line x1="588.0" y1="20" x2="588.0" y2="150" stroke="var(--faint)" stroke-width="1" stroke-dasharray="3 3"/>
+    <text class="svg-lab" x="588.0" y="16" font-size="8.5" text-anchor="middle">headline</text>
+    <polyline points="56.2,50.5 89.9,50.5 145.9,42.8 179.5,38.9 235.6,38.9 269.2,51.8 325.3,50.5 358.9,50.5 414.9,48.6 448.6,48.0 504.6,48.6 538.2,65.5 586.8,69.4 594.3,28.4 627.9,31.0 717.6,25.8" fill="none" stroke="var(--accent)" stroke-width="1.6"/>
+    <circle cx="586.8" cy="69.4" r="5" fill="var(--surface)" stroke="var(--faint)" stroke-width="2"/>
+    <circle cx="717.6" cy="25.8" r="6" fill="var(--loss)"/>
+    <text class="svg-s" x="586.8" y="60.4" font-size="9" text-anchor="middle">buy 0.62</text>
+    <text class="svg-s" x="700.0" y="15.8" font-size="9" text-anchor="middle" fill="var(--loss)">settle 0.96</text>
+  </svg>
+  <div class="res"><b>Traded a headline with no signal.</b> "CPI due today" says nothing about the outcome; the model leaned NO into a market that resolved <b>YES</b>. <span class="badge loss">−34.6c / share</span></div>
+</div>
+
+<p>Winners and losers together are the whole point of §4: the model is right a
+little more than half the time on direction, so the gross edge is positive — but
+these losses are big and frequent enough that, after the spread, the net is a
+coin toss. It has real signal; it does not have a moat.</p>
+
+<h2>6. Reproduce</h2>
+<pre><code>bash scripts/backtest_news_slurm.sh          # build -&gt; predict -&gt; report, 1 A100
+# knobs: --top-markets, --hold-hours (build); --threshold, --cost (report)
+# full threshold x cost sweep lands in results/backtest/report_news.json</code></pre>
+<p><strong>Bottom line:</strong> from the news side, the same story as the grid — the model has
+learned which markets a headline moves and in which direction (t = +3.1,
++8–16% frictionless), and that skill is not yet worth more than it costs to
+trade (+1.0%, CI straddling zero).</p>
+</div>
