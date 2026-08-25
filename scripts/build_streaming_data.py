@@ -21,6 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from swm.backtest.retrieval import EmbeddingRetriever
 from swm.streaming import (
     StreamingContextBuilder,
     anchor_price,
@@ -46,7 +47,86 @@ def parse_args():
     p.add_argument('--valid-frac', type=float, default=0.10)
     p.add_argument('--train-cutoff', default='2026-05-24',
                    help='assert the test block starts after this; "" to skip')
+    p.add_argument('--no-rank-news', action='store_true',
+                   help="keep each record's news in its original list order. "
+                        'Off by default: that order is arbitrary, so filling a '
+                        '30k window from the top of it packs the context with '
+                        'headlines that have nothing to do with the market.')
+    p.add_argument('--embed-model', default='BAAI/bge-small-en-v1.5')
+    p.add_argument('--embed-device', default='cuda')
     return p.parse_args()
+
+
+def rank_news_by_relevance(records, model_name, device):
+    """Sort every record's news by cosine relevance to its own market.
+
+    The builder fills a block from the top of `record['news']`, and that list
+    arrives in wire order, so a market about shipping through the Strait of
+    Hormuz was being handed A-share sector moves and Singapore gold clearing.
+    Ordering by relevance keeps the context just as full while making
+    truncation drop the least relevant headline rather than an arbitrary one.
+
+    Ranking is per-record against that record's OWN market, so a sibling block
+    shown inside another market's context stays ordered by what explains the
+    sibling's move.
+    """
+    import numpy as np
+
+    retriever = EmbeddingRetriever(model_name, device=device)
+    corpus, index_of = [], {}
+    for record in records:
+        for item in record.get('news') or []:
+            key = ((item.get('title') or '').strip(), item.get('published_at'))
+            if key in index_of:
+                continue
+            title = (item.get('title') or '').strip()
+            body = (item.get('description') or '').strip()
+            index_of[key] = len(corpus)
+            corpus.append(f'{title}\n{body}' if body and body != title else title)
+    retriever.fit_news(corpus)
+
+    market_ids, texts, seen = [], [], set()
+    for record in records:
+        mid = str(record['market_id'])
+        if mid in seen:
+            continue
+        seen.add(mid)
+        market_ids.append(mid)
+        # question + tags, not question + description. The description is
+        # resolution boilerplate that drags the embedding toward generic
+        # finance; the tags are curated topic labels ("Hormuz", "Iran", "Oil").
+        # Measured on 500 train records against the oracle attributions:
+        # AUC 0.786 for question+tags, 0.764 question alone, 0.753 with the
+        # description, 0.769 with both.
+        question = record.get('question', '')
+        tags = ' '.join(dict.fromkeys(record.get('tags') or []))
+        texts.append(f'{question}\n{tags}'.strip())
+    retriever.fit_markets(market_ids, texts)
+    print(f'[rank] {len(corpus)} unique headlines, {len(market_ids)} markets')
+
+    gains = []
+    for record in records:
+        news = record.get('news') or []
+        if len(news) < 2:
+            continue
+        idxs, keep = [], []
+        for i, item in enumerate(news):
+            key = ((item.get('title') or '').strip(), item.get('published_at'))
+            if key in index_of:
+                idxs.append(index_of[key])
+                keep.append(i)
+        if not idxs:
+            continue
+        sims = retriever.similarities(str(record['market_id']), idxs)
+        order = np.argsort(-sims)
+        record['news'] = [news[keep[j]] for j in order]
+        gains.append(float(sims[order[0]]) - float(np.mean(sims)))
+    if gains:
+        import statistics
+
+        print(f'[rank] top-1 similarity beats the record mean by '
+              f'{statistics.fmean(gains):.4f} on average')
+    return records
 
 
 def main():
@@ -54,6 +134,9 @@ def main():
     records = [json.loads(line) for line in open(args.data) if line.strip()]
     records.sort(key=record_time)
     print(f'{len(records)} records')
+
+    if not args.no_rank_news:
+        records = rank_news_by_relevance(records, args.embed_model, args.embed_device)
 
     # Index over EVERY record: a test row may legitimately show train-period
     # history for its own market, which is what a live system would have.

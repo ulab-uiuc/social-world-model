@@ -23,6 +23,7 @@ class LLMRegressorConfig(PretrainedConfig):
         predict_delta: Optional[bool] = None,
         bounded_output: Optional[bool] = None,
         n_extra_features: Optional[int] = 0,
+        attn_implementation: Optional[str] = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -37,6 +38,11 @@ class LLMRegressorConfig(PretrainedConfig):
         self.predict_delta = predict_delta
         self.bounded_output = bounded_output
         self.n_extra_features = n_extra_features or 0
+        # None keeps transformers' own default. 'flash_attention_2' is worth
+        # setting for long contexts, where attention dominates; it is left off
+        # by default so existing 1024-token checkpoints keep their exact
+        # numerics.
+        self.attn_implementation = attn_implementation
 
 
 class LLMRegressor(PreTrainedModel):
@@ -52,9 +58,12 @@ class LLMRegressor(PreTrainedModel):
         # which keeps every layer's hidden in memory and defeats grad checkpointing.
         # torch_dtype="auto" respects the model's config.torch_dtype — for Qwen3
         # this is bf16, which roughly halves base memory vs the fp32 default.
+        base_kwargs = {'torch_dtype': 'auto'}
+        if getattr(config, 'attn_implementation', None):
+            base_kwargs['attn_implementation'] = config.attn_implementation
         base = AutoModel.from_pretrained(
             config.base_model_name_or_path,
-            torch_dtype='auto',
+            **base_kwargs,
         )
         hidden_size = base.config.hidden_size
         if lora_config is not None:
@@ -134,6 +143,7 @@ class LLMRegressor(PreTrainedModel):
         'predict_delta',
         'bounded_output',
         'n_extra_features',
+        'attn_implementation',
     )
 
     def save_pretrained(self, save_directory: str, state_dict=None, **kwargs):

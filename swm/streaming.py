@@ -270,6 +270,17 @@ class StreamingRegressionDataset:
         self.rows = list(rows)
         self.tokenizer = tokenizer
         self.max_length = max_length
+        # Tokenise once, up front. Beyond not repeating the work every epoch,
+        # `lengths` is what lets the sampler group similar-length sequences --
+        # and under FSDP that matters a great deal, because every rank waits on
+        # the longest sequence in the step while these run from under 2k tokens
+        # to over 30k. A random order pays close to the maximum on most steps.
+        self._ids: list[list[int]] = []
+        self.lengths: list[int] = []
+        for row in self.rows:
+            ids = tokenizer(row['prompt'], add_special_tokens=False)['input_ids']
+            self._ids.append(ids)
+            self.lengths.append(min(len(ids), max_length))
 
     def __len__(self) -> int:
         return len(self.rows)
@@ -278,7 +289,7 @@ class StreamingRegressionDataset:
         import torch
 
         row = self.rows[idx]
-        ids = self.tokenizer(row['prompt'], add_special_tokens=False)['input_ids']
+        ids = self._ids[idx]
         truncated = max(0, len(ids) - self.max_length)
         if truncated:
             ids = ids[-self.max_length :]

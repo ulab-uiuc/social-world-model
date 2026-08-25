@@ -80,6 +80,14 @@ def parse_args():
     p.add_argument('--gradient-checkpointing', action='store_true')
     p.add_argument('--fsdp', default='')
     p.add_argument('--fsdp-transformer-layer-cls', default='Qwen2DecoderLayer')
+    p.add_argument('--attn-implementation', default='flash_attention_2',
+                   help='flash_attention_2 is a large win at 30k tokens where '
+                        'attention dominates; "sdpa" or "" to fall back')
+    p.add_argument('--no-group-by-length', action='store_true',
+                   help='disable length-grouped batching. Grouping is on by '
+                        'default because every FSDP rank waits for the longest '
+                        'sequence in the step and these span 2k-30k tokens; a '
+                        'random order costs ~1.5x a grouped one.')
     p.add_argument('--limit-train', type=int, default=None)
     p.add_argument('--seed', type=int, default=42)
     return p.parse_args()
@@ -90,10 +98,31 @@ def load_rows(path: Path, limit=None):
     return rows[:limit] if limit else rows
 
 
+def _swap_attention(model, args):
+    """Reload the backbone with the requested attention kernel, weights intact."""
+    from transformers import AutoModel
+
+    state = model.llm.state_dict()
+    rebuilt = AutoModel.from_pretrained(
+        model.config.base_model_name_or_path,
+        torch_dtype='auto',
+        attn_implementation=args.attn_implementation,
+    )
+    rebuilt.load_state_dict(state)
+    model.llm = rebuilt
+    model.config.attn_implementation = args.attn_implementation
+    log(f'attention kernel: {args.attn_implementation}')
+    return model
+
+
 def build_model(args):
     if args.init_from:
         log(f'continuing from {args.init_from}')
         model = LLMRegressor.from_pretrained(args.init_from)
+        if args.attn_implementation:
+            # from_pretrained already built the backbone, so rebuild it with the
+            # requested kernel and carry the trained weights over.
+            model = _swap_attention(model, args)
     else:
         log(f'fresh head on {args.model_name}')
         model = LLMRegressor(
@@ -102,6 +131,7 @@ def build_model(args):
                 max_length=args.max_seq_length,
                 pooling_method='last_token',
                 predict_delta=True,
+                attn_implementation=args.attn_implementation or None,
             )
         )
     # The head is fp32 while the backbone loads bf16; FSDP refuses to flatten
@@ -131,6 +161,8 @@ def main():
 
     train_ds = StreamingRegressionDataset(train_rows, tokenizer, args.max_seq_length)
     valid_ds = StreamingRegressionDataset(valid_rows, tokenizer, args.max_seq_length)
+    log(f'train tokens: mean {sum(train_ds.lengths) / len(train_ds.lengths):.0f} '
+        f'max {max(train_ds.lengths)}')
 
     model = build_model(args)
 
@@ -165,6 +197,7 @@ def main():
         report_to=[],
         seed=args.seed,
         dataloader_num_workers=2,
+        group_by_length=not args.no_group_by_length,
         **fsdp_kwargs,
     )
 
